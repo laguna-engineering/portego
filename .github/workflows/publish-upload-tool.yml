@@ -6,8 +6,11 @@ on:
   push:
     tags: ["portego-upload-v*"]
 
+# id-token lets npm verify this workflow as the package's trusted publisher,
+# so the job holds no npm token.
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -36,12 +39,13 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@11
 
       # npm never lets a version be published twice, so a rerun of this job for
       # the same tag fails here.
       - run: npm publish
         working-directory: tools/portego-upload
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
