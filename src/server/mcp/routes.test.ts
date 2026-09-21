@@ -500,3 +500,58 @@ describe("scopes", () => {
     }
   });
 });
+
+describe("staying signed in", () => {
+  const SCOPE = "artifacts:read artifacts:write offline_access";
+  const GRANTS = ["authorization_code", "refresh_token"];
+
+  async function refresh(clientId: string, refreshToken: string) {
+    const response = await fetch(`${server.origin}/api/auth/oauth2/token`, {
+      method: "POST",
+      headers: { origin: server.origin, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: clientId,
+        resource: `${server.origin}/mcp`,
+      }),
+    });
+    return (await response.json()) as { access_token?: string; refresh_token?: string };
+  }
+
+  // Without a refresh token a client has to send its user back to the browser
+  // every hour, when the access token expires.
+  test("a client that asks for offline_access renews its token without the browser", async () => {
+    const clientId = await registerClient(server, cookie, SCOPE, GRANTS);
+    const offline = await authorizeClient(server, { cookie, clientId, scope: SCOPE });
+    expect(offline.refreshToken).toBeString();
+
+    const renewed = await refresh(clientId, offline.refreshToken ?? "");
+    expect(renewed.access_token).toBeString();
+    expect(renewed.refresh_token).toBeString();
+    expect(renewed.refresh_token).not.toBe(offline.refreshToken);
+
+    const response = await offline.call(
+      { jsonrpc: "2.0", id: 1, method: "tools/list" },
+      { token: renewed.access_token },
+    );
+    expect(response.status).toBe(200);
+
+    // The rotated token gets a full week of its own, so the week counts from
+    // the last use and not from the sign-in.
+    const live = server.database
+      .query(
+        "select createdAt, expiresAt from oauthRefreshToken where clientId = ? and revoked is null",
+      )
+      .all(clientId) as { createdAt: string; expiresAt: string }[];
+    expect(live).toHaveLength(1);
+    const lifetime = Date.parse(live[0]?.expiresAt ?? "") - Date.parse(live[0]?.createdAt ?? "");
+    expect(lifetime).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  test("a client that does not ask for offline_access gets no refresh token", async () => {
+    const clientId = await registerClient(server, cookie, "artifacts:read artifacts:write", GRANTS);
+    const online = await authorizeClient(server, { cookie, clientId });
+    expect(online.refreshToken).toBeUndefined();
+  });
+});

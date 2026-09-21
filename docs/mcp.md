@@ -38,6 +38,7 @@ Google (or whichever provider the deployment enables) is the upstream sign-in.
 | --- | --- |
 | `artifacts:read` | List and read artifacts. Required for every MCP request. |
 | `artifacts:write` | Create artifacts. |
+| `offline_access` | A refresh token. The MCP endpoint does not check this scope. |
 
 A token without `artifacts:read` receives a 403 with an `insufficient_scope`
 challenge naming what is missing. A read-only token calling `upload_artifact`
@@ -81,13 +82,19 @@ is a loopback address:
   "grant_types": ["authorization_code", "refresh_token"],
   "response_types": ["code"],
   "token_endpoint_auth_method": "none",
-  "scope": "artifacts:read artifacts:write"
+  "scope": "artifacts:read artifacts:write offline_access"
 }
 ```
 
 Leave the port out of a loopback `redirect_uris` entry when the client picks
 its callback port at run time. The port takes no part in the match, so one
 portless entry covers every port the client can bind.
+
+Keep `offline_access` in `scope`, and request it when authorizing. The token
+endpoint issues a refresh token only for that scope, and the server refuses a
+request for a scope the document does not list. An access token lasts one
+hour. A refresh token lasts seven days, and each refresh replaces it with a new
+one, so a client stays signed in until it goes a week without use.
 
 Install it on the host and add the matching `location =` block:
 
@@ -264,7 +271,7 @@ document](#hosting-a-metadata-document), then name it as the client id:
       "oauth": {
         "clientId": "https://share.acme.example/mcp-clients/pi.json",
         "redirectUri": "http://localhost:19876/callback",
-        "scope": "artifacts:read artifacts:write"
+        "scope": "artifacts:read artifacts:write offline_access"
       }
     }
   }
