@@ -1,0 +1,11 @@
+{
+  "name": "portego",
+  "owner": { "name": "Portego" },
+  "plugins": [
+    {
+      "name": "portego-upload",
+      "source": "./plugins/portego-upload",
+      "description": "Upload an HTML file to your Portego deployment by its path, without the file passing through the conversation."
+    }
+  ]
+}

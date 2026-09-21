@@ -1,0 +1,17 @@
+{
+  "name": "portego-upload",
+  "version": "0.1.0",
+  "description": "A local MCP server and command that uploads an HTML file to a Portego deployment without the file passing through the conversation.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "portego-upload": "dist/portego-upload.js"
+  },
+  "files": [
+    "dist",
+    "claude-code.json"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

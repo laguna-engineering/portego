@@ -16,9 +16,9 @@
  * credential cross the tool boundary, which is what makes the upload allowable
  * rather than merely possible.
  *
- *   bun run tools/portego-upload/index.ts auth <origin>   one-time browser sign-in
- *   bun run tools/portego-upload/index.ts upload <file>   upload from a terminal
- *   bun run tools/portego-upload/index.ts                 serve MCP over stdio
+ *   npx -y portego-upload auth <origin>                   one-time browser sign-in
+ *   npx -y portego-upload upload <file>                   upload from a terminal
+ *   npx -y portego-upload                                 serve MCP over stdio
  */
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -49,7 +49,7 @@ const [COMMAND, ...ARGUMENTS] = process.argv.slice(2);
 const AUTH_ORIGIN = COMMAND === "auth" ? ARGUMENTS[0] : undefined;
 
 /** How a person starts this tool, for the messages that tell them to. */
-const SELF = "bun run tools/portego-upload/index.ts";
+const SELF = "npx -y portego-upload";
 
 const SETUP_NEEDED =
   "No Portego deployment is set on this machine. Ask the user for the address of their " +
