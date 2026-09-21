@@ -19,20 +19,15 @@ Fill in `.env`. `SESSION_SECRET` can stay empty in development, but the
 admission policy cannot: the server refuses to start when no one could be
 admitted. See [docs/authentication.md](docs/authentication.md).
 
-Create the database schema:
-
-```sh
-bun run migrate
-```
-
 ## Development
 
 ```sh
 bun run dev
 ```
 
-This starts two processes, plus the local issuer described below when `.env`
-points at it:
+This applies the database schema, so a new clone needs no separate step, and a
+pull that adds a migration needs none either. Then it starts two processes,
+plus the local issuer described below when `.env` points at it:
 
 - Hono on `http://127.0.0.1:3000`
 - Vite on `http://127.0.0.1:5173`
