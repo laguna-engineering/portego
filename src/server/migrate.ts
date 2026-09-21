@@ -12,6 +12,20 @@ import { databasePath, openDatabase } from "./db.ts";
 import { parseEnv } from "./env.ts";
 import { applyMigrations } from "./storage/migrations.ts";
 
+// Better Auth accepts an array field only in a column whose type name contains
+// "json", but on SQLite it creates those columns as TEXT itself. The check
+// then warns about every array field on every run.
+const ARRAY_COLUMN_MISMATCH = /Expected (string|number)\[\] but got TEXT\.$/;
+
+function logUnlessArrayColumnMismatch(
+  level: "debug" | "info" | "warn" | "error",
+  message: string,
+  ...args: unknown[]
+): void {
+  if (ARRAY_COLUMN_MISMATCH.test(message)) return;
+  console[level](`[Better Auth] ${message}`, ...args);
+}
+
 export async function migrate(): Promise<void> {
   const env = parseEnv(Bun.env);
   const config = parseAuthConfig(env, Bun.env);
@@ -26,7 +40,10 @@ export async function migrate(): Promise<void> {
     // database as it does. Closing the database under it fails the script
     // after the schema was already applied.
     await auth.$context;
-    const { toBeCreated, toBeAdded, runMigrations } = await getMigrations(auth.options);
+    const { toBeCreated, toBeAdded, runMigrations } = await getMigrations({
+      ...auth.options,
+      logger: { log: logUnlessArrayColumnMismatch },
+    });
     const authChanges = [...toBeCreated, ...toBeAdded].map((change) => change.table);
     if (authChanges.length > 0) await runMigrations();
     // Better Auth leaves a column behind that it no longer writes. It has to
