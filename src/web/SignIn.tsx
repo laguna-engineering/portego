@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Provider } from "./api.ts";
+import logoFull from "./assets/logo-full.png";
 
 export type SignInProps = {
   providers: Provider[];
@@ -14,7 +15,9 @@ export function SignIn({ providers, refusal, onChoose }: SignInProps) {
 
   return (
     <main className="signin">
-      <h1>portego</h1>
+      <h1>
+        <img className="signin-logo" src={logoFull} alt="portego" width="160" height="160" />
+      </h1>
       <p>Sign in to browse and share artifacts.</p>
 
       {refusal ? <p role="alert">{refusal}</p> : null}

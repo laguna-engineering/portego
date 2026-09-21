@@ -77,6 +77,9 @@ body {
 }
 
 .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   font-family: var(--mono);
   font-size: 1.05rem;
   font-weight: 600;
@@ -88,7 +91,12 @@ body {
   cursor: pointer;
 }
 
-.wordmark::after {
+.wordmark img {
+  border-radius: 0.3rem;
+}
+
+/* On the word and not on the button, where the gap would separate the two. */
+.wordmark span::after {
   content: ".";
   color: var(--accent);
 }
@@ -303,12 +311,32 @@ label {
 
 /* Sign-in ----------------------------------------------------------------- */
 
+.signin h1 {
+  margin: 0;
+}
+
+.signin-logo {
+  display: block;
+  margin-inline: auto;
+  border-radius: 0.8rem;
+}
+
+/* The logo's letters are dark, so on the dark theme it stands on a tile of the
+   ground it was drawn on. The images themselves are transparent. */
+@media (prefers-color-scheme: dark) {
+  .signin-logo,
+  .wordmark img {
+    background: #fcfaf7;
+  }
+}
+
 .signin {
   max-width: 26rem;
   margin: 6rem auto;
   padding: 0 1rem;
   display: grid;
   gap: 1rem;
+  text-align: center;
 }
 
 .providers {
