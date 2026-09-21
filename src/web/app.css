@@ -313,6 +313,7 @@ label {
 
 .signin-logo {
   display: block;
+  margin-inline: auto;
 }
 
 .signin {
@@ -321,6 +322,7 @@ label {
   padding: 0 1rem;
   display: grid;
   gap: 1rem;
+  text-align: center;
 }
 
 .providers {
