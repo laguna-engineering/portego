@@ -1,0 +1,21 @@
+{
+  "name": "portego-upload",
+  "version": "0.1.0",
+  "description": "Upload an HTML file to your Portego deployment by its path, without the file passing through the conversation.",
+  "license": "Apache-2.0",
+  "userConfig": {
+    "origin": {
+      "type": "string",
+      "title": "Portego deployment",
+      "description": "The address of your deployment, for example https://share.acme.example. Leave it empty to use the one set with `npx -y portego-upload auth <origin>`.",
+      "sensitive": false
+    }
+  },
+  "mcpServers": {
+    "portego-upload": {
+      "command": "npx",
+      "args": ["-y", "portego-upload"],
+      "env": { "PORTEGO_ORIGIN": "${user_config.origin}" }
+    }
+  }
+}

@@ -23,6 +23,7 @@
     "test:server": "bun test src/server",
     "test:web": "bun test --preload ./src/web/test-setup.ts src/web",
     "test:tools": "bun test tools",
+    "build:upload-tool": "bun run tools/portego-upload/build.ts",
     "test:e2e": "bun run build:web && bun test e2e",
     "test:ci": "bun run build:web && bun run scripts/test-all.ts"
   },

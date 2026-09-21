@@ -1,0 +1,47 @@
+name: Publish portego-upload
+
+# Runs for a tag such as portego-upload-v0.1.0. The version in
+# tools/portego-upload/package.json has to match the tag.
+on:
+  push:
+    tags: ["portego-upload-v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - run: bun install --frozen-lockfile
+
+      - name: The tag matches the package version
+        run: |
+          version=$(jq -r .version tools/portego-upload/package.json)
+          [ "$GITHUB_REF_NAME" = "portego-upload-v$version" ] || {
+            echo "tag $GITHUB_REF_NAME does not match version $version" >&2
+            exit 1
+          }
+
+      - run: bun test tools
+
+      - run: bun run build:upload-tool
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # npm never lets a version be published twice, so a rerun of this job for
+      # the same tag fails here.
+      - run: npm publish
+        working-directory: tools/portego-upload
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -308,10 +308,11 @@ and the flow works only for a person at a terminal.
 
 `tools/portego-upload` closes that gap. It is a stdio MCP server that runs on the
 same machine as the agent, holds its own token, reads the file itself, mints the
-ticket itself, and exposes one tool:
+ticket itself, and exposes two tools:
 
 ```
 upload_artifact_from_path({ path, title?, description?, artifactId? })
+sign_in()
 ```
 
 The agent passes a path and receives the artifact record, plus `newArtifact`
@@ -321,11 +322,38 @@ which is what makes the upload allowable rather than merely possible.
 
 Its client id names `mcp-clients/claude-code.json`, whose document is in
 `tools/portego-upload/`. Install it and its nginx block the same way as any other
-client, with `client_id` set to the URL the document is served from. Then sign
-in once, naming the deployment:
+client, with `client_id` set to the URL the document is served from.
+
+The tool is the npm package `portego-upload`, so nobody needs a clone of this
+repository to use it. It runs on Node 20 or later. In Claude Code, install it as
+a plugin from the marketplace in this repository:
+
+```
+/plugin marketplace add <owner>/<repository>
+/plugin install portego-upload@portego
+```
+
+The plugin asks for the address of the deployment, registers the MCP server,
+and adds a skill, `/portego-upload:share-html`. Any other MCP client starts the
+server with `npx -y portego-upload`, and gives it `PORTEGO_ORIGIN` in the
+server entry's `env`. In Claude Code without the plugin, that is:
 
 ```sh
-bun run tools/portego-upload/index.ts auth https://share.acme.example
+claude mcp add portego-upload --scope user \
+  --env PORTEGO_ORIGIN=https://share.acme.example -- npx -y portego-upload
+```
+
+Nothing else has to be run by hand. The first upload answers that the user is
+not signed in, the agent calls `sign_in`, the browser opens, and the user
+approves. `sign_in` takes no address. Only the user names a deployment, so
+that nothing an agent reads can point uploads somewhere else. When no
+deployment is set at all, the server still starts, and the upload tool answers
+with the command the user has to run.
+
+From a terminal, sign in once and name the deployment:
+
+```sh
+npx -y portego-upload auth https://share.acme.example
 ```
 
 That deployment becomes the default, and the tool needs no environment variable
@@ -336,7 +364,7 @@ portless loopback redirect to match. Over SSH the browser is on the other
 machine, so pin the port and forward it the way Claude Code does:
 
 ```sh
-PORTEGO_CALLBACK_PORT=8765 bun run tools/portego-upload/index.ts auth
+PORTEGO_CALLBACK_PORT=8765 npx -y portego-upload auth
 ```
 
 The token lands in `~/.config/portego/credentials.json` at mode 0600 and
@@ -359,8 +387,13 @@ should stay out of the repository:
 The same binary uploads from a terminal, which is what CI wants:
 
 ```sh
-bun run tools/portego-upload/index.ts upload report.html --title "Weekly report"
+npx -y portego-upload upload report.html --title "Weekly report"
 ```
+
+From a clone, `bun run tools/portego-upload/index.ts` takes the same commands.
+`bun run build:upload-tool` builds the file the package ships. A tag named
+`portego-upload-v<version>` publishes it, through
+`.github/workflows/publish-upload-tool.yml` and the `NPM_TOKEN` secret.
 
 The automated tests cover the parts that do not need those clients: discovery
 documents, the 401 challenge, PKCE authorization through consent to a token,
