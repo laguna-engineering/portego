@@ -45,6 +45,59 @@ export type ArtifactFullProps = {
   onSignOut: () => void;
 };
 
+type HeaderAction = {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  onSelect?: () => void;
+  /** Present on the one action that is a link and not a button. */
+  download?: { href: string; filename: string };
+  disabled?: boolean;
+  pressed?: boolean;
+  expanded?: boolean;
+  keepsMenuOpen?: boolean;
+};
+
+function HeaderControl({
+  action,
+  className,
+  onDone,
+}: {
+  action: HeaderAction;
+  className: string;
+  onDone?: () => void;
+}) {
+  if (action.download) {
+    return (
+      <a
+        className={`button ${className}`}
+        href={action.download.href}
+        download={action.download.filename}
+        onClick={onDone}
+      >
+        {action.icon}
+        <span>{action.label}</span>
+      </a>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={className}
+      disabled={action.disabled}
+      aria-pressed={action.pressed}
+      aria-expanded={action.expanded}
+      onClick={() => {
+        action.onSelect?.();
+        onDone?.();
+      }}
+    >
+      {action.icon}
+      <span>{action.label}</span>
+    </button>
+  );
+}
+
 /**
  * One artifact filling everything below the masthead, which carries the
  * artifact's name, its metadata and the actions on it. The frame scrolls its
@@ -221,6 +274,60 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
     }
   }
 
+  const actions: HeaderAction[] = artifact
+    ? [
+        {
+          id: "copy",
+          label: copied ? "Link copied" : "Copy link",
+          icon: <LinkIcon />,
+          onSelect: () => void copyLink(),
+          keepsMenuOpen: true,
+        },
+        {
+          id: "status",
+          label: artifact.status === "solved" ? "Reopen" : "Mark solved",
+          icon: artifact.status === "solved" ? <ReopenIcon /> : <CheckIcon />,
+          disabled: changing,
+          onSelect: () =>
+            void change(() =>
+              setArtifactStatus(artifact.id, artifact.status === "solved" ? "open" : "solved"),
+            ),
+        },
+        {
+          id: "archive",
+          label: artifact.archivedAt ? "Restore" : "Archive",
+          icon: artifact.archivedAt ? <RestoreIcon /> : <ArchiveIcon />,
+          disabled: changing,
+          onSelect: () => void change(() => setArtifactArchived(artifact.id, !artifact.archivedAt)),
+        },
+        {
+          id: "download",
+          label: "Download source",
+          icon: <DownloadIcon />,
+          download: {
+            href: sourceUrl(artifact.id, viewedVersionId),
+            filename: viewedVersion?.originalFilename ?? artifact.originalFilename,
+          },
+        },
+        {
+          id: "view",
+          label: view === "text" ? "View preview" : "View markdown",
+          icon: view === "text" ? <PreviewIcon /> : <TextIcon />,
+          pressed: view === "text",
+          onSelect: () => setView(view === "text" ? "preview" : "text"),
+        },
+      ]
+    : [];
+
+  const commentsAction: HeaderAction = {
+    id: "comments",
+    label: "Versions & comments",
+    icon: <CommentIcon />,
+    pressed: panelOpen,
+    expanded: panelOpen,
+    onSelect: () => setPanelOpen((open) => !open),
+  };
+
   const header = artifact ? (
     <div className="full-header">
       <div className="full-title">
@@ -230,55 +337,18 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
           {artifact.archivedAt ? <span className="badge">archived</span> : null}
         </h1>
         <p className="detail-meta">
-          {artifact.creator.name} · <RelativeTime iso={artifact.createdAt} /> ·{" "}
-          {formatBytes(artifact.byteSize)} ·{" "}
-          <span className="filename">{artifact.originalFilename}</span>
+          {artifact.creator.name} · <RelativeTime iso={artifact.createdAt} />
+          <span className="meta-extra">
+            {" "}
+            · {formatBytes(artifact.byteSize)} ·{" "}
+            <span className="filename">{artifact.originalFilename}</span>
+          </span>
         </p>
       </div>
       <div className="full-actions">
-        <button type="button" className="icon-button" onClick={() => void copyLink()}>
-          <LinkIcon />
-          <span>{copied ? "Link copied" : "Copy link"}</span>
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          disabled={changing}
-          onClick={() =>
-            void change(() =>
-              setArtifactStatus(artifact.id, artifact.status === "solved" ? "open" : "solved"),
-            )
-          }
-        >
-          {artifact.status === "solved" ? <ReopenIcon /> : <CheckIcon />}
-          <span>{artifact.status === "solved" ? "Reopen" : "Mark solved"}</span>
-        </button>
-        <button
-          type="button"
-          className="icon-button"
-          disabled={changing}
-          onClick={() => void change(() => setArtifactArchived(artifact.id, !artifact.archivedAt))}
-        >
-          {artifact.archivedAt ? <RestoreIcon /> : <ArchiveIcon />}
-          <span>{artifact.archivedAt ? "Restore" : "Archive"}</span>
-        </button>
-        <a
-          className="button icon-button"
-          href={sourceUrl(artifact.id, viewedVersionId)}
-          download={viewedVersion?.originalFilename ?? artifact.originalFilename}
-        >
-          <DownloadIcon />
-          <span>Download source</span>
-        </a>
-        <button
-          type="button"
-          className="icon-button"
-          aria-pressed={view === "text"}
-          onClick={() => setView(view === "text" ? "preview" : "text")}
-        >
-          {view === "text" ? <PreviewIcon /> : <TextIcon />}
-          <span>{view === "text" ? "View preview" : "View markdown"}</span>
-        </button>
+        {actions.map((action) => (
+          <HeaderControl key={action.id} action={action} className="icon-button icon-only" />
+        ))}
       </div>
       {problem ? (
         <p className="problem" role="alert">
@@ -289,17 +359,20 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   ) : null;
 
   const commentsToggle = artifact ? (
-    <button
-      type="button"
-      className="icon-button"
-      aria-pressed={panelOpen}
-      aria-expanded={panelOpen}
-      onClick={() => setPanelOpen((open) => !open)}
-    >
-      <CommentIcon />
-      <span>Versions & comments</span>
-    </button>
+    <HeaderControl action={commentsAction} className="icon-button icon-only" />
   ) : null;
+
+  const menu = artifact
+    ? (close: () => void) =>
+        [...actions, commentsAction].map((action) => (
+          <HeaderControl
+            key={action.id}
+            action={action}
+            className="menu-row"
+            onDone={action.keepsMenuOpen ? undefined : close}
+          />
+        ))
+    : undefined;
 
   let body: ReactNode;
   if (error) {
@@ -361,7 +434,13 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
 
   return (
     <div className="full">
-      <Masthead email={email} onHome={onHome} onSignOut={onSignOut} trailing={commentsToggle}>
+      <Masthead
+        email={email}
+        onHome={onHome}
+        onSignOut={onSignOut}
+        trailing={commentsToggle}
+        menu={menu}
+      >
         {header}
       </Masthead>
       <div className="full-body">

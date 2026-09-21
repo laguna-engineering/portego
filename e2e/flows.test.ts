@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,10 @@ let app: BrowserApp;
 
 beforeAll(async () => {
   app = await startBrowserApp();
+});
+
+afterEach(async () => {
+  await app.closeContexts();
 });
 
 afterAll(async () => {
@@ -223,6 +227,426 @@ describe("the whole flow in a browser", () => {
     // Closed so its live-event stream does not count against the per-user
     // budget the two-browser tests below need.
     await context.close();
+  });
+
+  describe("full-screen masthead tooltips", () => {
+    const CONTROLS = [
+      { role: "button", name: "Copy link" },
+      { role: "button", name: "Mark solved" },
+      { role: "button", name: "Archive" },
+      { role: "link", name: "Download source" },
+      { role: "button", name: "View markdown" },
+      { role: "button", name: "Versions & comments" },
+    ] as const;
+
+    const opacity = (element: Element) => getComputedStyle(element).opacity;
+
+    async function openFullScreen(title: string) {
+      const id = await uploadArtifact(app, { title, html: SELF_CONTAINED_ARTIFACT });
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.goto(`${app.server.origin}/a/${id}/full`);
+      await page.getByRole("button", { name: "Copy link" }).waitFor();
+      return { context, page };
+    }
+
+    test("names each icon-only control below it while the pointer is on it", async () => {
+      const { context, page } = await openFullScreen("Tooltips on hover");
+
+      for (const { role, name } of CONTROLS) {
+        const control = page.getByRole(role, { name });
+        const label = control.locator("span");
+        expect(await label.evaluate(opacity)).toBe("0");
+
+        await control.hover();
+        expect(await label.evaluate(opacity)).toBe("1");
+        expect(await label.innerText()).toBe(name);
+
+        // Below the control, so it never covers the icon it explains.
+        const controlBox = await control.boundingBox();
+        const labelBox = await label.boundingBox();
+        if (!controlBox || !labelBox) throw new Error(`${name} has no box`);
+        expect(labelBox.y).toBeGreaterThanOrEqual(controlBox.y + controlBox.height);
+      }
+
+      // One label at a time: the last control keeps the pointer.
+      expect(
+        await page.getByRole("button", { name: "Copy link" }).locator("span").evaluate(opacity),
+      ).toBe("0");
+
+      await context.close();
+    });
+
+    test("names a control reached with the keyboard", async () => {
+      const { context, page } = await openFullScreen("Tooltips on focus");
+      const control = page.getByRole("button", { name: "Copy link" });
+
+      for (let presses = 0; presses < 10; presses++) {
+        await page.keyboard.press("Tab");
+        if (await control.evaluate((element) => element === document.activeElement)) break;
+      }
+
+      expect(await control.locator("span").evaluate(opacity)).toBe("1");
+
+      await context.close();
+    });
+
+    test("confirms a copied link in the tooltip, the only place the label shows", async () => {
+      const { context, page } = await openFullScreen("Tooltip after copy");
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+
+      await page.getByRole("button", { name: "Copy link" }).click();
+
+      const copied = page.getByRole("button", { name: "Link copied" });
+      await copied.waitFor();
+      expect(await copied.locator("span").evaluate(opacity)).toBe("1");
+
+      await context.close();
+    });
+  });
+
+  describe("full-screen masthead on a phone", () => {
+    const CONTROLS = [
+      { role: "button", name: "Copy link" },
+      { role: "button", name: "Mark solved" },
+      { role: "button", name: "Archive" },
+      { role: "link", name: "Download source" },
+      { role: "button", name: "View markdown" },
+      { role: "button", name: "Versions & comments" },
+    ] as const;
+
+    async function openOnPhone(title: string) {
+      const id = await uploadArtifact(app, { title, html: SELF_CONTAINED_ARTIFACT });
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${app.server.origin}/a/${id}/full`);
+      await page.getByRole("button", { name: "Menu" }).waitFor();
+      return { context, page };
+    }
+
+    test("hides the desktop controls and account block behind a closed toggle", async () => {
+      const { context, page } = await openOnPhone("Phone masthead closed");
+
+      const toggle = page.getByRole("button", { name: "Menu" });
+      expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+
+      for (const { role, name } of CONTROLS) {
+        expect(await page.getByRole(role, { name }).count()).toBe(0);
+      }
+      expect(await page.getByRole("button", { name: "Sign out" }).count()).toBe(0);
+
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(390);
+
+      await context.close();
+    });
+
+    test("shows every action as a visible, labelled row when the menu opens", async () => {
+      const { context, page } = await openOnPhone("Phone masthead open");
+      await page.getByRole("button", { name: "Menu" }).click();
+
+      const menu = page.locator(".masthead-menu");
+      await menu.waitFor();
+
+      for (const { role, name } of CONTROLS) {
+        const row = menu.getByRole(role, { name });
+        expect(await row.isVisible()).toBe(true);
+        expect(await row.innerText()).toContain(name);
+      }
+
+      const download = menu.getByRole("link", { name: "Download source" });
+      expect(await download.getAttribute("href")).toMatch(/\/api\/artifacts\/.+\/source$/);
+      expect(await download.getAttribute("download")).not.toBeNull();
+
+      expect(await menu.getByText("person@acme.example").isVisible()).toBe(true);
+      expect(await menu.getByRole("button", { name: "Sign out" }).isVisible()).toBe(true);
+
+      const toggle = page.getByRole("button", { name: "Close menu" });
+      expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+
+      await context.close();
+    });
+
+    test("closes the menu with the toggle, Escape, or the backdrop", async () => {
+      const { context, page } = await openOnPhone("Phone masthead closing");
+      const toggle = page.getByRole("button", { name: "Menu" });
+      const menu = page.locator(".masthead-menu");
+
+      await toggle.click();
+      await menu.waitFor();
+      await page.getByRole("button", { name: "Close menu" }).click();
+      expect(await menu.count()).toBe(0);
+
+      await toggle.click();
+      await menu.waitFor();
+      await page.keyboard.press("Escape");
+      expect(await menu.count()).toBe(0);
+
+      await toggle.click();
+      await menu.waitFor();
+      // The panel covers the backdrop's upper part, so only a point low in
+      // the viewport reaches the backdrop rather than a row inside the panel.
+      await page.locator(".masthead-menu-backdrop").click({ position: { x: 195, y: 800 } });
+      expect(await menu.count()).toBe(0);
+
+      await context.close();
+    });
+
+    test("confirms a copied link without closing the menu", async () => {
+      const { context, page } = await openOnPhone("Phone masthead copy link");
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+
+      await page.getByRole("button", { name: "Menu" }).click();
+      const menu = page.locator(".masthead-menu");
+      await menu.getByRole("button", { name: "Copy link" }).click();
+
+      await menu.getByRole("button", { name: "Link copied" }).waitFor();
+      expect(await menu.isVisible()).toBe(true);
+
+      await context.close();
+    });
+
+    test("marks an artifact solved from the menu", async () => {
+      const { context, page } = await openOnPhone("Phone masthead solved");
+      const menu = page.locator(".masthead-menu");
+
+      await page.getByRole("button", { name: "Menu" }).click();
+      await menu.getByRole("button", { name: "Mark solved" }).click();
+      expect(await menu.count()).toBe(0);
+
+      await page.getByRole("button", { name: "Menu" }).click();
+      await menu.getByRole("button", { name: "Reopen" }).waitFor();
+      expect(await page.locator(".full-title .badge.solved").count()).toBe(1);
+
+      await context.close();
+    });
+
+    test("switches to markdown and opens comments from the menu", async () => {
+      const id = await uploadArtifact(app, {
+        title: "Phone masthead markdown",
+        html: "<!doctype html><html><title>t</title><h1>A heading</h1><p>Some text.</p></html>",
+      });
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${app.server.origin}/a/${id}/full`);
+      const menu = page.locator(".masthead-menu");
+
+      await page.getByRole("button", { name: "Menu" }).waitFor();
+      await page.getByRole("button", { name: "Menu" }).click();
+      await menu.getByRole("button", { name: "View markdown" }).click();
+      await page.getByText("# A heading").waitFor();
+      expect(await menu.count()).toBe(0);
+
+      await page.getByRole("button", { name: "Menu" }).click();
+      await menu.getByRole("button", { name: "Versions & comments" }).click();
+      await page.getByRole("dialog", { name: "Comments" }).waitFor();
+      expect(await menu.count()).toBe(0);
+
+      await context.close();
+    });
+
+    test("keeps a long title on one line and hides secondary metadata", async () => {
+      const { context, page } = await openOnPhone(
+        "A very long title that would ordinarily wrap onto more than one line on a narrow phone screen",
+      );
+
+      const heading = page.locator(".full-title h1");
+      const box = await heading.boundingBox();
+      if (!box) throw new Error("The title has no box");
+      expect(box.height).toBeLessThan(40);
+
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(390);
+      expect(await page.locator(".full-title .meta-extra").isVisible()).toBe(false);
+
+      await context.close();
+    });
+
+    test("does not show the phone menu toggle at a desktop width", async () => {
+      const id = await uploadArtifact(app, {
+        title: "Desktop masthead",
+        html: SELF_CONTAINED_ARTIFACT,
+      });
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.goto(`${app.server.origin}/a/${id}/full`);
+      await page.getByRole("button", { name: "Copy link" }).waitFor();
+
+      expect(await page.getByRole("button", { name: "Menu" }).count()).toBe(0);
+
+      await context.close();
+    });
+  });
+
+  describe("gallery on a phone", () => {
+    async function openOnPhone() {
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(app.server.origin);
+      await page.getByRole("button", { name: "Menu" }).waitFor();
+      return { context, page };
+    }
+
+    test("hides the account block and the main Upload button behind a closed toggle", async () => {
+      const { context, page } = await openOnPhone();
+
+      const toggle = page.getByRole("button", { name: "Menu" });
+      expect(await toggle.getAttribute("aria-expanded")).toBe("false");
+
+      const mainUpload = page
+        .getByRole("main")
+        .getByRole("button", { name: "Upload", exact: true });
+      expect(await mainUpload.count()).toBe(0);
+      expect(await page.getByText("person@acme.example").isVisible()).toBe(false);
+
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(390);
+
+      await context.close();
+    });
+
+    test("opens a menu with Upload an artifact, the account email, and sign out", async () => {
+      const { context, page } = await openOnPhone();
+
+      await page.getByRole("button", { name: "Menu" }).click();
+      const menu = page.locator(".masthead-menu");
+      await menu.waitFor();
+
+      await menu.getByRole("button", { name: "Upload an artifact" }).waitFor();
+      expect(await menu.getByText("person@acme.example").isVisible()).toBe(true);
+      expect(await menu.getByRole("button", { name: "Sign out" }).isVisible()).toBe(true);
+
+      const toggle = page.getByRole("button", { name: "Close menu" });
+      expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+
+      await context.close();
+    });
+
+    test("opens the upload dialog from the menu and closes the menu first", async () => {
+      const { context, page } = await openOnPhone();
+
+      await page.getByRole("button", { name: "Menu" }).click();
+      const menu = page.locator(".masthead-menu");
+      await menu.getByRole("button", { name: "Upload an artifact" }).click();
+      expect(await menu.count()).toBe(0);
+
+      const dialog = page.getByRole("dialog");
+      await dialog.waitFor();
+      await dialog.getByLabel("Title").waitFor();
+
+      await context.close();
+    });
+
+    test("signs out from the menu", async () => {
+      const { context, page } = await openOnPhone();
+
+      await page.getByRole("button", { name: "Menu" }).click();
+      const menu = page.locator(".masthead-menu");
+      await menu.getByRole("button", { name: "Sign out" }).click();
+
+      await page.getByRole("button", { name: "Continue with Google" }).waitFor();
+
+      await context.close();
+    });
+
+    test("lays out the search field, status chips, sort, and archived toggle", async () => {
+      const { context, page } = await openOnPhone();
+
+      const searchBox = await page.getByLabel("Search artifacts").boundingBox();
+      if (!searchBox) throw new Error("The search field has no box");
+      expect(searchBox.width).toBeGreaterThanOrEqual(340);
+
+      const chipBoxes: { y: number; height: number }[] = [];
+      for (const name of ["All", "Open", "Solved"]) {
+        const box = await page.getByRole("button", { name }).boundingBox();
+        if (!box) throw new Error(`The ${name} chip has no box`);
+        chipBoxes.push(box);
+      }
+      const chipsBottom = Math.max(...chipBoxes.map((box) => box.y + box.height));
+
+      const sortBox = await page.getByLabel("Sort by").boundingBox();
+      const archivedBox = await page.getByLabel("Show archived").boundingBox();
+      if (!sortBox || !archivedBox) throw new Error("The sort or archived control has no box");
+
+      expect(chipsBottom).toBeLessThanOrEqual(sortBox.y);
+      expect(chipsBottom).toBeLessThanOrEqual(archivedBox.y);
+
+      // On the same row: their vertical ranges overlap.
+      expect(sortBox.y).toBeLessThan(archivedBox.y + archivedBox.height);
+      expect(archivedBox.y).toBeLessThan(sortBox.y + sortBox.height);
+
+      expect(sortBox.x + sortBox.width).toBeLessThanOrEqual(390);
+      expect(archivedBox.x + archivedBox.width).toBeLessThanOrEqual(390);
+
+      await context.close();
+    });
+
+    test("changes the URL on another sort and marks Solved pressed", async () => {
+      const { context, page } = await openOnPhone();
+
+      await page.getByLabel("Sort by").selectOption("created-asc");
+      expect(page.url()).toContain("sort=created-asc");
+
+      const solved = page.getByRole("button", { name: "Solved" });
+      await solved.click();
+      expect(await solved.getAttribute("aria-pressed")).toBe("true");
+
+      await context.close();
+    });
+
+    test("lays out cards in one column at full width with no overflow", async () => {
+      await uploadArtifact(app, { title: "Phone column left", html: SELF_CONTAINED_ARTIFACT });
+      await uploadArtifact(app, { title: "Phone column right", html: SELF_CONTAINED_ARTIFACT });
+      const { context, page } = await openOnPhone();
+
+      const first = await page.locator("li.card", { hasText: "Phone column left" }).boundingBox();
+      const second = await page.locator("li.card", { hasText: "Phone column right" }).boundingBox();
+      if (!first || !second) throw new Error("A card has no box");
+
+      expect(second.x).toBe(first.x);
+      expect(second.width).toBe(first.width);
+      expect(first.width).toBeGreaterThanOrEqual(340);
+
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(390);
+
+      await context.close();
+    });
+
+    test("shows the menu without Upload an artifact on the artifact detail page", async () => {
+      const id = await uploadArtifact(app, {
+        title: "Phone detail menu",
+        html: SELF_CONTAINED_ARTIFACT,
+      });
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${app.server.origin}/a/${id}`);
+      await page.getByRole("button", { name: "Menu" }).waitFor();
+
+      await page.getByRole("button", { name: "Menu" }).click();
+      const menu = page.locator(".masthead-menu");
+      await menu.waitFor();
+
+      expect(await menu.getByRole("button", { name: "Upload an artifact" }).count()).toBe(0);
+      expect(await menu.getByRole("button", { name: "Sign out" }).isVisible()).toBe(true);
+
+      await context.close();
+    });
+
+    test("shows no menu toggle and a visible Upload button at a desktop width", async () => {
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.goto(app.server.origin);
+      await page.getByRole("main").getByRole("button", { name: "Upload" }).waitFor();
+
+      expect(await page.getByRole("button", { name: "Menu" }).count()).toBe(0);
+
+      await context.close();
+    });
   });
 
   test("comments on a passage selected inside the artifact", async () => {

@@ -14,6 +14,12 @@ export type BrowserApp = {
   signedIn: () => Promise<BrowserContext>;
   /** A context with no session at all. */
   anonymous: () => Promise<BrowserContext>;
+  /**
+   * Closes every context opened so far. A test that fails before its own close
+   * leaves a live-event stream open, and enough of those use up the per-user
+   * budget that later tests need.
+   */
+  closeContexts: () => Promise<void>;
   stop: () => Promise<void>;
 };
 
@@ -55,8 +61,12 @@ export async function startBrowserApp(): Promise<BrowserApp> {
       return track(await browser.newContext());
     },
 
+    async closeContexts() {
+      for (const context of contexts.splice(0)) await context.close();
+    },
+
     async stop() {
-      for (const context of contexts) await context.close();
+      await this.closeContexts();
       await browser.close();
       server.stop();
     },

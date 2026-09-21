@@ -143,6 +143,8 @@ h3 {
 .full {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  /* Without the zero minimum a long title on one line widens the page. */
+  grid-template-columns: minmax(0, 1fr);
   height: 100dvh;
 }
 
@@ -187,6 +189,35 @@ button:disabled {
 .icon-button[aria-pressed="true"] {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* The label becomes a tooltip below the icon. It stays in the button, so it
+   is still the accessible name. */
+.icon-button.icon-only {
+  position: relative;
+  padding: 0.35rem 0.5rem;
+}
+
+.icon-button.icon-only span {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.4rem;
+  background: var(--ink);
+  color: var(--page);
+  font-size: 0.72rem;
+  font-weight: 400;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.icon-button.icon-only:hover span,
+.icon-button.icon-only:focus-visible span {
+  opacity: 1;
 }
 
 .icon {
@@ -522,9 +553,39 @@ label {
     white-space: nowrap;
   }
 
-  .gallery-controls {
-    flex-direction: column;
-    align-items: stretch;
+  /* Upload is in the masthead menu. */
+  .gallery-controls > button {
+    display: none;
+  }
+
+  .filters {
+    gap: 0.75rem;
+  }
+
+  .chips {
+    flex: 1 1 100%;
+  }
+
+  .sort {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .sort label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .sort select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .toggle {
+    flex: none;
   }
 
   .cards {
@@ -824,7 +885,6 @@ button.link {
   justify-content: space-between;
   gap: 0.75rem 1rem;
   flex-wrap: wrap;
-  container-type: inline-size;
 }
 
 /* Title and metadata share one line, so the masthead keeps the height it has
@@ -882,16 +942,130 @@ button.link {
   }
 }
 
-/* The labelled actions alone need most of this width, so below it they show
-   their icons only, the way every icon button does on a narrow window. */
-@container (max-width: 56rem) {
-  .full-actions .icon-button span {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
+.menu-toggle,
+.masthead-menu,
+.masthead-menu-backdrop {
+  display: none;
+}
+
+/* On a phone the masthead is the wordmark with the menu button, and full
+   screen a second row with the title. Everything else moves into the menu. */
+@media (max-width: 34rem) {
+  .masthead {
+    gap: 0.5rem 0.75rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  /* Its children join the masthead's own rows. */
+  .full-header {
+    display: contents;
+  }
+
+  .full-actions,
+  .masthead-end,
+  .full-title .meta-extra {
+    display: none;
+  }
+
+  /* Above the backdrop, so the same button closes the menu. */
+  .menu-toggle {
+    display: inline-flex;
+    position: relative;
+    z-index: 20;
+    padding: 0.35rem 0.5rem;
+  }
+
+  .full-title {
+    order: 1;
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    gap: 0.6rem;
+  }
+
+  .full-title h1 {
+    font-size: 1rem;
+    min-width: 0;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .full-title .detail-meta {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .full-header .problem {
+    order: 2;
+  }
+
+  .masthead-menu-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 15;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    padding: 0;
+    cursor: default;
+  }
+
+  .masthead-menu {
+    display: grid;
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0.75rem;
+    right: 0.75rem;
+    z-index: 20;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .menu-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    padding: 0.65rem 1rem;
+    font-size: 0.9rem;
+    text-align: left;
+  }
+
+  .menu-row:hover {
+    background: var(--surface-sunken);
+  }
+
+  .menu-row[aria-pressed="true"] {
+    color: var(--accent);
+  }
+
+  .masthead-menu-account {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.65rem 1rem;
+    border-top: 1px solid var(--line);
+    font-size: 0.8rem;
+    color: var(--ink-muted);
+  }
+
+  .masthead-menu-account span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .masthead-menu-account button {
+    flex: none;
+    color: var(--ink);
   }
 }
 

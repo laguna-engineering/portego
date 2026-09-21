@@ -11,6 +11,7 @@ import {
   startSignIn,
 } from "./api.ts";
 import { Gallery } from "./Gallery.tsx";
+import { UploadIcon } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
 import { Masthead } from "./Masthead.tsx";
 import { McpConsent } from "./McpConsent.tsx";
@@ -124,7 +125,28 @@ export function App() {
   };
 
   const masthead = (
-    <Masthead email={session.user.email} onHome={() => navigate("/")} onSignOut={handleSignOut} />
+    <Masthead
+      email={session.user.email}
+      onHome={() => navigate("/")}
+      onSignOut={handleSignOut}
+      menu={
+        route.name === "gallery"
+          ? (close) => (
+              <button
+                type="button"
+                className="menu-row"
+                onClick={() => {
+                  close();
+                  setUploading(true);
+                }}
+              >
+                <UploadIcon />
+                Upload an artifact
+              </button>
+            )
+          : undefined
+      }
+    />
   );
 
   // The full-screen view gives the artifact every pixel the masthead does not
