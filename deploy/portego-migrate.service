@@ -1,0 +1,46 @@
+[Unit]
+Description=Apply the portego database schema
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=portego
+Group=portego
+# `bun run migrate` runs src/server/migrate.ts, so the release directory keeps
+# its source tree and node_modules. It cannot be pruned to dist/.
+WorkingDirectory=/srv/portego/current
+EnvironmentFile=/etc/portego.env
+ExecStart=/usr/local/bin/bun run migrate
+
+StateDirectory=portego
+StateDirectoryMode=0750
+UMask=0027
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectClock=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# A blocked call returns ENOSYS instead of killing the process with SIGSYS. The
+# allowlist is the set of syscall names the systemd on the host knows, so a
+# syscall newer than that systemd is absent from it even when it is ordinary.
+# Bun calls close_range, which an older systemd does not know: without this the
+# process dies on the first such call, and with it Bun reads ENOSYS and uses
+# its fallback. A privileged syscall is still refused, and still never runs.
+SystemCallErrorNumber=ENOSYS

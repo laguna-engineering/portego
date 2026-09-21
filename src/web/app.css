@@ -1,0 +1,959 @@
+:root {
+  color-scheme: light dark;
+
+  --page: #fbfbf9;
+  --surface: #ffffff;
+  --surface-sunken: #f2f2ef;
+  --ink: #16161a;
+  --ink-muted: #5f6068;
+  --line: #deddda;
+  --accent: #4338ca;
+  --accent-ink: #ffffff;
+  --danger: #b3261e;
+
+  --radius: 0.75rem;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--page);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #121215;
+    --surface: #1b1b20;
+    --surface-sunken: #232329;
+    --ink: #ececef;
+    --ink-muted: #a0a0aa;
+    --line: #33333c;
+    --accent: #a5b4fc;
+    --accent-ink: #16161a;
+    --danger: #f2b8b5;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+.shell {
+  max-width: 68rem;
+  margin: 0 auto;
+  padding: 0 1rem 4rem;
+}
+
+/* Masthead ---------------------------------------------------------------- */
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  /* The full window on every page, held at the top while the content below it
+     scrolls. Same width and place full screen, so moving between the two does
+     not shift it. The background keeps the content from showing through. */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--page);
+}
+
+.wordmark {
+  font-family: var(--mono);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  border: 0;
+  background: none;
+  color: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.wordmark::after {
+  content: ".";
+  color: var(--accent);
+}
+
+.masthead-end {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+/* The full-screen view: masthead on top, artifact over the rest. The frame
+   scrolls its own document, so the page itself never scrolls. */
+.full {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+}
+
+.full .masthead {
+  margin-bottom: 0;
+}
+
+/* Controls ---------------------------------------------------------------- */
+
+button,
+.button {
+  font: inherit;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+button:hover,
+.button:hover {
+  border-color: var(--ink-muted);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.icon-button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.icon {
+  flex: none;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 550;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: inherit;
+}
+
+label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 550;
+  color: var(--ink-muted);
+  margin-bottom: 0.25rem;
+}
+
+.gallery-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.search {
+  flex: 1;
+}
+
+.hint {
+  color: var(--ink-muted);
+}
+
+[role="alert"] {
+  color: var(--danger);
+}
+
+/* Cards ------------------------------------------------------------------- */
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: 0.85rem;
+}
+
+.card {
+  /* The row makes every card as tall as the tallest one. The link has to fill
+     that height, or a short card stops responding below its own text. */
+  display: grid;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition:
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.card-link {
+  display: grid;
+  grid-template-columns: 2.75rem 1fr;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  color: inherit;
+  text-decoration: none;
+  /* Fills the card, and keeps the text at the top of the space it gained. */
+  align-content: start;
+}
+
+.card-mark {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.6rem;
+  display: grid;
+  place-items: center;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.card-body {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.card-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.card-description {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-meta {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.more {
+  margin: 1.25rem auto 0;
+  display: block;
+}
+
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  padding: 3rem 1rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-muted);
+  text-align: center;
+}
+
+/* Sign-in ----------------------------------------------------------------- */
+
+.signin {
+  max-width: 26rem;
+  margin: 6rem auto;
+  padding: 0 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.providers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.providers button {
+  width: 100%;
+}
+
+/* Upload dialog ----------------------------------------------------------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgb(0 0 0 / 0.45);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.dialog {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  width: min(34rem, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  padding: 1.25rem;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.dialog-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.dialog form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.dropzone {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  padding: 1.25rem;
+  display: grid;
+  gap: 0.6rem;
+  text-align: center;
+}
+
+.dropzone.dragging {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.dropzone label {
+  margin: 0;
+}
+
+.chosen {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.problem {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* Detail ------------------------------------------------------------------ */
+
+.detail {
+  display: grid;
+  gap: 1rem;
+}
+
+.back {
+  justify-self: start;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--ink-muted);
+}
+
+.detail-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.5rem;
+  overflow-wrap: anywhere;
+}
+
+.detail-description {
+  margin: 0 0 0.5rem;
+  color: var(--ink-muted);
+}
+
+.detail-meta {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.detail-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.preview {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #ffffff;
+}
+
+.preview-full {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #ffffff;
+}
+
+.digest {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.digest code,
+.filename {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 34rem) {
+  /* Only the icons fit on a phone. The text stays for assistive technology. */
+  .icon-button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .gallery-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.scopes {
+  list-style: none;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  display: grid;
+  gap: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  font-size: 0.9rem;
+}
+
+.scopes li::before {
+  content: "→ ";
+  color: var(--accent);
+}
+
+.views {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.view {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  padding: 0.4rem 0.7rem;
+  color: var(--ink-muted);
+}
+
+.view.selected {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+  font-weight: 550;
+}
+
+.text-view {
+  margin: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 32rem;
+  overflow: auto;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Offered rather than applied: a gallery the reader has paged through is not
+   rebuilt underneath them. */
+.stale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+}
+
+.stale p {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.chips {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.chips legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.chip {
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.chip.selected {
+  border-color: var(--accent);
+  color: var(--ink);
+  font-weight: 550;
+}
+
+.sort {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sort label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.sort select {
+  width: auto;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.toggle input {
+  width: auto;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--ink-muted);
+}
+
+.badge.solved {
+  border-color: color-mix(in oklab, var(--accent) 60%, transparent);
+  color: var(--accent);
+}
+
+.card-title .badge {
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.comments {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.comments h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.comments ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.comments li {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.8rem;
+  background: var(--surface);
+}
+
+.comment-meta {
+  margin: 0 0 0.25rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.comment-meta .badge {
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.comment-body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comments form {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: start;
+  width: 100%;
+}
+
+.comment.focused {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.comment-quote {
+  display: block;
+  width: 100%;
+  margin: 0 0 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border: 0;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 0.35rem 0.35rem 0;
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+/* Specific enough to win over the `.comments ul` and `.comments li` rules. */
+.comments ul.comment-replies {
+  margin: 0.75rem 0 0;
+  padding: 0 0 0 0.75rem;
+  border-left: 2px solid var(--line);
+  gap: 0.6rem;
+}
+
+.comments li.comment.reply {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: none;
+}
+
+.reply-form {
+  display: grid;
+  gap: 0.4rem;
+  justify-items: start;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.reply-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.pending-selection {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.pending-selection .comment-quote {
+  flex: 1;
+  cursor: default;
+}
+
+button.link {
+  border: 0;
+  background: none;
+  padding: 0 0 0 0.5rem;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-decoration: underline;
+}
+
+/* Full-screen header --------------------------------------------------- */
+
+/* The artifact's name, metadata and actions, between the wordmark and the
+   account. It takes the room the two ends leave and wraps below them when
+   the window is narrow. */
+.full-header {
+  flex: 1 1 24rem;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  flex-wrap: wrap;
+}
+
+/* Title and metadata share one line, so the masthead keeps the height it has
+   on every other page. */
+.full-title {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.full-title h1 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.full-title h1 .badge {
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.full-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.full-header .problem {
+  flex-basis: 100%;
+}
+
+/* The row below the masthead: the artifact on the left, the comments panel
+   sliding over its right edge without displacing it. */
+.full-body {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  /* The closed panel is translated out to the right. Without clipping, it
+     still counts as overflow: the page grows a horizontal scrollbar while the
+     panel is closed and loses it as the panel opens, relaying out everything.
+     `clip` rather than `hidden`, so this is not a scroll container: focusing
+     or scrolling to something in the panel while it slides in would otherwise
+     scroll the artifact sideways to reach it. */
+  overflow: clip;
+}
+
+.full-body > *:not(.comments-panel) {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The text view scrolls inside the grid row, so the masthead stays put. */
+.full-text {
+  overflow: auto;
+  padding: 1rem;
+}
+
+.full-text .text-view {
+  border: 0;
+  padding: 0;
+  background: none;
+}
+
+/* Comments panel ------------------------------------------------------ */
+
+/* Slides over the artifact's right edge, like Google Docs, so a reader keeps
+   their place while discussing a passage. */
+.comments-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 24rem;
+  max-width: 100vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--line);
+  transform: translateX(100%);
+  transition: transform 0.2s ease;
+  z-index: 5;
+}
+
+.comments-panel.open {
+  transform: translateX(0);
+}
+
+.comments-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.comments-panel-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* Versions ------------------------------------------------------------- */
+
+.versions {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.versions h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
+.versions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.version-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.version-row.selected {
+  border-color: var(--accent);
+}
+
+.version-number {
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.version-meta {
+  margin-left: auto;
+  color: var(--ink-muted);
+  font-size: 0.72rem;
+}
+
+/* The comment control that appears beside a selection in the artifact. */
+.selection-overlay {
+  position: fixed;
+  z-index: 20;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.selection-overlay:hover {
+  border-color: var(--accent);
+  filter: brightness(1.1);
+}

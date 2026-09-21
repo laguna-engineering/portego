@@ -1,0 +1,58 @@
+title = "portego"
+
+# Deployment details stay out of this repository (see CLAUDE.md). These rules
+# catch the generic forms. An operator can add a private second configuration
+# at .git/gitleaks-private.toml, which the hooks in scripts/git-hooks also run.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "ipv4-address"
+description = "IPv4 literal. Write <host-ipv4> or use a documentation range."
+regex = '''\b(?:(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\b'''
+
+  [[rules.allowlists]]
+  description = "Loopback, unspecified, private, and documentation ranges"
+  regexTarget = "match"
+  regexes = [
+    '''^127\.''',
+    '''^0\.0\.0\.0$''',
+    '''^10\.''',
+    '''^192\.168\.''',
+    '''^192\.0\.2\.''',
+    '''^198\.51\.100\.''',
+    '''^203\.0\.113\.''',
+  ]
+
+  [[rules.allowlists]]
+  description = "Lockfile versions and browser version strings"
+  paths = ['''bun\.lock$''']
+
+[[rules]]
+id = "ipv6-global-address"
+description = "Global IPv6 literal. Write <host-ipv6> or use 2001:db8::/32."
+regex = '''(?i)\b[23][0-9a-f]{3}:(?:[0-9a-f]{0,4}:){1,6}[0-9a-f]{0,4}\b'''
+
+  [[rules.allowlists]]
+  regexTarget = "match"
+  regexes = ['''(?i)^2001:0?db8:''']
+
+  [[rules.allowlists]]
+  paths = ['''bun\.lock$''']
+
+[[rules]]
+id = "hosting-provider"
+description = "Hosting provider name. The provider of a deployment is private."
+regex = '''(?i)\b(?:hetzner|digitalocean|linode|vultr|ovhcloud|contabo|scaleway|netcup|ionos)\b'''
+
+  [[rules.allowlists]]
+  paths = ['''\.gitleaks\.toml$''']
+
+[[rules]]
+id = "agent-session-reference"
+description = "Link or trailer that identifies a private agent session."
+regex = '''(?i)(?:claude\.ai/code/session_|^claude-session:)'''
+
+  [[rules.allowlists]]
+  paths = ['''\.gitleaks\.toml$''']

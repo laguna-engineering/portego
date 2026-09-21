@@ -1,0 +1,53 @@
+{
+  "name": "portego",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run scripts/dev.ts",
+    "dev:server": "bun --hot src/server/index.ts",
+    "dev:web": "vite",
+    "dev:issuer": "bun run scripts/dev-issuer.ts",
+    "build": "bun run build:web && bun run build:server",
+    "build:web": "vite build",
+    "build:server": "bun build src/server/index.ts --target=bun --outdir dist/server",
+    "migrate": "bun run src/server/migrate.ts",
+    "reconcile": "bun run src/server/storage/reconcile.ts",
+    "merge-artifacts": "bun run src/server/storage/merge.ts",
+    "start": "NODE_ENV=production bun run dist/server/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "bun run test:server && bun run test:web",
+    "test:server": "bun test src/server",
+    "test:web": "bun test --preload ./src/web/test-setup.ts src/web",
+    "test:e2e": "bun run build:web && bun test e2e",
+    "test:ci": "bun run build:web && bun run scripts/test-all.ts"
+  },
+  "dependencies": {
+    "@better-auth/cimd": "1.7.4",
+    "@better-auth/mcp": "1.7.4",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "better-auth": "1.7.4",
+    "hono": "4.13.5",
+    "parse5": "8.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@happy-dom/global-registrator": "20.13.2",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/bun": "1.4.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "@vitejs/plugin-react": "6.1.1",
+    "concurrently": "10.0.5",
+    "jose": "6.2.3",
+    "playwright": "1.62.1",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  }
+}

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Blocks a commit that stages a secret or a deployment detail (.gitleaks.toml).
+# Enable with: git config core.hooksPath scripts/git-hooks
+set -e
+command -v gitleaks >/dev/null || {
+  echo "gitleaks is not installed: https://github.com/gitleaks/gitleaks" >&2
+  exit 1
+}
+root=$(git rev-parse --show-toplevel)
+private=$(git rev-parse --absolute-git-dir)/gitleaks-private.toml
+
+gitleaks git --pre-commit --staged --no-banner --redact --config "$root/.gitleaks.toml"
+if [ -f "$private" ]; then
+  gitleaks git --pre-commit --staged --no-banner --redact --config "$private"
+fi

@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Tests build their own temporary directories and databases. Nothing here
+  # points at a deployment, and no OAuth credential is available to CI.
+  NODE_ENV: test
+
+jobs:
+  verify:
+    name: Lint, types, tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      # Frozen: CI installs what the lockfile says and fails if it cannot.
+      - run: bun install --frozen-lockfile
+
+      - name: Lint and formatting
+        run: bun run lint
+
+      - name: Types
+        run: bun run typecheck
+
+      - name: Production build
+        run: bun run build
+
+      # Downloading Chromium is the slow part of this job. The lockfile is the
+      # key, so a Playwright upgrade fetches a new browser and nothing else
+      # does.
+      - name: Cache the browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+
+      - name: Browser for the end-to-end tests
+        run: bun x playwright install --with-deps chromium
+
+      # Server, component, and browser suites. A skipped test fails the run.
+      - name: Tests
+        run: bun run test:ci
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - run: bun install --frozen-lockfile
+
+      # A high or critical advisory fails the build. Fixing it means upgrading
+      # the dependency, or recording why it does not apply with an explicit
+      # --ignore and a comment here.
+      - name: Fail on high and critical advisories
+        run: bun audit --audit-level=high
+
+      # Everything below that is reported and left to a person to judge.
+      - name: Report every advisory
+        if: always()
+        run: bun audit || true
+
+  leaks:
+    name: Secrets and deployment details
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The whole history: a detail removed in a later commit is still public.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz -C "$RUNNER_TEMP" gitleaks
+          rm gitleaks.tar.gz
+
+      - name: File contents in every commit
+        run: '"$RUNNER_TEMP/gitleaks" git --no-banner --redact --config .gitleaks.toml'
+
+      - name: Commit messages
+        run: git log --format=%B | "$RUNNER_TEMP/gitleaks" stdin --no-banner --redact --config .gitleaks.toml
+
+      - name: Pull request title and description
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: printf '%s\n%s\n' "$PR_TITLE" "$PR_BODY" | "$RUNNER_TEMP/gitleaks" stdin --no-banner --redact --config .gitleaks.toml

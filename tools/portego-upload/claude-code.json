@@ -1,0 +1,9 @@
+{
+  "client_id": "https://share.acme.example/mcp-clients/claude-code.json",
+  "client_name": "Claude Code (local upload)",
+  "redirect_uris": ["http://localhost/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none",
+  "scope": "artifacts:read artifacts:write"
+}

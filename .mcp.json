@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "portego-upload": {
+      "command": "bun",
+      "args": ["run", "tools/portego-upload/index.ts"]
+    }
+  }
+}
