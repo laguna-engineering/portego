@@ -6,6 +6,7 @@ dist/
 *.tsbuildinfo
 
 # Local secrets and runtime data
+.claude/settings.local.json
 .env
 .env.*
 !.env.example
