@@ -30,6 +30,7 @@ import { dirname, join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import packageJson from "./package.json" with { type: "json" };
 import { parseStore, resolveOrigin, type Store, type Token, withToken } from "./store.ts";
 
 const CREDENTIALS_PATH =
@@ -436,7 +437,7 @@ async function upload(options: {
 
 async function serve(): Promise<void> {
   const server = new McpServer(
-    { name: "portego-upload", version: "1.0.0" },
+    { name: "portego-upload", version: packageJson.version },
     {
       instructions:
         "When a tool says the user is not signed in, call sign_in and tell the user to approve " +

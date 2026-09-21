@@ -36,6 +36,17 @@ async function uploadError(): Promise<string> {
   return result.content[0]?.text ?? "";
 }
 
+// A client shows this version to the person, who compares it with the npm
+// package and with the plugin to see which release is running.
+test("reports the version of the package, which the plugin shares", async () => {
+  const packageJson = await Bun.file(join(import.meta.dir, "package.json")).json();
+  const plugin = await Bun.file(
+    join(import.meta.dir, "../../plugins/portego-upload/.claude-plugin/plugin.json"),
+  ).json();
+  expect(client.getServerVersion()?.version).toBe(packageJson.version);
+  expect(plugin.version).toBe(packageJson.version);
+});
+
 // An MCP client shows a server that exits at startup as "failed" and the agent
 // never learns why, so nobody is told how to set the tool up.
 describe("a first run with no deployment set", () => {
