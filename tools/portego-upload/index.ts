@@ -41,7 +41,7 @@ const ORIGIN = process.env.PORTEGO_ORIGIN.replace(/\/+$/, "");
 const CLIENT_ID = process.env.PORTEGO_CLIENT_ID ?? `${ORIGIN}/mcp-clients/claude-code.json`;
 /** 0 asks the OS for a free port. Set this only to pin one, as SSH forwarding needs. */
 const CALLBACK_PORT = Number(process.env.PORTEGO_CALLBACK_PORT ?? "0");
-const SCOPE = "artifacts:read artifacts:write";
+const SCOPE = "artifacts:read artifacts:write offline_access";
 /** The token's audience. Omitting it yields a token the MCP endpoint refuses. */
 const RESOURCE = `${ORIGIN}/mcp`;
 

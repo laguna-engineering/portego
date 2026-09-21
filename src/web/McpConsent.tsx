@@ -9,6 +9,7 @@ export type McpConsentProps = {
 const SCOPE_LABELS: Record<string, string> = {
   "artifacts:read": "List and read shared artifacts",
   "artifacts:write": "Upload new artifacts as you",
+  offline_access: "Stay signed in until a week passes without use",
 };
 
 export function McpConsent({ query }: McpConsentProps) {

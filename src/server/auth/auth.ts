@@ -7,10 +7,12 @@ import { jwt } from "better-auth/plugins";
 import { type GenericOAuthConfig, genericOAuth } from "better-auth/plugins/generic-oauth";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth/types";
 import { fetchClientMetadataResource } from "./client-metadata.ts";
-import { type AuthConfig, MCP_SCOPES } from "./config.ts";
+import { type AuthConfig, MCP_SCOPES, REFRESH_SCOPE } from "./config.ts";
 import { admits, type Identity } from "./policy.ts";
 
 const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
+// Each refresh rotates the token and restarts this lifetime, so it measures inactivity.
+const REFRESH_TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
 
 export type CreateAuthOptions = {
   config: AuthConfig;
@@ -108,9 +110,10 @@ export function createAuth({ config, database }: CreateAuthOptions) {
         resource: config.mcp.resource,
         loginPage: config.mcp.loginPage,
         consentPage: config.mcp.consentPage,
-        scopes: [...MCP_SCOPES],
+        scopes: [...MCP_SCOPES, REFRESH_SCOPE],
         clientRegistrationDefaultScopes: [...MCP_SCOPES],
-        clientRegistrationAllowedScopes: [...MCP_SCOPES],
+        clientRegistrationAllowedScopes: [...MCP_SCOPES, REFRESH_SCOPE],
+        refreshTokenExpiresIn: REFRESH_TOKEN_LIFETIME_SECONDS,
         clientRegistrationRequirePKCE: true,
         allowDynamicClientRegistration: config.mcp.allowDynamicClientRegistration,
       }),

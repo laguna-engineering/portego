@@ -5,6 +5,9 @@ import { type PublicProvider, type ResolvedProvider, resolveProviders } from "./
 /** Scopes an MCP client can hold. Reads and writes are separate on purpose. */
 export const MCP_SCOPES = ["artifacts:read", "artifacts:write"] as const;
 
+/** Without this scope the token endpoint issues no refresh token. */
+export const REFRESH_SCOPE = "offline_access";
+
 export type McpConfig = {
   /** The exact MCP URL. Tokens are bound to it as their audience. */
   resource: string;

@@ -5,5 +5,5 @@
   "grant_types": ["authorization_code", "refresh_token"],
   "response_types": ["code"],
   "token_endpoint_auth_method": "none",
-  "scope": "artifacts:read artifacts:write"
+  "scope": "artifacts:read artifacts:write offline_access"
 }

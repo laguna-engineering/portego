@@ -7,6 +7,7 @@ import type { LiveTestServer } from "../testing.ts";
 
 export type McpClient = {
   accessToken: string;
+  refreshToken?: string;
   scope: string;
   call: (body: unknown, init?: { token?: string }) => Promise<Response>;
 };
@@ -21,6 +22,7 @@ export async function registerClient(
   server: LiveTestServer,
   cookie: string,
   scope = "artifacts:read artifacts:write",
+  grantTypes = ["authorization_code"],
 ): Promise<string> {
   const response = await fetch(`${server.origin}/api/auth/oauth2/create-client`, {
     method: "POST",
@@ -29,7 +31,7 @@ export async function registerClient(
       client_name: "Test MCP client",
       redirect_uris: ["https://client.test/callback"],
       token_endpoint_auth_method: "none",
-      grant_types: ["authorization_code"],
+      grant_types: grantTypes,
       scope,
     }),
   });
@@ -97,13 +99,18 @@ export async function authorizeClient(
       resource: `${server.origin}/mcp`,
     }),
   });
-  const tokenBody = (await token.json()) as { access_token?: string; scope?: string };
+  const tokenBody = (await token.json()) as {
+    access_token?: string;
+    refresh_token?: string;
+    scope?: string;
+  };
   if (!tokenBody.access_token) {
     throw new Error(`Token request failed: ${JSON.stringify(tokenBody)}`);
   }
 
   return {
     accessToken: tokenBody.access_token,
+    refreshToken: tokenBody.refresh_token,
     scope: tokenBody.scope ?? "",
     call: (body, init) =>
       fetch(`${server.origin}/mcp`, {
