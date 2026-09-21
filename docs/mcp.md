@@ -322,12 +322,14 @@ which is what makes the upload allowable rather than merely possible.
 Its client id names `mcp-clients/claude-code.json`, whose document is in
 `tools/portego-upload/`. Install it and its nginx block the same way as any other
 client, with `client_id` set to the URL the document is served from. Then sign
-in once. `PORTEGO_ORIGIN` is required and names the deployment:
+in once, naming the deployment:
 
 ```sh
-export PORTEGO_ORIGIN=https://share.acme.example
-bun run tools/portego-upload/index.ts auth
+bun run tools/portego-upload/index.ts auth https://share.acme.example
 ```
+
+That deployment becomes the default, and the tool needs no environment variable
+afterwards.
 
 The callback binds a free port the OS picks, and its document registers a
 portless loopback redirect to match. Over SSH the browser is on the other
@@ -338,9 +340,21 @@ PORTEGO_CALLBACK_PORT=8765 bun run tools/portego-upload/index.ts auth
 ```
 
 The token lands in `~/.config/portego/credentials.json` at mode 0600 and
-refreshes on its own. A token is stored against the origin that issued it, so
-changing `PORTEGO_ORIGIN` asks for a fresh sign-in rather than sending
-the wrong token.
+refreshes on its own. The file holds one token for each origin, so a token is
+never sent to a deployment that did not issue it.
+
+`PORTEGO_ORIGIN` overrides the default, which is how one project uses another
+deployment. Set it where the project's MCP client starts the tool, then run
+`auth` with no argument once in that environment. The default stays as it was.
+In Claude Code, the `env` block of the server's `.mcp.json` entry does this.
+The `env` key of `.claude/settings.json` or `.claude/settings.local.json` also
+reaches a stdio server in Claude Code 2, although its documentation does not
+promise that. The local file is not committed, so it suits a hostname that
+should stay out of the repository:
+
+```json
+{ "env": { "PORTEGO_ORIGIN": "https://other.acme.example" } }
+```
 
 The same binary uploads from a terminal, which is what CI wants:
 

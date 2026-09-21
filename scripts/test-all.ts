@@ -8,6 +8,7 @@
 const SUITES = [
   { name: "server", command: ["bun", "test", "src/server"] },
   { name: "web", command: ["bun", "test", "--preload", "./src/web/test-setup.ts", "src/web"] },
+  { name: "tools", command: ["bun", "test", "tools"] },
   { name: "browser", command: ["bun", "test", "e2e"] },
 ];
 
