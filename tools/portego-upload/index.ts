@@ -20,8 +20,11 @@
  *   bun run tools/portego-upload/index.ts upload <file>   upload from a terminal
  *   bun run tools/portego-upload/index.ts                 serve MCP over stdio
  */
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -45,31 +48,54 @@ const [COMMAND, ...ARGUMENTS] = process.argv.slice(2);
 /** `auth <origin>` names the deployment and makes it the default. */
 const AUTH_ORIGIN = COMMAND === "auth" ? ARGUMENTS[0] : undefined;
 
-const resolvedOrigin = resolveOrigin({
-  env: process.env.PORTEGO_ORIGIN,
-  argument: AUTH_ORIGIN,
-  store: readStore(),
-});
-if (!resolvedOrigin) {
-  console.error(
-    "No deployment is set. Run: bun run tools/portego-upload/index.ts auth <origin>, " +
-      "e.g. https://share.acme.example, or set PORTEGO_ORIGIN.",
-  );
-  process.exit(1);
-}
-const ORIGIN: string = resolvedOrigin;
+/** How a person starts this tool, for the messages that tell them to. */
+const SELF = "bun run tools/portego-upload/index.ts";
+
+const SETUP_NEEDED =
+  "No Portego deployment is set on this machine. Ask the user for the address of their " +
+  `deployment, and have them run this in a terminal: ${SELF} auth <origin> ` +
+  "(in Claude Code they can type it after a `!`). Do not guess the address.";
+
+type Deployment = {
+  origin: string;
+  /**
+   * The URL of a Client ID Metadata Document, which is how the server expects a
+   * client to register (docs/mcp.md). Its document registers a portless
+   * loopback redirect, so the callback can bind whatever port is free: a
+   * loopback redirect URI matches on everything but the port (RFC 8252).
+   */
+  clientId: string;
+  /** The token's audience. Omitting it yields a token the MCP endpoint refuses. */
+  resource: string;
+};
+
+let resolved: Deployment | undefined;
+
 /**
- * The client id is the URL of a Client ID Metadata Document, which is how this
- * server expects a client to register (docs/mcp.md). Its document registers a
- * portless loopback redirect, so the callback can bind whatever port is free:
- * a loopback redirect URI matches on everything but the port (RFC 8252).
+ * Not cached while it is missing: a stdio server started before the first
+ * setup picks the deployment up on the next call, without a restart.
  */
-const CLIENT_ID = process.env.PORTEGO_CLIENT_ID ?? `${ORIGIN}/mcp-clients/claude-code.json`;
+function deployment(): Deployment {
+  if (resolved) return resolved;
+  const origin = resolveOrigin({
+    env: process.env.PORTEGO_ORIGIN,
+    argument: AUTH_ORIGIN,
+    store: readStore(),
+  });
+  if (!origin) throw new UploadError(SETUP_NEEDED);
+  resolved = {
+    origin,
+    clientId: process.env.PORTEGO_CLIENT_ID ?? `${origin}/mcp-clients/claude-code.json`,
+    resource: `${origin}/mcp`,
+  };
+  return resolved;
+}
+
 /** 0 asks the OS for a free port. Set this only to pin one, as SSH forwarding needs. */
 const CALLBACK_PORT = Number(process.env.PORTEGO_CALLBACK_PORT ?? "0");
 const SCOPE = "artifacts:read artifacts:write offline_access";
-/** The token's audience. Omitting it yields a token the MCP endpoint refuses. */
-const RESOURCE = `${ORIGIN}/mcp`;
+/** A person has this long to finish in the browser before the listener closes. */
+const SIGN_IN_TIMEOUT_MS = 5 * 60 * 1000;
 
 /** Refresh this far before expiry so a slow upload cannot start on a dead token. */
 const REFRESH_SKEW_SECONDS = 60;
@@ -101,13 +127,13 @@ class UploadError extends Error {}
 
 // A token is bound to the origin that issued it, so each origin has its own.
 function loadToken(): Token | null {
-  return readStore().tokens[ORIGIN] ?? null;
+  return readStore().tokens[deployment().origin] ?? null;
 }
 
 async function saveToken(token: Token, options: { makeDefault: boolean }): Promise<void> {
   // Read again: another project's process can have refreshed its own token
   // since this one started.
-  const store = withToken(readStore(), ORIGIN, token, options);
+  const store = withToken(readStore(), deployment().origin, token, options);
   await mkdir(dirname(CREDENTIALS_PATH), { recursive: true, mode: 0o700 });
   // Rename, so that a concurrent reader never sees half a file.
   const temporary = `${CREDENTIALS_PATH}.${process.pid}.tmp`;
@@ -128,7 +154,7 @@ async function pkce(): Promise<{ verifier: string; challenge: string }> {
 }
 
 function tokenRequest(body: Record<string, string>): Promise<Response> {
-  return fetch(`${ORIGIN}/api/auth/oauth2/token`, {
+  return fetch(`${deployment().origin}/api/auth/oauth2/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(body),
@@ -154,78 +180,111 @@ function toToken(payload: Record<string, unknown>, fallbackRefresh?: string): To
  * only callback a command-line client can receive, so the metadata document
  * declares one and this listens on it for a single request.
  */
-async function authorize(): Promise<void> {
+async function authorize(options: { makeDefault: boolean }): Promise<void> {
+  const { origin, clientId, resource } = deployment();
   const { verifier, challenge } = await pkce();
   const state = crypto.randomUUID();
 
-  const received = Promise.withResolvers<string>();
-  const server = Bun.serve({
-    port: CALLBACK_PORT,
-    fetch(request) {
-      const url = new URL(request.url);
-      if (url.pathname !== "/callback") return new Response("Not found", { status: 404 });
-
-      const error = url.searchParams.get("error");
-      if (error) {
-        received.reject(new UploadError(`Authorization was refused: ${error}`));
-        return new Response("Authorization was refused. You can close this tab.", { status: 400 });
-      }
-      if (url.searchParams.get("state") !== state) {
-        received.reject(new UploadError("The callback state did not match. Start again."));
-        return new Response("State mismatch. You can close this tab.", { status: 400 });
-      }
-      const code = url.searchParams.get("code");
-      if (!code) {
-        received.reject(new UploadError("The callback carried no authorization code."));
-        return new Response("No code. You can close this tab.", { status: 400 });
-      }
-      received.resolve(code);
-      return new Response("Signed in. You can close this tab and return to the terminal.");
-    },
+  let resolveCode: (code: string) => void = () => {};
+  let rejectCode: (error: Error) => void = () => {};
+  const received = new Promise<string>((resolve, reject) => {
+    resolveCode = resolve;
+    rejectCode = reject;
   });
 
+  const server = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://localhost");
+    const answer = (status: number, text: string) => {
+      response.writeHead(status, { "content-type": "text/plain; charset=utf-8" });
+      response.end(text);
+    };
+    if (url.pathname !== "/callback") return answer(404, "Not found");
+
+    const error = url.searchParams.get("error");
+    if (error) {
+      rejectCode(new UploadError(`Authorization was refused: ${error}`));
+      return answer(400, "Authorization was refused. You can close this tab.");
+    }
+    if (url.searchParams.get("state") !== state) {
+      rejectCode(new UploadError("The callback state did not match. Start again."));
+      return answer(400, "State mismatch. You can close this tab.");
+    }
+    const code = url.searchParams.get("code");
+    if (!code) {
+      rejectCode(new UploadError("The callback carried no authorization code."));
+      return answer(400, "No code. You can close this tab.");
+    }
+    resolveCode(code);
+    return answer(200, "Signed in. You can close this tab.");
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(CALLBACK_PORT, "localhost", resolve);
+  });
+  const port = (server.address() as AddressInfo).port;
+
   // Built after the listener starts, because until then the port is not known.
-  const redirectUri = `http://localhost:${server.port}/callback`;
+  const redirectUri = `http://localhost:${port}/callback`;
   const query = new URLSearchParams({
     response_type: "code",
-    client_id: CLIENT_ID,
+    client_id: clientId,
     redirect_uri: redirectUri,
     scope: SCOPE,
     code_challenge: challenge,
     code_challenge_method: "S256",
-    resource: RESOURCE,
+    resource,
     state,
   });
-  const authorizeUrl = `${ORIGIN}/api/auth/oauth2/authorize?${query}`;
+  const authorizeUrl = `${origin}/api/auth/oauth2/authorize?${query}`;
 
   console.error(`Listening on ${redirectUri}`);
   console.error(`Opening ${authorizeUrl}`);
   console.error("If no browser opens, paste that URL into one.");
-  Bun.spawn(["open", authorizeUrl], { stdout: "ignore", stderr: "ignore" }).exited.catch(() => {});
+  openBrowser(authorizeUrl);
+
+  const timeout = setTimeout(
+    () => rejectCode(new UploadError("Nobody finished the sign-in in the browser. Start again.")),
+    SIGN_IN_TIMEOUT_MS,
+  );
 
   try {
-    const code = await received.promise;
+    const code = await received;
     const response = await tokenRequest({
       grant_type: "authorization_code",
       code,
       redirect_uri: redirectUri,
-      client_id: CLIENT_ID,
+      client_id: clientId,
       code_verifier: verifier,
-      resource: RESOURCE,
+      resource,
     });
     const payload = (await response.json()) as Record<string, unknown>;
     if (!response.ok) {
       throw new UploadError(`The token exchange failed: ${JSON.stringify(payload)}`);
     }
     const credentials = toToken(payload);
-    await saveToken(credentials, { makeDefault: AUTH_ORIGIN !== undefined });
-    console.error(`Signed in to ${ORIGIN}. Credentials written to ${CREDENTIALS_PATH}`);
+    await saveToken(credentials, options);
+    console.error(`Signed in to ${origin}. Credentials written to ${CREDENTIALS_PATH}`);
     if (!credentials.refreshToken) {
       console.error("No refresh token was issued, so this will need signing in again on expiry.");
     }
   } finally {
-    server.stop(true);
+    clearTimeout(timeout);
+    server.close();
+    server.closeAllConnections();
   }
+}
+
+function openBrowser(url: string): void {
+  const [command, ...args] =
+    process.platform === "darwin"
+      ? ["open", url]
+      : process.platform === "win32"
+        ? ["cmd", "/c", "start", "", url]
+        : ["xdg-open", url];
+  // A machine with no browser still signs in: the URL is printed above.
+  spawn(command as string, args, { stdio: "ignore", detached: true })
+    .on("error", () => {})
+    .unref();
 }
 
 /** A valid access token, refreshed if the stored one is spent. */
@@ -233,7 +292,7 @@ async function accessToken(): Promise<string> {
   const stored = loadToken();
   if (!stored) {
     throw new UploadError(
-      `Not signed in to ${ORIGIN}. Run: bun run tools/portego-upload/index.ts auth`,
+      `Not signed in to ${deployment().origin}. Call sign_in, or run: ${SELF} auth`,
     );
   }
   if (stored.expiresAt - REFRESH_SKEW_SECONDS > Math.floor(Date.now() / 1000)) {
@@ -241,20 +300,20 @@ async function accessToken(): Promise<string> {
   }
   if (!stored.refreshToken) {
     throw new UploadError(
-      `The token for ${ORIGIN} expired and no refresh token was stored. Run the auth command again.`,
+      `The token for ${deployment().origin} expired and no refresh token was stored. Call sign_in, or run: ${SELF} auth`,
     );
   }
 
   const response = await tokenRequest({
     grant_type: "refresh_token",
     refresh_token: stored.refreshToken,
-    client_id: CLIENT_ID,
-    resource: RESOURCE,
+    client_id: deployment().clientId,
+    resource: deployment().resource,
   });
   const payload = (await response.json()) as Record<string, unknown>;
   if (!response.ok) {
     throw new UploadError(
-      `Refreshing the token failed, so sign in again. The server said: ${JSON.stringify(payload)}`,
+      `Refreshing the token failed. Call sign_in, or run: ${SELF} auth. The server said: ${JSON.stringify(payload)}`,
     );
   }
   const refreshed = toToken(payload, stored.refreshToken);
@@ -274,7 +333,7 @@ async function callRemoteTool(
   name: string,
   args: Record<string, unknown> = {},
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(RESOURCE, {
+  const response = await fetch(deployment().resource, {
     method: "POST",
     headers: {
       authorization: `Bearer ${token}`,
@@ -291,7 +350,7 @@ async function callRemoteTool(
 
   if (response.status === 401 || response.status === 403) {
     throw new UploadError(
-      `${ORIGIN} refused this token (${response.status}). If the scope is wrong, sign in again.`,
+      `${deployment().origin} refused this token (${response.status}). If the scope is wrong, sign in again.`,
     );
   }
 
@@ -365,7 +424,7 @@ async function upload(options: {
   const { versionCount, ...summary } = body.artifact;
   return {
     ...summary,
-    url: `${ORIGIN}/a/${encodeURIComponent(body.artifact.id)}`,
+    url: `${deployment().origin}/a/${encodeURIComponent(body.artifact.id)}`,
     versionNumber: versionCount,
     newArtifact: body.newArtifact ?? true,
   };
@@ -376,7 +435,41 @@ async function upload(options: {
 // --------------------------------------------------------------------------
 
 async function serve(): Promise<void> {
-  const server = new McpServer({ name: "portego-upload", version: "1.0.0" });
+  const server = new McpServer(
+    { name: "portego-upload", version: "1.0.0" },
+    {
+      instructions:
+        "When a tool says the user is not signed in, call sign_in and tell the user to approve " +
+        "the request in the browser that opens, then repeat the call. When a tool says no " +
+        "deployment is set, only the user can fix it: give them the command from the message.",
+    },
+  );
+
+  server.registerTool(
+    "sign_in",
+    {
+      title: "Sign in to Portego",
+      description:
+        "Opens the user's browser to sign this machine in to their Portego deployment, and waits " +
+        "until they approve. Call it when another tool reports that the user is not signed in. It " +
+        "takes no address: the deployment is the one the user set up, so that nothing in a " +
+        "conversation can point uploads somewhere else.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        await authorize({ makeDefault: false });
+        return {
+          content: [{ type: "text" as const, text: `Signed in to ${deployment().origin}.` }],
+        };
+      } catch (error) {
+        return {
+          content: [{ type: "text" as const, text: (error as Error).message }],
+          isError: true,
+        };
+      }
+    },
+  );
 
   server.registerTool(
     "upload_artifact_from_path",
@@ -444,7 +537,7 @@ async function main(): Promise<void> {
   const command = COMMAND;
   const rest = ARGUMENTS;
 
-  if (command === "auth") return authorize();
+  if (command === "auth") return authorize({ makeDefault: AUTH_ORIGIN !== undefined });
 
   if (command === "upload") {
     const path = rest.find((argument) => !argument.startsWith("--"));
