@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import logoMark from "./assets/logo-mark.png";
 
 export type MastheadProps = {
   email: string;
@@ -14,7 +15,9 @@ export function Masthead({ email, onHome, onSignOut, children, trailing }: Masth
   return (
     <header className="masthead">
       <button type="button" className="wordmark" onClick={onHome}>
-        portego
+        {/* Decorative: the text beside it already names the button. */}
+        <img src={logoMark} alt="" width="22" height="22" />
+        <span>portego</span>
       </button>
       {children}
       <div className="masthead-end">

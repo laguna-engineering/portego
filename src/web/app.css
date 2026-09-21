@@ -77,6 +77,9 @@ body {
 }
 
 .wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   font-family: var(--mono);
   font-size: 1.05rem;
   font-weight: 600;
@@ -88,7 +91,8 @@ body {
   cursor: pointer;
 }
 
-.wordmark::after {
+/* On the word and not on the button, where the gap would separate the two. */
+.wordmark span::after {
   content: ".";
   color: var(--accent);
 }
@@ -302,6 +306,14 @@ label {
 }
 
 /* Sign-in ----------------------------------------------------------------- */
+
+.signin h1 {
+  margin: 0;
+}
+
+.signin-logo {
+  display: block;
+}
 
 .signin {
   max-width: 26rem;
