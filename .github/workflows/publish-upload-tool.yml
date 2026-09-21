@@ -42,10 +42,11 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      # Trusted publishing needs npm 11.5.1 or later.
+      # `npm stage` is in npm 11.19 and later.
       - run: npm install -g npm@11
 
-      # npm never lets a version be published twice, so a rerun of this job for
-      # the same tag fails here.
-      - run: npm publish
+      # Staged, so a person approves the version on npmjs.com with 2FA before
+      # anyone can install it. The trusted publisher is not allowed to publish
+      # directly.
+      - run: npm stage publish .
         working-directory: tools/portego-upload
