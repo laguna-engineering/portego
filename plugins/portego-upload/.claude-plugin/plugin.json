@@ -1,6 +1,6 @@
 {
   "name": "portego-upload",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Upload an HTML file to your Portego deployment by its path, without the file passing through the conversation.",
   "license": "Apache-2.0",
   "userConfig": {

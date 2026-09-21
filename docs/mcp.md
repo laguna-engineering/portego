@@ -392,8 +392,10 @@ npx -y portego-upload upload report.html --title "Weekly report"
 
 From a clone, `bun run tools/portego-upload/index.ts` takes the same commands.
 `bun run build:upload-tool` builds the file the package ships. A tag named
-`portego-upload-v<version>` publishes it through
-`.github/workflows/publish-upload-tool.yml`. The workflow holds no npm token:
+`portego-upload-v<version>` stages it through
+`.github/workflows/publish-upload-tool.yml`, and a maintainer then approves the
+staged version on npmjs.com, or with `npm stage approve <stage-id>`. Nobody can
+install a version before that approval. The workflow holds no npm token:
 on npmjs.com the package names this repository and that workflow file as its
 trusted publisher, and npm checks the `repository` field of the package against
 them. A fork that publishes its own package changes that field.
