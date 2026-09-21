@@ -16,22 +16,48 @@
  * credential cross the tool boundary, which is what makes the upload allowable
  * rather than merely possible.
  *
- *   bun run tools/portego-upload/index.ts auth            one-time browser sign-in
+ *   bun run tools/portego-upload/index.ts auth <origin>   one-time browser sign-in
  *   bun run tools/portego-upload/index.ts upload <file>   upload from a terminal
  *   bun run tools/portego-upload/index.ts                 serve MCP over stdio
  */
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { parseStore, resolveOrigin, type Store, type Token, withToken } from "./store.ts";
 
-if (!process.env.PORTEGO_ORIGIN) {
-  console.error("Set PORTEGO_ORIGIN to the deployment's origin, e.g. https://share.acme.example");
+const CREDENTIALS_PATH =
+  process.env.PORTEGO_CREDENTIALS ??
+  join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "portego", "credentials.json");
+
+function readStore(): Store {
+  try {
+    return parseStore(readFileSync(CREDENTIALS_PATH, "utf8"));
+  } catch {
+    return parseStore(null);
+  }
+}
+
+const [COMMAND, ...ARGUMENTS] = process.argv.slice(2);
+/** `auth <origin>` names the deployment and makes it the default. */
+const AUTH_ORIGIN = COMMAND === "auth" ? ARGUMENTS[0] : undefined;
+
+const resolvedOrigin = resolveOrigin({
+  env: process.env.PORTEGO_ORIGIN,
+  argument: AUTH_ORIGIN,
+  store: readStore(),
+});
+if (!resolvedOrigin) {
+  console.error(
+    "No deployment is set. Run: bun run tools/portego-upload/index.ts auth <origin>, " +
+      "e.g. https://share.acme.example, or set PORTEGO_ORIGIN.",
+  );
   process.exit(1);
 }
-const ORIGIN = process.env.PORTEGO_ORIGIN.replace(/\/+$/, "");
+const ORIGIN: string = resolvedOrigin;
 /**
  * The client id is the URL of a Client ID Metadata Document, which is how this
  * server expects a client to register (docs/mcp.md). Its document registers a
@@ -45,20 +71,8 @@ const SCOPE = "artifacts:read artifacts:write offline_access";
 /** The token's audience. Omitting it yields a token the MCP endpoint refuses. */
 const RESOURCE = `${ORIGIN}/mcp`;
 
-const CREDENTIALS_PATH =
-  process.env.PORTEGO_CREDENTIALS ??
-  join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "portego", "credentials.json");
-
 /** Refresh this far before expiry so a slow upload cannot start on a dead token. */
 const REFRESH_SKEW_SECONDS = 60;
-
-type Credentials = {
-  accessToken: string;
-  refreshToken?: string;
-  /** Unix seconds. */
-  expiresAt: number;
-  origin: string;
-};
 
 /**
  * What the upload endpoint returns. It is an ArtifactSummary, which carries no
@@ -85,24 +99,21 @@ class UploadError extends Error {}
 // Credential storage
 // --------------------------------------------------------------------------
 
-async function loadCredentials(): Promise<Credentials | null> {
-  try {
-    const parsed = JSON.parse(await readFile(CREDENTIALS_PATH, "utf8")) as Credentials;
-    // A stored token is bound to the origin it was issued by. Pointing the tool
-    // at a different deployment has to re-authorize rather than send the old one.
-    if (parsed.origin !== ORIGIN) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+// A token is bound to the origin that issued it, so each origin has its own.
+function loadToken(): Token | null {
+  return readStore().tokens[ORIGIN] ?? null;
 }
 
-async function saveCredentials(credentials: Credentials): Promise<void> {
+async function saveToken(token: Token, options: { makeDefault: boolean }): Promise<void> {
+  // Read again: another project's process can have refreshed its own token
+  // since this one started.
+  const store = withToken(readStore(), ORIGIN, token, options);
   await mkdir(dirname(CREDENTIALS_PATH), { recursive: true, mode: 0o700 });
-  await writeFile(CREDENTIALS_PATH, `${JSON.stringify(credentials, null, 2)}\n`, { mode: 0o600 });
-  // writeFile only applies the mode when it creates the file, so an existing
-  // file keeps whatever it had. Set it every time.
-  await chmod(CREDENTIALS_PATH, 0o600);
+  // Rename, so that a concurrent reader never sees half a file.
+  const temporary = `${CREDENTIALS_PATH}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
+  await chmod(temporary, 0o600);
+  await rename(temporary, CREDENTIALS_PATH);
 }
 
 // --------------------------------------------------------------------------
@@ -124,7 +135,7 @@ function tokenRequest(body: Record<string, string>): Promise<Response> {
   });
 }
 
-function storeToken(payload: Record<string, unknown>, fallbackRefresh?: string): Credentials {
+function toToken(payload: Record<string, unknown>, fallbackRefresh?: string): Token {
   const accessToken = payload.access_token;
   if (typeof accessToken !== "string") {
     throw new UploadError(`The token response carried no access token: ${JSON.stringify(payload)}`);
@@ -135,7 +146,6 @@ function storeToken(payload: Record<string, unknown>, fallbackRefresh?: string):
     refreshToken:
       typeof payload.refresh_token === "string" ? payload.refresh_token : fallbackRefresh,
     expiresAt: Math.floor(Date.now() / 1000) + lifetime,
-    origin: ORIGIN,
   };
 }
 
@@ -207,9 +217,9 @@ async function authorize(): Promise<void> {
     if (!response.ok) {
       throw new UploadError(`The token exchange failed: ${JSON.stringify(payload)}`);
     }
-    const credentials = storeToken(payload);
-    await saveCredentials(credentials);
-    console.error(`Signed in. Credentials written to ${CREDENTIALS_PATH}`);
+    const credentials = toToken(payload);
+    await saveToken(credentials, { makeDefault: AUTH_ORIGIN !== undefined });
+    console.error(`Signed in to ${ORIGIN}. Credentials written to ${CREDENTIALS_PATH}`);
     if (!credentials.refreshToken) {
       console.error("No refresh token was issued, so this will need signing in again on expiry.");
     }
@@ -220,7 +230,7 @@ async function authorize(): Promise<void> {
 
 /** A valid access token, refreshed if the stored one is spent. */
 async function accessToken(): Promise<string> {
-  const stored = await loadCredentials();
+  const stored = loadToken();
   if (!stored) {
     throw new UploadError(
       `Not signed in to ${ORIGIN}. Run: bun run tools/portego-upload/index.ts auth`,
@@ -247,8 +257,8 @@ async function accessToken(): Promise<string> {
       `Refreshing the token failed, so sign in again. The server said: ${JSON.stringify(payload)}`,
     );
   }
-  const refreshed = storeToken(payload, stored.refreshToken);
-  await saveCredentials(refreshed);
+  const refreshed = toToken(payload, stored.refreshToken);
+  await saveToken(refreshed, { makeDefault: false });
   return refreshed.accessToken;
 }
 
@@ -431,7 +441,8 @@ function readFlag(argv: string[], name: string): string | undefined {
 }
 
 async function main(): Promise<void> {
-  const [command, ...rest] = process.argv.slice(2);
+  const command = COMMAND;
+  const rest = ARGUMENTS;
 
   if (command === "auth") return authorize();
 

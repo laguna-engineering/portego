@@ -19,9 +19,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
-    "test": "bun run test:server && bun run test:web",
+    "test": "bun run test:server && bun run test:web && bun run test:tools",
     "test:server": "bun test src/server",
     "test:web": "bun test --preload ./src/web/test-setup.ts src/web",
+    "test:tools": "bun test tools",
     "test:e2e": "bun run build:web && bun test e2e",
     "test:ci": "bun run build:web && bun run scripts/test-all.ts"
   },
