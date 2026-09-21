@@ -1,20 +1,27 @@
 :root {
   color-scheme: light dark;
 
-  --page: #fbfbf9;
+  --page: #faf8f2;
   --surface: #ffffff;
-  --surface-sunken: #f2f2ef;
-  --ink: #16161a;
-  --ink-muted: #5f6068;
-  --line: #deddda;
-  --accent: #4338ca;
+  --surface-sunken: #f1efe7;
+  --ink: #191c1b;
+  --ink-muted: #5c625f;
+  --line: #dcd9cd;
+  --accent: #2f6d63;
   --accent-ink: #ffffff;
-  --danger: #b3261e;
+  --danger: #a2503a;
+
+  --mark-1: #4c7568;
+  --mark-2: #5d7a54;
+  --mark-3: #4a7180;
+  --mark-4: #71805a;
 
   --radius: 0.75rem;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --serif: "IBM Plex Serif", Georgia, serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: var(--sans);
   line-height: 1.5;
   color: var(--ink);
   background: var(--page);
@@ -22,15 +29,15 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --page: #121215;
-    --surface: #1b1b20;
-    --surface-sunken: #232329;
-    --ink: #ececef;
-    --ink-muted: #a0a0aa;
-    --line: #33333c;
-    --accent: #a5b4fc;
-    --accent-ink: #16161a;
-    --danger: #f2b8b5;
+    --page: #131615;
+    --surface: #1b201e;
+    --surface-sunken: #232927;
+    --ink: #e8ecea;
+    --ink-muted: #9aa39f;
+    --line: #2b322f;
+    --accent: #8fc7bb;
+    --accent-ink: #131615;
+    --danger: #d99f83;
   }
 }
 
@@ -42,6 +49,22 @@ body {
   margin: 0;
   background: var(--page);
   color: var(--ink);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--serif);
+  font-weight: 500;
+}
+
+.dialog-header h2,
+.full-title h1,
+.comments h2,
+.versions h3,
+.comments-panel-header h2 {
+  font-family: var(--sans);
+  font-weight: 600;
 }
 
 :focus-visible {
@@ -174,7 +197,7 @@ button.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
-  font-weight: 550;
+  font-weight: 600;
 }
 
 input,
@@ -192,7 +215,7 @@ textarea {
 label {
   display: block;
   font-size: 0.8rem;
-  font-weight: 550;
+  font-weight: 600;
   color: var(--ink-muted);
   margin-bottom: 0.25rem;
 }
@@ -234,14 +257,11 @@ label {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  transition:
-    border-color 120ms ease,
-    transform 120ms ease;
+  transition: border-color 120ms ease;
 }
 
 .card:hover {
   border-color: var(--accent);
-  transform: translateY(-1px);
 }
 
 .card-link {
@@ -288,7 +308,6 @@ label {
 }
 
 .card-meta {
-  font-family: var(--mono);
   font-size: 0.72rem;
   color: var(--ink-muted);
 }
@@ -455,7 +474,6 @@ label {
 
 .detail-meta {
   margin: 0;
-  font-family: var(--mono);
   font-size: 0.75rem;
   color: var(--ink-muted);
 }
@@ -549,7 +567,7 @@ label {
 .view.selected {
   border-bottom-color: var(--accent);
   color: var(--ink);
-  font-weight: 550;
+  font-weight: 600;
 }
 
 .text-view {
@@ -621,7 +639,7 @@ label {
 .chip.selected {
   border-color: var(--accent);
   color: var(--ink);
-  font-weight: 550;
+  font-weight: 600;
 }
 
 .sort {
@@ -658,7 +676,6 @@ label {
   padding: 0.05rem 0.45rem;
   border-radius: 999px;
   border: 1px solid var(--line);
-  font-family: var(--mono);
   font-size: 0.68rem;
   color: var(--ink-muted);
 }
@@ -700,7 +717,6 @@ label {
 
 .comment-meta {
   margin: 0 0 0.25rem;
-  font-family: var(--mono);
   font-size: 0.72rem;
   color: var(--ink-muted);
 }
@@ -791,7 +807,6 @@ button.link {
   background: none;
   padding: 0 0 0 0.5rem;
   color: var(--ink-muted);
-  font-family: var(--mono);
   font-size: 0.72rem;
   text-decoration: underline;
 }
@@ -991,7 +1006,6 @@ button.link {
 }
 
 .version-number {
-  font-family: var(--mono);
   font-weight: 600;
 }
 
