@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in Portego or in the portego-upload tool does not work as the docs say.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Issues here are public. Report a security vulnerability the way SECURITY.md says, and
+        not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest sequence that shows the problem.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The tag or commit of Portego. For the upload tool, the version of portego-upload.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, Bun or Node version, and the MCP client with its version if one is involved.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Only the lines around the failure.
+      render: text
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Nothing from a real deployment
+      options:
+        - label: >-
+            I removed hostnames, email addresses, tokens, cookies, and client secrets from
+            everything above, and wrote `share.acme.example` where my hostname was.
+          required: true
