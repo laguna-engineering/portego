@@ -815,6 +815,29 @@ button.link {
   flex-basis: 100%;
 }
 
+/* On a wide window the header stays on one row whatever the fonts measure: the
+   title and metadata give up room with an ellipsis instead of wrapping, so the
+   masthead keeps its height. */
+@media (min-width: 64rem) {
+  .full-header,
+  .full-title,
+  .full-actions {
+    flex-wrap: nowrap;
+  }
+
+  .full-actions {
+    flex-shrink: 0;
+  }
+
+  .full-title h1,
+  .full-title .detail-meta {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 /* The row below the masthead: the artifact on the left, the comments panel
    sliding over its right edge without displacing it. */
 .full-body {
