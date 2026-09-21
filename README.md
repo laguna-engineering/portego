@@ -267,3 +267,7 @@ what each restriction stops, and the known limitations.
 `GET /healthz` returns `{"status":"ok","uptime":<seconds>}`. It reports no
 configuration, secret, or database detail, because the reverse proxy exposes
 it publicly.
+
+## License
+
+[Apache License 2.0](LICENSE).
