@@ -781,6 +781,7 @@ button.link {
   justify-content: space-between;
   gap: 0.75rem 1rem;
   flex-wrap: wrap;
+  container-type: inline-size;
 }
 
 /* Title and metadata share one line, so the masthead keeps the height it has
@@ -835,6 +836,19 @@ button.link {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+}
+
+/* The labelled actions alone need most of this width, so below it they show
+   their icons only, the way every icon button does on a narrow window. */
+@container (max-width: 56rem) {
+  .full-actions .icon-button span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
 }
 
