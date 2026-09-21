@@ -115,3 +115,23 @@ export function CloseIcon() {
     </Icon>
   );
 }
+
+export function MenuIcon() {
+  return (
+    <Icon>
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+    </Icon>
+  );
+}
+
+export function UploadIcon() {
+  return (
+    <Icon>
+      <path d="M12 15V3" />
+      <path d="m7 8 5-5 5 5" />
+      <path d="M4 21h16" />
+    </Icon>
+  );
+}

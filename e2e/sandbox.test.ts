@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import {
   HOSTILE_ARTIFACTS,
   SELF_CONTAINED_ARTIFACT,
@@ -9,6 +9,10 @@ let app: BrowserApp;
 
 beforeAll(async () => {
   app = await startBrowserApp();
+});
+
+afterEach(async () => {
+  await app.closeContexts();
 });
 
 afterAll(async () => {
