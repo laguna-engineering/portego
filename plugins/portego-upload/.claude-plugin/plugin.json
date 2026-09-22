@@ -1,6 +1,6 @@
 {
   "name": "portego-upload",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Create, validate, and upload HTML or Markdown artifacts in a configurable style.",
   "license": "Apache-2.0",
   "userConfig": {
