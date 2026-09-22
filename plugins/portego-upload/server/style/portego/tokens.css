@@ -1,0 +1,86 @@
+/* IBM Plex font files are distributed under the SIL Open Font License 1.1. */
+@font-face {
+  font-family: "IBM Plex Serif";
+  src: url("./assets/fonts/ibm-plex-serif-latin-400-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Serif";
+  src: url("./assets/fonts/ibm-plex-serif-latin-500-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("./assets/fonts/ibm-plex-sans-latin-400-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("./assets/fonts/ibm-plex-sans-latin-600-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("./assets/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+  --page: #faf8f2;
+  --surface: #ffffff;
+  --surface-sunken: #f1efe7;
+  --ink: #191c1b;
+  --ink-muted: #5c625f;
+  --line: #dcd9cd;
+  --accent: #2f6d63;
+  --accent-ink: #ffffff;
+  --danger: #a2503a;
+  --mark-1: #4c7568;
+  --mark-2: #5d7a54;
+  --mark-3: #4a7180;
+  --mark-4: #71805a;
+  --radius-sm: 0.5rem;
+  --radius: 0.75rem;
+  --radius-pill: 999px;
+  --serif: "IBM Plex Serif", Georgia, serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --shell-max: 68rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #131615;
+    --surface: #1b201e;
+    --surface-sunken: #232927;
+    --ink: #e8ecea;
+    --ink-muted: #9aa39f;
+    --line: #2b322f;
+    --accent: #8fc7bb;
+    --accent-ink: #131615;
+    --danger: #d99f83;
+  }
+}

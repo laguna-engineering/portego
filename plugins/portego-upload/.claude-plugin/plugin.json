@@ -1,6 +1,6 @@
 {
   "name": "portego-upload",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Create, validate, and upload HTML or Markdown artifacts in a configurable style.",
   "license": "Apache-2.0",
   "userConfig": {
@@ -19,8 +19,8 @@
   },
   "mcpServers": {
     "portego-upload": {
-      "command": "npx",
-      "args": ["-y", "portego-upload"],
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/portego-upload.js"],
       "env": {
         "PORTEGO_ORIGIN": "${user_config.origin}",
         "PORTEGO_ARTIFACT_STYLE": "${user_config.style}"

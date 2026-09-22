@@ -30,7 +30,8 @@ import { dirname, join, resolve } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import packageJson from "./package.json" with { type: "json" };
+// Only the version, so the bundle does not carry the rest of the manifest.
+import { version } from "./package.json" with { type: "json" };
 import { parseStore, resolveOrigin, type Store, type Token, withToken } from "./store.ts";
 import {
   ArtifactStyleError,
@@ -473,7 +474,7 @@ async function upload(options: {
 
 async function serve(): Promise<void> {
   const server = new McpServer(
-    { name: "portego-upload", version: packageJson.version },
+    { name: "portego-upload", version },
     {
       instructions:
         "Two kinds of upload exist. A new document for people to read is a styled, visual HTML " +

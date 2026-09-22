@@ -41,6 +41,14 @@ jobs:
       - name: Production build
         run: bun run build
 
+      # The plugin starts the upload tool from a copy committed under
+      # plugins/portego-upload/server. A change to the tool's source without a
+      # rebuild would ship the old server.
+      - name: Committed plugin server matches the source
+        run: |
+          bun run build:upload-tool
+          git diff --exit-code --stat -- plugins/portego-upload/server
+
       # Downloading Chromium is the slow part of this job. The lockfile is the
       # key, so a Playwright upgrade fetches a new browser and nothing else
       # does.

@@ -348,8 +348,8 @@ a plugin from the marketplace in this repository:
 /plugin install portego-upload@portego
 ```
 
-The plugin asks for the address of the deployment, registers the MCP server,
-and adds `/portego-upload:share-html` for an existing HTML file,
+The plugin asks for the address of the deployment, starts the MCP server from
+the copy it carries, so nothing is fetched from npm, and adds `/portego-upload:share-html` for an existing HTML file,
 `/portego-upload:share-markdown` for a Markdown file, and
 `/portego-upload:create-artifact` for a new styled document. A new document
 is a visual HTML artifact by default; Markdown is for content the user already
