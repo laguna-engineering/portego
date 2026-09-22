@@ -264,7 +264,8 @@ describes the suites and the hostile-artifact cases.
 Two views. The gallery lists artifacts as cards and keeps its search term in
 the URL, so a link reproduces what the sender was looking at. The artifact page
 fills the window under the masthead with an isolated preview, and carries the
-metadata, versions, comments, a source download, and a copy-link action. Uploading is a dialog that takes a dropped or chosen file, confirms its
+metadata, versions, comments, a source download, and a copy-link action. A link
+to it unfurls in chat apps with the artifact's title and the Portego logo. Uploading is a dialog that takes a dropped or chosen file, confirms its
 name and size, and reports what the server refused when it refuses.
 
 Component tests need a DOM, so `bun run test:web` registers happy-dom first.

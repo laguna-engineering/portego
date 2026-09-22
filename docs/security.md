@@ -153,6 +153,17 @@ reader's own email is on it, and the opaque origin the frame runs in is what
 keeps the frame from reading it. `frame-ancestors` already names the application
 origin, which is where the wrapper is served.
 
+The server also sets Open Graph and Twitter card tags on `/a/<id>`, so a link
+to the page unfurls in chat apps. An unfurler sends no cookie. An anonymous
+request gets the artifact's title and the Portego logo, and none of
+its content. A signed-in request also gets a description: the artifact's own
+description, or the opening of its Markdown text. An archived or unknown id
+gets the generic Portego tags.
+
+Anyone who holds a link to an artifact can therefore read its title, and can
+tell whether the id exists. Artifact ids are UUIDv7 with 74 random bits, so a
+title is visible only to someone who was given the link.
+
 ## Known limitations
 
 - A preview URL is a capability. Anyone holding it can read that one artifact

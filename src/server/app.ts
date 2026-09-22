@@ -20,6 +20,7 @@ import { organizationRoutes } from "./organization/routes.ts";
 import type { OrganizationService } from "./organization/service.ts";
 import { previewRoutes } from "./preview/routes.ts";
 import { createPreviewIssuer } from "./preview/tokens.ts";
+import { pageMeta, withSocialTags } from "./social.ts";
 
 export type AppOptions = {
   /** Serve the built Vite client from disk. Off in development, where Vite serves it. */
@@ -140,7 +141,18 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
     // HTML with status 200, and the browser would fail parsing it as JavaScript.
     app.all("/api/*", (c) => c.notFound());
     app.all("/assets/*", (c) => c.notFound());
-    app.get("*", serveStatic({ path: `${root}/index.html` }));
+    app.get("*", async (c) => {
+      const file = Bun.file(`${root}/index.html`);
+      if (!(await file.exists())) return c.notFound();
+      const meta = await pageMeta(c.req.path, c.req.raw.headers, {
+        auth: options.auth,
+        artifacts: options.artifacts,
+      });
+      // A signed-in request gets a description an anonymous one does not.
+      c.header("Cache-Control", "private, no-cache");
+      c.header("Vary", "Cookie");
+      return c.html(withSocialTags(await file.text(), meta, { appOrigin, path: c.req.path }));
+    });
   }
 
   return app;

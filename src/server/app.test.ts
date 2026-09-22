@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,10 +8,11 @@ import { createTestAuth, TEST_BASE_URL } from "./auth/testing.ts";
 import { createEventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService } from "./organization/service.ts";
+import { excerpt } from "./social.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
-import { createTestServer, TEST_CONTENT_ORIGIN } from "./testing.ts";
+import { createTestServer, htmlFile, TEST_CONTENT_ORIGIN } from "./testing.ts";
 
 const cleanups: (() => void)[] = [];
 
@@ -183,6 +184,199 @@ describe("client routes", () => {
     } finally {
       process.chdir(cwd);
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("GET * (social tags)", () => {
+  const cwd = process.cwd();
+  let dir: string;
+
+  const FIXTURE = [
+    "<!doctype html>",
+    "<html>",
+    "<head>",
+    "<title>Portego</title>",
+    '<meta property="og:image" content="/assets/logo-full-abc.png" />',
+    "</head>",
+    "<body></body>",
+    "</html>",
+  ].join("\n");
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "client-"));
+    mkdirSync(join(dir, "dist/client"), { recursive: true });
+    writeFileSync(join(dir, "dist/client/index.html"), FIXTURE);
+    process.chdir(dir);
+  });
+
+  afterEach(() => {
+    process.chdir(cwd);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function uploadArtifact(
+    server: Awaited<ReturnType<typeof createTestServer>>,
+    cookie: string,
+    fields: { title?: string; description?: string; html?: string } = {},
+  ) {
+    const form = new FormData();
+    form.set("file", htmlFile(fields.html ?? "<p>x</p>", "artifact.html"));
+    form.set("title", fields.title ?? "An artifact");
+    if (fields.description !== undefined) form.set("description", fields.description);
+    return server.app.request("/api/artifacts", {
+      method: "POST",
+      headers: { cookie, origin: TEST_BASE_URL },
+      body: form,
+    });
+  }
+
+  test("rewrites the root-relative og:image to an absolute URL on the app origin", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const res = await server.app.request("/a/does-not-exist");
+      const body = await res.text();
+      expect(body).toContain(
+        '<meta property="og:image" content="http://localhost:5173/assets/logo-full-abc.png" />',
+      );
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("sets cache headers so a page carrying a cookie-dependent description is never shared across sessions", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const res = await server.app.request("/a/does-not-exist");
+      expect(res.headers.get("cache-control")).toBe("private, no-cache");
+      expect(res.headers.get("vary")).toBe("Cookie");
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("falls back to the generic tags for an unknown artifact id", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const res = await server.app.request("/a/does-not-exist");
+      const body = await res.text();
+      expect(body).toContain('<meta property="og:title" content="Portego" />');
+      expect(body).toContain("<title>Portego</title>");
+      expect(body).not.toContain('name="description"');
+      expect(body).not.toContain("og:description");
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("falls back to the generic tags for an archived artifact, even for its own creator", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const cookie = await server.signIn();
+      const upload = await uploadArtifact(server, cookie, { title: "Retired plan" });
+      const { artifact } = (await upload.json()) as { artifact: { id: string } };
+
+      const archive = await server.app.request(`/api/artifacts/${artifact.id}/archived`, {
+        method: "PATCH",
+        headers: { cookie, origin: TEST_BASE_URL, "content-type": "application/json" },
+        body: JSON.stringify({ archived: true }),
+      });
+      expect(archive.status).toBe(200);
+
+      const res = await server.app.request(`/a/${artifact.id}`, { headers: { cookie } });
+      const body = await res.text();
+      expect(body).toContain('<meta property="og:title" content="Portego" />');
+      expect(body).toContain("<title>Portego</title>");
+      expect(body).not.toContain("og:description");
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("gives an anonymous request, such as a chat unfurler, the title and no content", async () => {
+    // The privacy rule: whoever holds the link learns the title and nothing
+    // more, since anyone can paste an artifact link into a public channel.
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const cookie = await server.signIn();
+      const upload = await uploadArtifact(server, cookie, {
+        title: "Q3 Roadmap",
+        description: "Internal detail nobody outside the team should see.",
+      });
+      const { artifact } = (await upload.json()) as { artifact: { id: string } };
+
+      const res = await server.app.request(`/a/${artifact.id}`);
+      const body = await res.text();
+      expect(body).toContain('<meta property="og:title" content="Q3 Roadmap" />');
+      expect(body).toContain("<title>Q3 Roadmap</title>");
+      expect(body).not.toContain('name="description"');
+      expect(body).not.toContain("og:description");
+      expect(body).not.toContain("Internal detail");
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("a signed-in request gets the artifact's own description", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const cookie = await server.signIn();
+      const upload = await uploadArtifact(server, cookie, {
+        title: "Q3 Roadmap",
+        description: "Handpicked summary for readers.",
+      });
+      const { artifact } = (await upload.json()) as { artifact: { id: string } };
+
+      const res = await server.app.request(`/a/${artifact.id}`, { headers: { cookie } });
+      const body = await res.text();
+      expect(body).toContain(
+        '<meta name="description" content="Handpicked summary for readers." />',
+      );
+      expect(body).toContain(
+        '<meta property="og:description" content="Handpicked summary for readers." />',
+      );
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("a signed-in request falls back to a Markdown excerpt when no description was set", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const cookie = await server.signIn();
+      const upload = await uploadArtifact(server, cookie, {
+        title: "Growth report",
+        html: "<p>Conversion improved twelve percent this quarter after the new onboarding flow shipped to every workspace.</p>",
+      });
+      const { artifact } = (await upload.json()) as { artifact: { id: string } };
+
+      const markdownRes = await server.app.request(`/api/artifacts/${artifact.id}/markdown`, {
+        headers: { cookie },
+      });
+      const { markdown } = (await markdownRes.json()) as { markdown: string };
+      const expected = excerpt(markdown);
+      expect(expected.length).toBeGreaterThan(0);
+
+      const res = await server.app.request(`/a/${artifact.id}`, { headers: { cookie } });
+      const body = await res.text();
+      expect(body).toContain(`<meta property="og:description" content="${expected}" />`);
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("applies the same tags to the /full artifact view", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const cookie = await server.signIn();
+      const upload = await uploadArtifact(server, cookie, { title: "Q3 Roadmap" });
+      const { artifact } = (await upload.json()) as { artifact: { id: string } };
+
+      const res = await server.app.request(`/a/${artifact.id}/full`);
+      const body = await res.text();
+      expect(body).toContain('<meta property="og:title" content="Q3 Roadmap" />');
+    } finally {
+      server.cleanup();
     }
   });
 });
