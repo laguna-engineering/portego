@@ -23,6 +23,8 @@ function renderGallery(
     status?: "open" | "solved" | null;
     archived?: boolean;
     sort?: GallerySort;
+    folderId?: string | null;
+    tagIds?: string[];
     onFilter?: (filters: Partial<GalleryFilters>) => void;
   } = {},
 ) {
@@ -33,6 +35,8 @@ function renderGallery(
         status: options.status ?? null,
         archived: options.archived ?? false,
         sort: options.sort ?? "updated-desc",
+        folderId: options.folderId ?? null,
+        tagIds: options.tagIds ?? [],
       }}
       onFilter={options.onFilter ?? (() => {})}
       onOpen={() => {}}
@@ -56,6 +60,17 @@ describe("empty states", () => {
 
     expect(await screen.findByText(/Nothing matches/)).toBeDefined();
     expect(screen.getByText(/latency/)).toBeDefined();
+  });
+
+  test("offers the whole gallery when a folder or tag filter matches nothing, since there may be artifacts elsewhere", async () => {
+    stubFetch(() => ({ body: { items: [], nextCursor: null } }));
+    const filtered: Partial<GalleryFilters>[] = [];
+    renderGallery({ folderId: "folder-1", onFilter: (filters) => filtered.push(filters) });
+
+    const showAll = await screen.findByRole("button", { name: "Show all artifacts" });
+    expect(screen.queryByText("No artifacts yet.")).toBeNull();
+    await userEvent.click(showAll);
+    expect(filtered).toEqual([{ folderId: null, tagIds: [] }]);
   });
 
   test("offers to clear a search that found nothing", async () => {
@@ -100,6 +115,27 @@ describe("filters", () => {
     expect(requested[0]).toContain("status=solved");
   });
 
+  test("asks the server for the selected folder and every selected tag, on later pages too", async () => {
+    const requested: string[] = [];
+    stubFetch((path) => {
+      requested.push(path);
+      return {
+        body: path.includes("cursor=")
+          ? { items: [], nextCursor: null }
+          : { items: [artifact()], nextCursor: "next" },
+      };
+    });
+    renderGallery({ folderId: "folder-1", tagIds: ["tag-1", "tag-2"] });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Load more" }));
+    await waitFor(() => expect(requested).toHaveLength(2));
+    for (const path of requested) {
+      const search = new URL(path, "http://app.test").searchParams;
+      expect(search.get("folderId")).toBe("folder-1");
+      expect(search.getAll("tagId")).toEqual(["tag-1", "tag-2"]);
+    }
+  });
+
   test("leaves archived artifacts out unless they are asked for", async () => {
     const requested: string[] = [];
     stubFetch((path) => {
@@ -113,7 +149,14 @@ describe("filters", () => {
 
     rerender(
       <Gallery
-        filters={{ query: "", status: null, archived: true, sort: "updated-desc" }}
+        filters={{
+          query: "",
+          status: null,
+          archived: true,
+          sort: "updated-desc",
+          folderId: null,
+          tagIds: [],
+        }}
         onFilter={() => {}}
         onOpen={() => {}}
         onUpload={() => {}}
@@ -135,7 +178,14 @@ describe("filters", () => {
 
     rerender(
       <Gallery
-        filters={{ query: "", status: null, archived: false, sort: "title-asc" }}
+        filters={{
+          query: "",
+          status: null,
+          archived: false,
+          sort: "title-asc",
+          folderId: null,
+          tagIds: [],
+        }}
         onFilter={() => {}}
         onOpen={() => {}}
         onUpload={() => {}}

@@ -127,6 +127,52 @@ describe("the whole flow in a browser", () => {
     expect(after).toEqual(before);
   });
 
+  test("filters by folder, and the folder panel collapses to give the cards its width", async () => {
+    const filed = await uploadArtifact(app, {
+      title: "Filed in Launch",
+      html: SELF_CONTAINED_ARTIFACT,
+    });
+    await uploadArtifact(app, { title: "Left unfiled", html: SELF_CONTAINED_ARTIFACT });
+    const session = await app.server.auth.api.getSession({
+      headers: new Headers({ cookie: await app.server.signIn() }),
+    });
+    const actorId = session?.user.id ?? "";
+    const folder = app.server.organization.createFolder({ name: "Launch", actorId });
+    app.server.organization.setArtifactOrganization(filed, { folderId: folder.id, actorId });
+
+    const context = await app.signedIn();
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(app.server.origin);
+
+    await page.getByRole("button", { name: /Launch/ }).click();
+    await page.waitForURL(`${app.server.origin}/?folder=${folder.id}`);
+    await page.getByText("Left unfiled").waitFor({ state: "detached" });
+    expect(await page.getByText("Filed in Launch").isVisible()).toBe(true);
+
+    const nav = page.getByRole("navigation", { name: "Folders and tags" });
+    const cards = page.locator("ul.cards");
+    const before = { nav: await nav.boundingBox(), cards: await cards.boundingBox() };
+
+    await page.getByRole("button", { name: "Hide folders" }).click();
+    // The column slides over 200ms. Waiting for its end state checks the slide finishes.
+    await page.waitForFunction(
+      () => (document.querySelector("nav.library")?.getBoundingClientRect().width ?? 999) < 60,
+    );
+    const after = { nav: await nav.boundingBox(), cards: await cards.boundingBox() };
+    if (!before.nav || !before.cards || !after.nav || !after.cards) {
+      throw new Error("The panel or the cards have no box");
+    }
+    expect(before.nav.width).toBeGreaterThan(200);
+    expect(after.cards.width - before.cards.width).toBeGreaterThan(150);
+
+    await page.reload();
+    await page.getByRole("button", { name: "Show folders" }).waitFor();
+    expect(await nav.getAttribute("class")).toContain("collapsed");
+
+    await context.close();
+  });
+
   test("downloads the source as a file", async () => {
     const id = await uploadArtifact(app, {
       title: "Downloadable",
@@ -223,6 +269,8 @@ describe("the whole flow in a browser", () => {
       { role: "button", name: "Archive" },
       { role: "link", name: "Download source" },
       { role: "button", name: "View markdown" },
+      { role: "button", name: "Tags" },
+      { role: "button", name: "Move to folder" },
       { role: "button", name: "Versions & comments" },
     ] as const;
 
@@ -292,6 +340,79 @@ describe("the whole flow in a browser", () => {
     });
   });
 
+  describe("organizing from the artifact header", () => {
+    async function actorId() {
+      const session = await app.server.auth.api.getSession({
+        headers: new Headers({ cookie: await app.server.signIn() }),
+      });
+      return session?.user.id ?? "";
+    }
+
+    test("files the artifact from a panel under the header, and a click on the artifact closes it", async () => {
+      const id = await uploadArtifact(app, {
+        title: "Filed from header",
+        html: SELF_CONTAINED_ARTIFACT,
+      });
+      const folder = app.server.organization.createFolder({
+        name: "Reports",
+        actorId: await actorId(),
+      });
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`${app.server.origin}/a/${id}`);
+
+      const opener = page.getByRole("button", { name: "Move to folder" });
+      await opener.click();
+      const dialog = page.getByRole("dialog", { name: "Move to folder" });
+      await dialog.getByRole("button", { name: "Reports" }).waitFor();
+
+      // Below the tools and inside the window, so it covers none of the buttons.
+      const panel = await dialog.boundingBox();
+      const button = await opener.boundingBox();
+      if (!panel || !button) throw new Error("The panel or its button has no box");
+      expect(panel.y).toBeGreaterThanOrEqual(button.y + button.height);
+      expect(panel.x + panel.width).toBeLessThanOrEqual(1280);
+
+      // The frame swallows clicks, so the backdrop has to catch this one.
+      await page.mouse.click(200, 500);
+      expect(await dialog.count()).toBe(0);
+
+      await opener.click();
+      await dialog.getByRole("button", { name: "Reports" }).click();
+      await dialog.waitFor({ state: "detached" });
+      expect(app.server.organization.assignments([id]).get(id)?.folder?.id).toBe(folder.id);
+
+      await context.close();
+    });
+
+    test("opens the folder panel from the phone menu at the window's width", async () => {
+      const id = await uploadArtifact(app, {
+        title: "Filed on a phone",
+        html: SELF_CONTAINED_ARTIFACT,
+      });
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`${app.server.origin}/a/${id}`);
+
+      await page.getByRole("button", { name: "Menu" }).click();
+      await page.locator(".masthead-menu").getByRole("button", { name: "Move to folder" }).click();
+      const dialog = page.getByRole("dialog", { name: "Move to folder" });
+      await dialog.getByRole("button", { name: "No folder" }).waitFor();
+      expect(await page.locator(".masthead-menu").count()).toBe(0);
+
+      const panel = await dialog.boundingBox();
+      if (!panel) throw new Error("The panel has no box");
+      expect(panel.x).toBeGreaterThanOrEqual(0);
+      expect(panel.x + panel.width).toBeLessThanOrEqual(390);
+      const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+      expect(scrollWidth).toBeLessThanOrEqual(390);
+
+      await context.close();
+    });
+  });
+
   describe("full-screen masthead on a phone", () => {
     const CONTROLS = [
       { role: "button", name: "Copy link" },
@@ -299,6 +420,8 @@ describe("the whole flow in a browser", () => {
       { role: "button", name: "Archive" },
       { role: "link", name: "Download source" },
       { role: "button", name: "View markdown" },
+      { role: "button", name: "Tags" },
+      { role: "button", name: "Move to folder" },
       { role: "button", name: "Versions & comments" },
     ] as const;
 
@@ -548,7 +671,7 @@ describe("the whole flow in a browser", () => {
 
       const chipBoxes: { y: number; height: number }[] = [];
       for (const name of ["All", "Open", "Solved"]) {
-        const box = await page.getByRole("button", { name }).boundingBox();
+        const box = await page.getByRole("button", { name, exact: true }).boundingBox();
         if (!box) throw new Error(`The ${name} chip has no box`);
         chipBoxes.push(box);
       }

@@ -31,6 +31,8 @@ function signedIn(path: string) {
   if (path.endsWith("/preview")) return { body: { url: "http://127.0.0.1:5173/preview/token" } };
   if (path.endsWith("/versions")) return { body: { versions: [] } };
   if (path.startsWith("/api/artifacts")) return { body: { items: [artifact()], nextCursor: null } };
+  if (path === "/api/folders") return { body: { folders: [] } };
+  if (path === "/api/tags") return { body: { tags: [] } };
   return { body: {} };
 }
 

@@ -196,6 +196,212 @@ describe("actions", () => {
   });
 });
 
+describe("organizing", () => {
+  const FOLDERS = [
+    { id: "lampo", name: "Lampo", parentId: null, artifactCount: 0 },
+    { id: "launch", name: "Launch", parentId: "lampo", artifactCount: 0 },
+    { id: "portego", name: "Portego", parentId: null, artifactCount: 0 },
+  ];
+  const TAGS = [
+    { id: "launch", name: "launch", artifactCount: 1 },
+    { id: "review", name: "review", artifactCount: 0 },
+  ];
+
+  type Sent = { path: string; method?: string; body?: unknown };
+
+  /** Answers the organization API and records every change sent to it. */
+  function stubOrganization(start = artifact()) {
+    const sent: Sent[] = [];
+    let current = start;
+    stubFetch((path, init) => {
+      if (init?.method && init.method !== "GET") {
+        const body = JSON.parse(String(init.body));
+        sent.push({ path, method: init.method, body });
+        if (path === "/api/folders") {
+          return { status: 201, body: { folder: { id: "new", parentId: null, ...body } } };
+        }
+        if (path === "/api/tags") {
+          return { status: 201, body: { tag: { id: "new", artifactCount: 0, ...body } } };
+        }
+        if (path.endsWith("/organization")) {
+          const folder = FOLDERS.find((one) => one.id === body.folderId);
+          current = {
+            ...current,
+            ...("folderId" in body
+              ? {
+                  folder:
+                    folder ??
+                    (body.folderId ? { id: body.folderId, name: "New", parentId: null } : null),
+                }
+              : {}),
+            ...("tagIds" in body
+              ? { tags: (body.tagIds as string[]).map((id) => ({ id, name: id })) }
+              : {}),
+          };
+          return { body: { artifact: current } };
+        }
+      }
+      if (path === "/api/folders") return { body: { folders: FOLDERS } };
+      if (path === "/api/tags") return { body: { tags: TAGS } };
+      return path.endsWith("/api/artifacts/artifact-1")
+        ? { body: { artifact: current } }
+        : answer(path);
+    });
+    return sent;
+  }
+
+  test("lists the folder tree under No folder and marks where the artifact is filed", async () => {
+    stubOrganization(artifact({ folder: { id: "launch", name: "Launch", parentId: "lampo" } }));
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Move to folder" }));
+    const dialog = await screen.findByRole("dialog", { name: "Move to folder" });
+    await within(dialog).findByText("Portego");
+
+    const options = within(dialog)
+      .getAllByRole("button")
+      .map((button) => button.textContent);
+    expect(options).toEqual(["No folder", "Lampo", "Launch", "Portego"]);
+    expect(within(dialog).getByRole("button", { name: "Launch", pressed: true })).toBeDefined();
+  });
+
+  test("files the artifact in the chosen folder, closes, and gives focus back to the button", async () => {
+    const sent = stubOrganization();
+    renderFull();
+
+    const opener = await screen.findByRole("button", { name: "Move to folder" });
+    await userEvent.click(opener);
+    await userEvent.click(await screen.findByRole("button", { name: "Portego" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Move to folder" })).toBeNull(),
+    );
+    expect(document.activeElement).toBe(opener);
+    expect(sent).toEqual([
+      {
+        path: "/api/artifacts/artifact-1/organization",
+        method: "PATCH",
+        body: { folderId: "portego" },
+      },
+    ]);
+  });
+
+  test("shows each match's parents while searching, so two folders with one name can be told apart", async () => {
+    stubOrganization();
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Move to folder" }));
+    await userEvent.type(await screen.findByRole("searchbox"), "laun");
+
+    expect(await screen.findByRole("button", { name: "Lampo › Launch" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Portego" })).toBeNull();
+  });
+
+  test("creates a folder from a new name and files the artifact in it", async () => {
+    const sent = stubOrganization();
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Move to folder" }));
+    const search = await screen.findByRole("searchbox");
+    await screen.findByRole("button", { name: "Portego" });
+    await userEvent.type(search, "Events{Enter}");
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Move to folder" })).toBeNull(),
+    );
+    expect(sent).toEqual([
+      { path: "/api/folders", method: "POST", body: { name: "Events" } },
+      {
+        path: "/api/artifacts/artifact-1/organization",
+        method: "PATCH",
+        body: { folderId: "new" },
+      },
+    ]);
+  });
+
+  test("does not offer to create a folder that already exists at the top level", async () => {
+    stubOrganization();
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Move to folder" }));
+    await screen.findByRole("button", { name: "Portego" });
+    await userEvent.type(screen.getByRole("searchbox"), "portego");
+
+    expect(screen.queryByRole("button", { name: /Create/ })).toBeNull();
+  });
+
+  test("adds and removes tags as a whole set and stays open for the next one", async () => {
+    const sent = stubOrganization(artifact({ tags: [{ id: "launch", name: "launch" }] }));
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Tags" }));
+    const dialog = await screen.findByRole("dialog", { name: "Tags" });
+    await userEvent.click(await within(dialog).findByRole("button", { name: "review" }));
+    await within(dialog).findByRole("button", { name: "review", pressed: true });
+    await userEvent.click(within(dialog).getByRole("button", { name: "launch", pressed: true }));
+    await within(dialog).findByRole("button", { name: "launch", pressed: false });
+
+    expect(screen.getByRole("dialog", { name: "Tags" })).toBeDefined();
+    expect(sent.map((one) => one.body)).toEqual([
+      { tagIds: ["launch", "review"] },
+      { tagIds: ["review"] },
+    ]);
+  });
+
+  test("creates a tag from a new name and applies it", async () => {
+    const sent = stubOrganization();
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Tags" }));
+    await screen.findByRole("button", { name: "review" });
+    await userEvent.type(screen.getByRole("searchbox"), "metrics{Enter}");
+
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent).toEqual([
+      { path: "/api/tags", method: "POST", body: { name: "metrics" } },
+      {
+        path: "/api/artifacts/artifact-1/organization",
+        method: "PATCH",
+        body: { tagIds: ["new"] },
+      },
+    ]);
+  });
+
+  test("closes on Escape without changing anything", async () => {
+    const sent = stubOrganization();
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Tags" }));
+    await screen.findByRole("dialog", { name: "Tags" });
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "Tags" })).toBeNull();
+    expect(sent).toEqual([]);
+  });
+
+  test("says what the server refused inside the panel", async () => {
+    stubFetch((path, init) => {
+      if (path.endsWith("/organization") && init?.method === "PATCH") {
+        return {
+          status: 400,
+          body: { error: { code: "INVALID_INPUT", message: "An artifact can have 20 tags." } },
+        };
+      }
+      if (path === "/api/tags") return { body: { tags: TAGS } };
+      return answer(path);
+    });
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Tags" }));
+    await userEvent.click(await screen.findByRole("button", { name: "review" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Tags" });
+    expect((await within(dialog).findByRole("alert")).textContent).toBe(
+      "An artifact can have 20 tags.",
+    );
+  });
+});
+
 describe("views", () => {
   test("swaps the preview for the markdown text and back", async () => {
     stubFetch(answer);

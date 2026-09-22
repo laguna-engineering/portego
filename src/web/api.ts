@@ -20,6 +20,9 @@ export type Artifact = {
   archivedAt: string | null;
   versionCount: number;
   currentVersionId: string;
+  /** Null when the artifact is unfiled. */
+  folder: { id: string; name: string; parentId: string | null } | null;
+  tags: { id: string; name: string }[];
 };
 
 /** One upload of an artifact's bytes. `sha256`, `byteSize` and
@@ -51,11 +54,20 @@ export type Comment = {
   versionNumber: number;
 };
 
+/** `artifactCount` counts artifacts filed or tagged directly, including solved and archived ones. */
+export type Folder = { id: string; name: string; parentId: string | null; artifactCount: number };
+
+export type Tag = { id: string; name: string; artifactCount: number };
+
 export type GalleryFilters = {
   query?: string;
   status?: ArtifactStatus | null;
   archived?: boolean;
   sort?: GallerySort;
+  /** Matches artifacts filed directly in this folder, not in its children. */
+  folderId?: string | null;
+  /** Matches artifacts that carry every one of these tags. */
+  tagIds?: string[];
 };
 
 export type Page = { items: Artifact[]; nextCursor: string | null };
@@ -118,9 +130,19 @@ export function fetchArtifacts(
   if (options.status) search.set("status", options.status);
   if (options.archived) search.set("archived", "true");
   if (options.sort && options.sort !== DEFAULT_GALLERY_SORT) search.set("sort", options.sort);
+  if (options.folderId) search.set("folderId", options.folderId);
+  for (const tagId of options.tagIds ?? []) search.append("tagId", tagId);
   if (options.cursor) search.set("cursor", options.cursor);
   const suffix = search.size > 0 ? `?${search}` : "";
   return request<Page>(`/api/artifacts${suffix}`);
+}
+
+export function fetchFolders(): Promise<Folder[]> {
+  return request<{ folders: Folder[] }>("/api/folders").then((body) => body.folders);
+}
+
+export function fetchTags(): Promise<Tag[]> {
+  return request<{ tags: Tag[] }>("/api/tags").then((body) => body.tags);
 }
 
 export function fetchArtifact(id: string): Promise<Artifact> {
@@ -201,6 +223,35 @@ export function setArtifactArchived(id: string, archived: boolean): Promise<Arti
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ archived }),
+  }).then((body) => body.artifact);
+}
+
+/** Without `parentId` the folder is created at the top level. */
+export function createFolder(name: string, parentId?: string): Promise<Folder> {
+  return request<{ folder: Folder }>("/api/folders", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(parentId ? { name, parentId } : { name }),
+  }).then((body) => body.folder);
+}
+
+export function createTag(name: string): Promise<Tag> {
+  return request<{ tag: Tag }>("/api/tags", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name }),
+  }).then((body) => body.tag);
+}
+
+/** `folderId: null` unfiles the artifact. `tagIds` replaces the whole set. */
+export function setArtifactOrganization(
+  id: string,
+  organization: { folderId?: string | null; tagIds?: string[] },
+): Promise<Artifact> {
+  return request<{ artifact: Artifact }>(`/api/artifacts/${encodeURIComponent(id)}/organization`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(organization),
   }).then((body) => body.artifact);
 }
 

@@ -24,7 +24,11 @@ const SORT_LABELS: Record<GallerySort, string> = {
 type Load = { status: "loading" } | { status: "ready" } | { status: "error"; message: string };
 
 export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
-  const { query, status, archived, sort } = filters;
+  const { query, status, archived, sort, folderId } = filters;
+  // The route builds a new array on every navigation. Ids have no commas, so
+  // the joined string is a stable dependency.
+  const tagKey = filters.tagIds.join(",");
+  const filtered = folderId !== null || tagKey !== "";
   const searchId = useId();
   const sortId = useId();
   const [items, setItems] = useState<Artifact[]>([]);
@@ -41,7 +45,14 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
       const attempt = ++request.current;
       if (!quiet) setLoad({ status: "loading" });
       try {
-        const page = await fetchArtifacts({ query, status, archived, sort });
+        const page = await fetchArtifacts({
+          query,
+          status,
+          archived,
+          sort,
+          folderId,
+          tagIds: tagKey === "" ? [] : tagKey.split(","),
+        });
         // A slower earlier request must not overwrite a later one.
         if (attempt !== request.current) return;
         setItems(page.items);
@@ -61,7 +72,7 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
         });
       }
     },
-    [query, status, archived, sort],
+    [query, status, archived, sort, folderId, tagKey],
   );
 
   useLiveEvents((event) => {
@@ -89,7 +100,15 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
     setLoadingMore(true);
     setMoreProblem(null);
     try {
-      const page = await fetchArtifacts({ query, status, archived, sort, cursor });
+      const page = await fetchArtifacts({
+        query,
+        status,
+        archived,
+        sort,
+        folderId,
+        tagIds: filters.tagIds,
+        cursor,
+      });
       setItems((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
       setExpanded(true);
@@ -182,18 +201,25 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
 
       {load.status === "ready" && items.length === 0 ? (
         <div className="empty">
-          {query.trim() === "" ? (
-            <>
-              <p>No artifacts yet.</p>
-              <button type="button" className="primary" onClick={onUpload}>
-                Upload the first one
-              </button>
-            </>
-          ) : (
+          {query.trim() !== "" ? (
             <>
               <p>Nothing matches “{query}”.</p>
               <button type="button" onClick={() => onFilter({ query: "" })}>
                 Clear the search
+              </button>
+            </>
+          ) : filtered ? (
+            <>
+              <p>No artifacts match the selected folder and tags.</p>
+              <button type="button" onClick={() => onFilter({ folderId: null, tagIds: [] })}>
+                Show all artifacts
+              </button>
+            </>
+          ) : (
+            <>
+              <p>No artifacts yet.</p>
+              <button type="button" className="primary" onClick={onUpload}>
+                Upload the first one
               </button>
             </>
           )}

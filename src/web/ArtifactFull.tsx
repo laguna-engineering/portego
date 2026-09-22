@@ -20,14 +20,17 @@ import {
   CheckIcon,
   CommentIcon,
   DownloadIcon,
+  FolderIcon,
   LinkIcon,
   PreviewIcon,
   ReopenIcon,
   RestoreIcon,
+  TagIcon,
   TextIcon,
 } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
 import { Masthead } from "./Masthead.tsx";
+import { FolderPicker, TagPicker } from "./Organize.tsx";
 import {
   type BridgeMessage,
   type SelectionRect,
@@ -111,6 +114,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   const [changing, setChanging] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [organizing, setOrganizing] = useState<"tags" | "folder" | null>(null);
   const [selection, setSelection] = useState<CommentAnchor | null>(null);
   /** What is selected in the artifact right now, and where, for the overlay. */
   const [live, setLive] = useState<{ anchor: CommentAnchor; rect: SelectionRect } | null>(null);
@@ -316,8 +320,26 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
           pressed: view === "text",
           onSelect: () => setView(view === "text" ? "preview" : "text"),
         },
+        {
+          id: "tags",
+          label: "Tags",
+          icon: <TagIcon />,
+          pressed: organizing === "tags",
+          expanded: organizing === "tags",
+          onSelect: () => setOrganizing(organizing === "tags" ? null : "tags"),
+        },
+        {
+          id: "folder",
+          label: "Move to folder",
+          icon: <FolderIcon />,
+          pressed: organizing === "folder",
+          expanded: organizing === "folder",
+          onSelect: () => setOrganizing(organizing === "folder" ? null : "folder"),
+        },
       ]
     : [];
+
+  const closeOrganizing = useCallback(() => setOrganizing(null), []);
 
   const commentsAction: HeaderAction = {
     id: "comments",
@@ -350,6 +372,12 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
           <HeaderControl key={action.id} action={action} className="icon-button icon-only" />
         ))}
       </div>
+      {organizing === "tags" ? (
+        <TagPicker artifact={artifact} onChanged={setArtifact} onClose={closeOrganizing} />
+      ) : null}
+      {organizing === "folder" ? (
+        <FolderPicker artifact={artifact} onChanged={setArtifact} onClose={closeOrganizing} />
+      ) : null}
       {problem ? (
         <p className="problem" role="alert">
           {problem}

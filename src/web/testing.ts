@@ -48,6 +48,8 @@ export function artifact(overrides: Partial<Artifact> = {}): Artifact {
     archivedAt: null,
     versionCount: 1,
     currentVersionId: id,
+    folder: null,
+    tags: [],
     ...overrides,
   };
 }

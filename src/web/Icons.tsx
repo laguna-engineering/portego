@@ -135,3 +135,44 @@ export function UploadIcon() {
     </Icon>
   );
 }
+
+export function FolderIcon({ size = 16 }: { size?: number }) {
+  return (
+    <Icon width={size} height={size}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    </Icon>
+  );
+}
+
+export function ChevronLeftIcon() {
+  return (
+    <Icon width="12" height="12">
+      <path d="m15 6-6 6 6 6" />
+    </Icon>
+  );
+}
+
+export function ChevronRightIcon() {
+  return (
+    <Icon width="12" height="12">
+      <path d="m9 6 6 6-6 6" />
+    </Icon>
+  );
+}
+
+export function TagIcon() {
+  return (
+    <Icon>
+      <path d="M12.6 2.6a2 2 0 0 0-1.4-.6H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2 2 0 0 0 2.8 0l7.1-7.1a2 2 0 0 0 0-2.8z" />
+      <circle cx="7.5" cy="7.5" r="0.6" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+export function TickIcon() {
+  return (
+    <Icon width="13" height="13">
+      <path d="M20 6 9 17l-5-5" />
+    </Icon>
+  );
+}

@@ -9,6 +9,8 @@ describe("readRoute", () => {
       status: "open",
       archived: false,
       sort: "updated-desc",
+      folderId: null,
+      tagIds: [],
     });
     expect(readRoute(new URL("http://app.test/?q=latency"))).toMatchObject({
       name: "gallery",
@@ -32,6 +34,14 @@ describe("readRoute", () => {
     expect(readRoute(new URL("http://app.test/?sort=size"))).toMatchObject({
       sort: "updated-desc",
     });
+  });
+
+  test("reads the folder and every tag, ignoring empty values", () => {
+    expect(readRoute(new URL("http://app.test/?folder=f1&tag=t1&tag=&tag=t2"))).toMatchObject({
+      folderId: "f1",
+      tagIds: ["t1", "t2"],
+    });
+    expect(readRoute(new URL("http://app.test/?folder="))).toMatchObject({ folderId: null });
   });
 
   test("reads an artifact id, including one that was escaped", () => {
@@ -60,11 +70,19 @@ describe("paths", () => {
     expect(galleryPath({ status: "solved", archived: true })).toBe("/?status=solved&archived=true");
     expect(galleryPath({ sort: "created-asc" })).toBe("/?sort=created-asc");
     expect(galleryPath({ status: null })).toBe("/?status=all");
+    expect(galleryPath({ folderId: "f1", tagIds: ["t1", "t2"] })).toBe("/?folder=f1&tag=t1&tag=t2");
   });
 
   test("leaves empty filters, the default status, and the default order out of the URL", () => {
     expect(
-      galleryPath({ query: "   ", status: "open", archived: false, sort: "updated-desc" }),
+      galleryPath({
+        query: "   ",
+        status: "open",
+        archived: false,
+        sort: "updated-desc",
+        folderId: null,
+        tagIds: [],
+      }),
     ).toBe("/");
   });
 

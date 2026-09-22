@@ -11,6 +11,7 @@ import {
 } from "./api.ts";
 import { Gallery } from "./Gallery.tsx";
 import { UploadIcon } from "./Icons.tsx";
+import { Library } from "./Library.tsx";
 import { useLiveEvents } from "./live.ts";
 import { Masthead } from "./Masthead.tsx";
 import { McpConsent } from "./McpConsent.tsx";
@@ -170,18 +171,25 @@ export function App() {
     <>
       {masthead}
 
-      <main className="shell">
+      <main className={route.name === "gallery" ? "shell wide" : "shell"}>
         {route.name === "gallery" ? (
-          <Gallery
-            filters={route}
-            onFilter={(filters, options) =>
-              navigate(galleryPath({ ...route, ...filters }), {
-                replace: options?.replace ?? false,
-              })
-            }
-            onOpen={(id) => navigate(artifactPath(id))}
-            onUpload={() => setUploading(true)}
-          />
+          <div className="library-layout">
+            <Library
+              folderId={route.folderId}
+              tagIds={route.tagIds}
+              onFilter={(filters) => navigate(galleryPath({ ...route, ...filters }))}
+            />
+            <Gallery
+              filters={route}
+              onFilter={(filters, options) =>
+                navigate(galleryPath({ ...route, ...filters }), {
+                  replace: options?.replace ?? false,
+                })
+              }
+              onOpen={(id) => navigate(artifactPath(id))}
+              onUpload={() => setUploading(true)}
+            />
+          </div>
         ) : null}
 
         {route.name === "mcp-login" ? <McpLogin query={route.query} /> : null}
