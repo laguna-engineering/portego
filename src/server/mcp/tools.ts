@@ -253,15 +253,27 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
     {
       title: "Upload an artifact",
       description:
-        `Share a self-contained HTML document. ${UNTRUSTED} Everything the document needs must be ` +
-        "inline: it renders with no network access. The creator is the authenticated user. " +
-        "Uploading with the title of an existing artifact, or with its id as artifactId, adds a " +
+        `Share either a self-contained HTML document or Markdown. ${UNTRUSTED} Markdown is rendered ` +
+        "by the server into a static page in the Portego style, with raw HTML and images disabled. " +
+        "Send HTML for a new document meant for people, where layout, figures, and interaction " +
+        "matter; send Markdown when the content already is Markdown or should stay text. HTML may " +
+        "carry markdown as well: the concise text agents get when they read the artifact back, " +
+        "in place of Markdown converted from the HTML. The creator is the " +
+        "authenticated user. Uploading with the title of an existing artifact, or with its id as artifactId, adds a " +
         "new version to that artifact instead of creating another one; its url stays the same. " +
         "A description given with a new version replaces the artifact's description.",
       inputSchema: {
         title: z.string().min(1).max(200).describe("Shown in the gallery."),
         description: z.string().max(2000).optional(),
-        html: z.string().min(1).describe("The complete HTML document."),
+        html: z.string().min(1).optional().describe("The complete HTML document."),
+        markdown: z
+          .string()
+          .min(1)
+          .optional()
+          .describe(
+            "Without html, the Markdown to render as the page. With html, the substance of the " +
+              "page as concise text for agents: headings, findings, numbers, decisions.",
+          ),
         filename: z.string().max(255).optional().describe("Suggested download name."),
         artifactId: z
           .string()
@@ -277,14 +289,20 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         newArtifact: z.boolean(),
       },
     },
-    async ({ title, description, html, filename, artifactId }) => {
+    async ({ title, description, html, markdown, filename, artifactId }) => {
       requireWriteScope(context, "not create them");
       try {
+        if (html === undefined && markdown === undefined) {
+          throw new ServiceError("INVALID_INPUT", "Give html, markdown, or both.");
+        }
+        const isMarkdown = html === undefined;
         const { artifact, newArtifact } = await context.service.upload({
-          bytes: new TextEncoder().encode(html),
+          bytes: new TextEncoder().encode(html ?? markdown ?? ""),
+          contentType: isMarkdown ? "markdown" : "html",
+          markdown: isMarkdown ? null : (markdown ?? null),
           title,
           description: description ?? null,
-          filename: filename ?? "artifact.html",
+          filename: filename ?? (isMarkdown ? "artifact.md" : "artifact.html"),
           artifactId: artifactId ?? null,
           createdBy: context.userId,
         });
@@ -509,6 +527,7 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         id: z.string(),
         markdown: z.string(),
         empty: z.boolean(),
+        source: z.enum(["provided", "generated"]),
         converterVersion: z.string(),
       },
       annotations: { readOnlyHint: true },
@@ -520,6 +539,7 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
           id: result.artifact.id,
           markdown: result.markdown,
           empty: result.empty,
+          source: result.source,
           converterVersion: result.converterVersion,
         });
       } catch (error) {

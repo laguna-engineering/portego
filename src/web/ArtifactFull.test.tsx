@@ -102,6 +102,8 @@ describe("header", () => {
     renderFull();
 
     const heading = await screen.findByRole("heading", { name: /Sales chart/ });
+    // The header clips a long title to one line, so hovering shows all of it.
+    expect(heading.getAttribute("title")).toBe("Sales chart");
     // Both badges tell the reader the artifact's disposition without opening it.
     expect(screen.getByText("solved")).toBeDefined();
     expect(screen.getByText("archived")).toBeDefined();
@@ -115,7 +117,7 @@ describe("header", () => {
 });
 
 describe("actions", () => {
-  test("copies a link that opens the full-screen view directly, not the comments page", async () => {
+  test("copies the artifact's link", async () => {
     stubFetch(answer);
     const copied: string[] = [];
     Object.defineProperty(navigator, "clipboard", {
@@ -126,7 +128,7 @@ describe("actions", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: "Copy link" }));
 
-    expect(copied).toEqual(["http://localhost:5173/a/artifact-1/full"]);
+    expect(copied).toEqual(["http://localhost:5173/a/artifact-1"]);
     expect(await screen.findByRole("button", { name: "Link copied" })).toBeDefined();
   });
 

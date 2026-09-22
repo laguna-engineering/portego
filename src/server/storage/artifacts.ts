@@ -56,6 +56,8 @@ export type CreateArtifactInput = {
   description?: string | null;
   originalFilename: string;
   content: Uint8Array;
+  /** Markdown supplied with this version, instead of generated from its HTML. */
+  providedMarkdown?: string;
   /** Taken from the session by the caller. Never from the request body. */
   createdBy: string;
 };
@@ -66,6 +68,8 @@ export type AddVersionInput = {
   description?: string | null;
   originalFilename: string;
   content: Uint8Array;
+  /** Markdown supplied with this version, instead of generated from its HTML. */
+  providedMarkdown?: string;
   createdBy: string;
 };
 
@@ -291,6 +295,13 @@ export function createArtifactStore(options: {
        values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
+  const insertProvidedMarkdown = () =>
+    database.query(
+      `insert into artifactMarkdown
+         (versionId, converterVersion, sourceSha256, markdown, isEmpty, generatedAt)
+       values (?, 'provided', ?, ?, ?, ?)`,
+    );
+
   return {
     get,
     getVersion,
@@ -336,6 +347,15 @@ export function createArtifactStore(options: {
             input.createdBy,
             now,
           );
+          if (input.providedMarkdown !== undefined) {
+            insertProvidedMarkdown().run(
+              id,
+              stored.sha256,
+              input.providedMarkdown,
+              input.providedMarkdown.trim() === "" ? 1 : 0,
+              now,
+            );
+          }
         })();
       } catch (cause) {
         // Nothing references the file yet, so removing it here keeps the
@@ -374,6 +394,15 @@ export function createArtifactStore(options: {
             input.createdBy,
             now,
           );
+          if (input.providedMarkdown !== undefined) {
+            insertProvidedMarkdown().run(
+              id,
+              stored.sha256,
+              input.providedMarkdown,
+              input.providedMarkdown.trim() === "" ? 1 : 0,
+              now,
+            );
+          }
           const description = input.description === undefined ? "artifacts.description" : "?";
           const parameters: (string | number | null)[] = [
             input.originalFilename,

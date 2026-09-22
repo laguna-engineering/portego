@@ -1,7 +1,7 @@
 {
   "name": "portego-upload",
-  "version": "0.1.2",
-  "description": "A local MCP server and command that uploads an HTML file to a Portego deployment without the file passing through the conversation.",
+  "version": "0.2.0",
+  "description": "Create, validate, and upload self-contained HTML artifacts to a Portego deployment.",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

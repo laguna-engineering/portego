@@ -169,11 +169,11 @@ export function artifactRoutes(
   });
 
   routes.get("/:id/markdown", async (c) => {
-    const { markdown, empty, converterVersion, generatedAt } = await service.markdown(
+    const { markdown, empty, source, converterVersion, generatedAt } = await service.markdown(
       c.req.param("id"),
       c.req.query("version") ?? null,
     );
-    return c.json({ markdown, empty, converterVersion, generatedAt });
+    return c.json({ markdown, empty, source, converterVersion, generatedAt });
   });
 
   routes.get("/:id/source", async (c) => {
@@ -254,11 +254,21 @@ async function uploadFromForm(
 
   const file = form.get("file");
   if (!(file instanceof File)) {
-    throw new ServiceError("INVALID_INPUT", "Attach the HTML document as the `file` field.");
+    throw new ServiceError(
+      "INVALID_INPUT",
+      "Attach the HTML or Markdown document as the `file` field.",
+    );
+  }
+  const contentType = readField(form, "contentType") ?? "html";
+  if (contentType !== "html" && contentType !== "markdown") {
+    throw new ServiceError("INVALID_INPUT", "contentType must be html or markdown.");
   }
 
   return service.upload({
     bytes: new Uint8Array(await file.arrayBuffer()),
+    contentType,
+    // Multipart text fields arrive with CRLF line endings whatever was sent.
+    markdown: readField(form, "markdown")?.replaceAll("\r\n", "\n") ?? null,
     filename: file.name,
     title: readField(form, "title"),
     description: readField(form, "description"),

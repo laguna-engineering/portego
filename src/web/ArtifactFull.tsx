@@ -35,7 +35,7 @@ import {
   usePreviewBridge,
 } from "./preview-bridge.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
-import { fullScreenPath } from "./router.ts";
+import { artifactPath } from "./router.ts";
 
 export type ArtifactFullProps = {
   id: string;
@@ -264,7 +264,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   }
 
   async function copyLink() {
-    const link = new URL(fullScreenPath(id), window.location.origin).toString();
+    const link = new URL(artifactPath(id), window.location.origin).toString();
     try {
       await navigator.clipboard.writeText(link);
       setCopied(true);
@@ -331,7 +331,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   const header = artifact ? (
     <div className="full-header">
       <div className="full-title">
-        <h1>
+        <h1 title={artifact.title}>
           {artifact.title}
           {artifact.status === "solved" ? <span className="badge solved">solved</span> : null}
           {artifact.archivedAt ? <span className="badge">archived</span> : null}

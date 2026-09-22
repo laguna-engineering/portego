@@ -4,7 +4,7 @@ import { mintPreview } from "./api.ts";
 export type ArtifactPreviewProps = {
   artifactId: string;
   title: string;
-  className?: string;
+  className: string;
   /** The version to preview. Null or omitted previews the current version. */
   versionId?: string | null;
   /** The frame itself, for the page that needs to talk to it. */
@@ -20,7 +20,7 @@ export type ArtifactPreviewProps = {
  * which leaves the document in an opaque origin: it can run its own scripts
  * and reach nothing else.
  *
- * The full-screen view frames the artifact through this same component rather
+ * The artifact page frames the artifact through this component rather
  * than navigating to the preview URL. A sandboxed document that is itself the
  * top-level page can navigate its own tab anywhere, and no header prevents it.
  * A framed one cannot.
@@ -57,7 +57,7 @@ export function ArtifactPreview({
   return (
     <iframe
       ref={ref}
-      className={className ?? "preview"}
+      className={className}
       title={`Preview of ${title}`}
       src={url}
       sandbox="allow-scripts"

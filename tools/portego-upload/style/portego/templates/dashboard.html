@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{TITLE}}</title>
+  <style data-portego-style></style>
+</head>
+<body>
+  <div class="artifact-shell">
+    <header class="artifact-header">
+      <p class="artifact-kicker">Status report</p>
+      <h1>{{TITLE}}</h1>
+      <p class="artifact-summary">Replace this sentence with the current state and the main conclusion.</p>
+      <div class="artifact-meta">
+        <span class="artifact-badge">{{STYLE_NAME}} style</span>
+      </div>
+    </header>
+
+    <main data-portego-content>
+      <section class="artifact-section">
+        <h2>Current state</h2>
+        <div class="artifact-grid artifact-grid-three">
+          <article class="artifact-card">
+            <span class="artifact-card-label">Metric</span>
+            <p class="artifact-metric">0</p>
+            <p class="artifact-muted">Explain what this number means.</p>
+          </article>
+          <article class="artifact-card">
+            <span class="artifact-card-label">Metric</span>
+            <p class="artifact-metric">0%</p>
+            <p class="artifact-muted">Explain what this percentage means.</p>
+          </article>
+          <article class="artifact-card">
+            <span class="artifact-card-label">Metric</span>
+            <p class="artifact-metric">0</p>
+            <p class="artifact-muted">Explain what this number means.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="artifact-section">
+        <h2>Findings</h2>
+        <div class="artifact-decision"><strong>Healthy</strong><span>Describe what is working as expected.</span></div>
+        <div class="artifact-decision"><strong>Needs attention</strong><span>Describe the most important issue.</span></div>
+        <div class="artifact-decision"><strong>Next check</strong><span>Describe what should be verified next.</span></div>
+      </section>
+    </main>
+
+    <footer class="artifact-footer">Prepared as a self-contained Portego artifact.</footer>
+  </div>
+</body>
+</html>

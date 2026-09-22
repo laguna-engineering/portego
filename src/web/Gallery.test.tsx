@@ -183,13 +183,15 @@ describe("listing", () => {
     expect(screen.getByText(/2 KiB/)).toBeDefined();
   });
 
-  test("links the card to the full-screen view, since cards open it directly", async () => {
+  test("links the card to the artifact, so a modified click opens it in a new tab", async () => {
     stubFetch(() => ({ body: { items: [artifact()], nextCursor: null } }));
     const { container } = renderGallery();
 
     await screen.findByText("Sales chart");
     const link = container.querySelector(".card-link");
-    expect(link?.getAttribute("href")).toBe("/a/artifact-1/full");
+    expect(link?.getAttribute("href")).toBe("/a/artifact-1");
+    // The tab a reader opens themselves gets no handle on this one.
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
   test("marks a solved or archived artifact on its card", async () => {

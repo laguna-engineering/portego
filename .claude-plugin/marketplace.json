@@ -5,7 +5,7 @@
     {
       "name": "portego-upload",
       "source": "./plugins/portego-upload",
-      "description": "Upload an HTML file to your Portego deployment by its path, without the file passing through the conversation."
+      "description": "Create, validate, and upload self-contained HTML artifacts in a configurable style."
     }
   ]
 }

@@ -381,9 +381,52 @@ describe("tools", () => {
     );
 
     const result = (await callTool(client, "get_artifact_markdown", { id: created.id })).result
-      ?.structuredContent as { markdown: string; empty: boolean };
+      ?.structuredContent as { markdown: string; empty: boolean; source: string };
     expect(result.markdown).toBe("# Heading\n\ntext");
     expect(result.empty).toBe(false);
+    expect(result.source).toBe("generated");
+  });
+
+  test("returns the Markdown sent with HTML instead of converting the HTML", async () => {
+    const result = await callTool(client, "upload_artifact", {
+      title: "Companion check",
+      html: "<!doctype html><html><title>t</title><svg><text>42%</text></svg></html>",
+      markdown: "# Companion check\n\nConversion is 42%.",
+    });
+    const created = result.result?.structuredContent as { id: string };
+    const markdown = (await callTool(client, "get_artifact_markdown", { id: created.id })).result
+      ?.structuredContent as { markdown: string; source: string };
+    expect(markdown).toMatchObject({
+      markdown: "# Companion check\n\nConversion is 42%.",
+      source: "provided",
+    });
+  });
+
+  test("renders Markdown and returns the supplied source", async () => {
+    const result = await callTool(client, "upload_artifact", {
+      title: "Markdown check",
+      markdown: "# Heading\n\nA **fact**.",
+    });
+    const created = result.result?.structuredContent as { id: string };
+    const markdown = (await callTool(client, "get_artifact_markdown", { id: created.id })).result
+      ?.structuredContent as {
+      id: string;
+      markdown: string;
+      empty: boolean;
+      source: string;
+      converterVersion: string;
+    };
+    const html = (await callTool(client, "get_artifact_source", { id: created.id })).result
+      ?.structuredContent as { html: string };
+
+    expect(markdown).toEqual({
+      id: created.id,
+      markdown: "# Heading\n\nA **fact**.",
+      empty: false,
+      source: "provided",
+      converterVersion: "provided",
+    });
+    expect(html.html).toContain("<strong>fact</strong>");
   });
 
   test("says an artifact has no static content rather than inventing some", async () => {

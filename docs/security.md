@@ -117,19 +117,19 @@ The route tests assert that each one is served with the headers above and is
 returned as uploaded, with only the bridge added. The browser tests in #10 drive the same documents in a real
 browser, which is where the enforcement itself is observed.
 
-## The full-screen view
+## The artifact page
 
-`/a/<id>/full` is a page on the application origin holding the masthead and one
-frame under it. The frame is the same `ArtifactPreview` the detail page uses, so
-the artifact reaches the browser the same way: a short-lived signed URL on the
-content host, `sandbox allow-scripts` on both the attribute and the response.
+`/a/<id>` is a page on the application origin holding the masthead and one
+frame under it. The frame is `ArtifactPreview`, so the artifact reaches the
+browser the same way a preview does: a short-lived signed URL on the content
+host, `sandbox allow-scripts` on both the attribute and the response.
 
 The masthead sits outside the frame and the frame cannot reach it. An artifact
 can still draw a masthead of its own inside the frame and invite a click on it,
 so the real one keeps its border and the page background around it.
 
-The detail page reaches this view through a plain link with no `target`. A left
-click stays in the tab and the application routes it. A modified click is the
+The gallery reaches this page through a plain card link with no `target`. A
+left click stays in the tab and the application routes it. A modified click is the
 reader's own, and `rel="noopener noreferrer"` covers the tab the browser opens
 for it.
 
@@ -146,7 +146,7 @@ trusted application.
 Framing the artifact inside a page on the application origin keeps the
 restriction: the document is no longer the top-level context, and the tab stays
 where the user put it. The browser tests in `e2e/sandbox.test.ts` run the
-hostile documents through this route as well as through the detail page.
+hostile documents through this route as well as through the preview URL.
 
 The wrapper page carries the masthead and nothing else of the application. The
 reader's own email is on it, and the opaque origin the frame runs in is what

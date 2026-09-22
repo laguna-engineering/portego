@@ -1,5 +1,6 @@
 import type { EventBus } from "../events/bus.ts";
 import { CONVERTER_VERSION, htmlToMarkdown } from "../markdown/convert.ts";
+import { markdownToHtml } from "../markdown/render.ts";
 import type { CachedMarkdown, MarkdownStore } from "../markdown/store.ts";
 import type {
   Artifact,
@@ -42,6 +43,13 @@ export type VersionSummary = Omit<
 
 export type UploadInput = {
   bytes: Uint8Array;
+  /** Markdown is rendered to the stored static HTML document. */
+  contentType?: "html" | "markdown";
+  /**
+   * What an agent reads back in place of Markdown converted from the HTML.
+   * Only with an HTML upload; a Markdown upload is already its own text.
+   */
+  markdown?: string | null;
   /** Hints from the request. The stored name comes from the first of these. */
   filename?: string | null;
   title?: string | null;
@@ -219,16 +227,27 @@ export function createArtifactService(options: {
       }
 
       const text = decodeUtf8(input.bytes);
-      if (!looksLikeHtml(text)) {
+      const isMarkdown = input.contentType === "markdown";
+      if (!isMarkdown && !looksLikeHtml(text)) {
         throw new ServiceError(
           "UNSUPPORTED_CONTENT",
           "The file does not look like an HTML document.",
         );
       }
-
-      const title = readTitle(input.title, text);
-      const description = readDescription(input.description);
-      const originalFilename = safeFilename(input.filename);
+      const companion = input.markdown?.trim() ? input.markdown : null;
+      if (companion !== null && isMarkdown) {
+        throw new ServiceError(
+          "INVALID_INPUT",
+          "A Markdown upload is already its own text; send markdown only with HTML.",
+        );
+      }
+      if (companion !== null && Buffer.byteLength(companion) > maxUploadBytes) {
+        throw new ServiceError(
+          "FILE_TOO_LARGE",
+          `The Markdown is larger than the ${maxUploadBytes} byte limit.`,
+        );
+      }
+      const providedMarkdown = isMarkdown ? text : companion;
 
       // An explicit target is checked before anything is written, so a wrong
       // id is refused rather than turned into a new artifact.
@@ -236,9 +255,26 @@ export function createArtifactService(options: {
       if (input.artifactId) {
         target = store.get(input.artifactId);
         if (!target) throw new ServiceError("NOT_FOUND", "No such artifact.");
-      } else {
-        target = store.findByTitle(title);
       }
+
+      const title = readTitle(input.title, text, isMarkdown, target?.title);
+      const description = readDescription(input.description);
+      const content = isMarkdown
+        ? new TextEncoder().encode(await markdownToHtml(text, title))
+        : input.bytes;
+      if (content.byteLength > maxUploadBytes) {
+        throw new ServiceError(
+          "FILE_TOO_LARGE",
+          `The rendered HTML is larger than the ${maxUploadBytes} byte limit.`,
+        );
+      }
+      const originalFilename = safeFilename(
+        isMarkdown
+          ? `${input.filename?.replace(/\.[^.]*$/, "") || "artifact"}.html`
+          : input.filename,
+      );
+
+      if (!target) target = store.findByTitle(title);
 
       if (target) {
         const artifact = await store.addVersion({
@@ -246,7 +282,8 @@ export function createArtifactService(options: {
           // A version upload without a description keeps the one it has.
           ...(description === null ? {} : { description }),
           originalFilename,
-          content: input.bytes,
+          content,
+          ...(providedMarkdown === null ? {} : { providedMarkdown }),
           createdBy: input.createdBy,
         });
         if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
@@ -258,7 +295,8 @@ export function createArtifactService(options: {
         title,
         description,
         originalFilename,
-        content: input.bytes,
+        content,
+        ...(providedMarkdown === null ? {} : { providedMarkdown }),
         createdBy: input.createdBy,
       });
       publish({ type: "artifact.created", id: artifact.id });
@@ -357,6 +395,9 @@ export function createArtifactService(options: {
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       const version = requireVersion(store, id, versionId ?? artifact.currentVersionId);
 
+      const provided = markdownStore.readProvided(version.id);
+      if (provided) return { artifact: toSummary(artifact), ...provided };
+
       const cached = markdownStore.read(version.id, version.sha256, CONVERTER_VERSION);
       if (cached) return { artifact: toSummary(artifact), ...cached };
 
@@ -406,7 +447,12 @@ async function readSource(store: ArtifactStore, versionId: string): Promise<Uint
   }
 }
 
-function readTitle(given: string | null | undefined, text: string): string {
+function readTitle(
+  given: string | null | undefined,
+  text: string,
+  isMarkdown: boolean,
+  targetTitle?: string,
+): string {
   const provided = given?.trim();
   if (provided) {
     if (provided.length > TITLE_MAX_LENGTH) {
@@ -419,14 +465,20 @@ function readTitle(given: string | null | undefined, text: string): string {
   }
   // A derived title is truncated rather than refused: the uploader did not
   // write it and cannot be asked to shorten it.
-  const derived = titleFromHtml(text);
-  if (!derived) {
-    throw new ServiceError(
-      "TITLE_REQUIRED",
-      "Give the artifact a title, or upload a document with a <title> element.",
-    );
-  }
-  return derived;
+  const derived = isMarkdown ? titleFromMarkdown(text) : titleFromHtml(text);
+  if (derived) return derived;
+  if (targetTitle) return targetTitle;
+  throw new ServiceError(
+    "TITLE_REQUIRED",
+    isMarkdown
+      ? "Give the artifact a title, or start the Markdown with a heading."
+      : "Give the artifact a title, or upload a document with a <title> element.",
+  );
+}
+
+function titleFromMarkdown(markdown: string): string | null {
+  const heading = markdown.match(/^ {0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*$/m)?.[1]?.trim();
+  return heading?.slice(0, TITLE_MAX_LENGTH) || null;
 }
 
 function readDescription(given: string | null | undefined): string | null {

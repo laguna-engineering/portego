@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "Portego",
+  "instructions": "DESIGN.md",
+  "styles": ["tokens.css", "artifact.css"],
+  "templates": {
+    "report": {
+      "path": "templates/report.html",
+      "description": "A structured report, proposal, technical note, or analysis."
+    },
+    "decision": {
+      "path": "templates/decision.html",
+      "description": "A decision record with context, options, outcome, and consequences."
+    },
+    "dashboard": {
+      "path": "templates/dashboard.html",
+      "description": "A compact status report with metrics, findings, and follow-up work."
+    }
+  }
+}

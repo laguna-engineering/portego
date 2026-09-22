@@ -80,7 +80,8 @@ systemd units, certificates, and the deploy and rollback commands.
 | `bun run migrate`    | Apply the database schema                   |
 | `bun run reconcile`  | Compare artifact metadata with files on disk |
 | `bun run start`      | Run the production build                    |
-| `bun run typecheck`  | Type-check the whole project                |
+| `bun run typecheck`  | Type-check the application and upload tool  |
+| `bun run typecheck:tools` | Type-check the upload tool only         |
 | `bun run lint`       | Lint and check formatting                   |
 | `bun run lint:fix`   | Apply the safe lint and format fixes        |
 | `bun run test`       | Run the server and component tests          |
@@ -126,6 +127,8 @@ src/server/mcp/    MCP tools, endpoint, and token principal mapping
 src/server/preview/ Preview tokens, isolated content responses
 src/server/storage/ Artifact metadata, file storage, migrations
 src/web/            React client, views, and Vite entry point
+plugins/            Claude Code plugin skills and metadata
+tools/portego-upload/ Local creation, validation, and upload tool
 deploy/             systemd units and the nginx server configuration
 docs/               Design and operation notes
 scripts/            Deployment and test entry points
@@ -203,9 +206,9 @@ describes the suites and the hostile-artifact cases.
 ## Web client
 
 Two views. The gallery lists artifacts as cards and keeps its search term in
-the URL, so a link reproduces what the sender was looking at. The detail page
-shows the metadata, an isolated preview, a source download, and a copy-link
-action. Uploading is a dialog that takes a dropped or chosen file, confirms its
+the URL, so a link reproduces what the sender was looking at. The artifact page
+fills the window under the masthead with an isolated preview, and carries the
+metadata, versions, comments, a source download, and a copy-link action. Uploading is a dialog that takes a dropped or chosen file, confirms its
 name and size, and reports what the server refused when it refuses.
 
 Component tests need a DOM, so `bun run test:web` registers happy-dom first.
@@ -232,9 +235,11 @@ change records who made it. See
 
 ## Reading an artifact as text
 
-An artifact can be read as Markdown through the API, the detail page, and MCP.
-The HTML is parsed and never executed, so an artifact that draws itself with
-JavaScript reports that it has no static content instead of inventing some.
+An artifact can be read as Markdown through the API, the artifact page, and MCP.
+Markdown uploads return the Markdown supplied with their version, and an HTML
+upload can bring its own Markdown for the same purpose. Without one, the HTML
+is parsed and never executed, so an artifact that draws itself with JavaScript
+reports that it has no static content instead of inventing some.
 [docs/markdown.md](docs/markdown.md) covers what converts, how URLs are
 handled, and the caching rule.
 
@@ -247,7 +252,10 @@ artifact service the web routes call. Other clients reach it too, including one
 that needs a pre-registered client id rather than dynamic registration.
 [docs/mcp.md](docs/mcp.md) covers discovery, scopes, client registration,
 hosting a client metadata document, the tools, how a client sends a file
-without putting it in a tool argument, and how to connect each client.
+without putting it in a tool argument, and how to connect each client. The
+local plugin can also create and validate an artifact in a configurable style;
+[docs/artifact-styles.md](docs/artifact-styles.md) defines the style format and
+resolution order.
 
 ## Uploaded HTML
 

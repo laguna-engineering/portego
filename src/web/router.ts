@@ -28,9 +28,8 @@ export type GalleryFilters = {
 
 export type Route =
   | ({ name: "gallery" } & GalleryFilters)
-  | { name: "artifact"; id: string }
   /** One artifact filling the viewport under the masthead. */
-  | { name: "artifact-full"; id: string }
+  | { name: "artifact"; id: string }
   /** The MCP authorization pages. They carry the signed OAuth query through. */
   | { name: "mcp-login"; query: string }
   | { name: "mcp-consent"; query: string }
@@ -38,10 +37,10 @@ export type Route =
 
 /** Reads the current URL. Two views and a search term need no router library. */
 export function readRoute(url: URL): Route {
-  const full = url.pathname.match(/^\/a\/([^/]+)\/full\/?$/);
-  if (full?.[1]) return { name: "artifact-full", id: decodeURIComponent(full[1]) };
-  const detail = url.pathname.match(/^\/a\/([^/]+)\/?$/);
-  if (detail?.[1]) return { name: "artifact", id: decodeURIComponent(detail[1]) };
+  // `/full` is the path the view had before it became the only one. Links
+  // copied then still open.
+  const artifact = url.pathname.match(/^\/a\/([^/]+)(?:\/full)?\/?$/);
+  if (artifact?.[1]) return { name: "artifact", id: decodeURIComponent(artifact[1]) };
   if (url.pathname === "/mcp/login") return { name: "mcp-login", query: url.search };
   if (url.pathname === "/mcp/consent") return { name: "mcp-consent", query: url.search };
   if (url.pathname === "/") {
@@ -71,10 +70,6 @@ export function galleryPath(filters: Partial<GalleryFilters>): string {
 
 export function artifactPath(id: string): string {
   return `/a/${encodeURIComponent(id)}`;
-}
-
-export function fullScreenPath(id: string): string {
-  return `${artifactPath(id)}/full`;
 }
 
 /**

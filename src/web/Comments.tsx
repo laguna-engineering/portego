@@ -57,9 +57,8 @@ function threadComments(comments: Comment[]): Thread[] {
  * The comment thread. Comments cannot be edited: the text and the time they
  * were written are the record. An author can remove their own.
  *
- * Used both on the detail page, where there are no anchors or selection, and
- * inside the full-screen comments panel, which offers a pending selection and
- * reacts to a comment's quote being clicked.
+ * Used inside the comments panel, which offers a pending selection and reacts
+ * to a comment's quote being clicked.
  */
 export function Comments({
   artifactId,

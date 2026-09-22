@@ -127,12 +127,12 @@ of it has to pass the browser's `Host` through unchanged.
 | `list_artifacts` | Cursor, limit, optional query and sort. Returns compact metadata and web URLs. |
 | `get_artifact_metadata` | One metadata record. |
 | `get_artifact_source` | The stored HTML of one version, up to 1 MiB, current by default or the one named by an optional `versionId`. Larger artifacts are refused with their size and a link, rather than truncated. |
-| `upload_artifact` | Title, optional description, optional `artifactId` to add a version to an existing artifact, and self-contained HTML. Returns the id, digest, version number, whether the upload created the artifact, and the web URL. |
+| `upload_artifact` | Title, optional description, optional `artifactId` to add a version to an existing artifact, and either self-contained HTML or Markdown, or both. Markdown alone becomes a static HTML page in the Portego style; with HTML, it is the text agents read back. Returns the id, digest, version number, whether the upload created the artifact, and the web URL. |
 | `create_upload_ticket` | A short-lived URL and ticket for sending an HTML file directly, without putting it in a tool argument. |
 | `set_artifact_status` | Mark an artifact solved or open again, archive it, or both. Records the caller as the actor. |
 | `list_artifact_comments` | The comments on one artifact, oldest first, with their authors and the version each was written on. |
 | `add_artifact_comment` | Adds a comment as the caller, on the current version by default or the one named by an optional `versionId`, optionally as a reply to a root comment via `parentId`. Comments cannot be edited. |
-| `get_artifact_markdown` | The artifact's static content as Markdown, current version by default or the one named by an optional `versionId`. `empty` says so when a page renders everything from JavaScript. |
+| `get_artifact_markdown` | The artifact's static content as Markdown, current version by default or the one named by an optional `versionId`. Its `source` says whether the version supplied Markdown or the server generated it from HTML. `empty` says so when a page renders everything from JavaScript. |
 | `list_artifact_versions` | An artifact's versions, highest number first. |
 
 Every tool description states that artifact HTML is untrusted, self-contained,
@@ -155,8 +155,11 @@ after the first version.
 
 `upload_artifact` reports which version an upload became: `versionNumber` is
 the version's number, and `newArtifact` says whether the upload created the
-artifact or added to an existing one. `list_artifact_versions` lists an
-artifact's versions, highest number first. `get_artifact_source` and
+artifact or added to an existing one. A Markdown upload stores its authored
+Markdown on that version and renders it to the version's static HTML. An HTML
+upload can carry its own `markdown`, the concise text for agents; without it,
+reading the version as Markdown converts the HTML. `list_artifact_versions` lists
+an artifact's versions, highest number first. `get_artifact_source` and
 `get_artifact_markdown` read the current version by default, or take a
 `versionId` to read an older one. A comment carries the id and number of the
 version it was written on, so `list_artifact_comments` shows which version
@@ -175,14 +178,17 @@ as a multipart form:
 ```sh
 curl -H "Authorization: Bearer <ticket>" \
      -F file=@page.html \
+     -F contentType=html \
      -F title="A chart" \
      https://share.acme.example/api/uploads
 ```
 
-`file` is required. `title`, `description`, and `artifactId` are optional and
-follow the same rules as `upload_artifact`: a title matching an existing,
-non-archived artifact's title adds a version instead of creating one, and
-`artifactId` targets an artifact explicitly. The response is
+`file` is required. `contentType` is `html` by default or `markdown`. An HTML
+file may come with a `markdown` text field, the text agents read back. `title`,
+`description`, and `artifactId` are optional and follow the same rules as
+`upload_artifact`: a title matching an existing, non-archived artifact's title
+adds a version instead of creating one, and `artifactId` targets an artifact
+explicitly. Markdown is rendered in the Portego style with raw HTML and images disabled. The response is
 `{ artifact, newArtifact }`, where `artifact` is the record the web upload
 returns and `newArtifact` says whether the upload created it.
 
@@ -307,18 +313,27 @@ whole document through a tool argument, so both upload paths are closed to it
 and the flow works only for a person at a terminal.
 
 `tools/portego-upload` closes that gap. It is a stdio MCP server that runs on the
-same machine as the agent, holds its own token, reads the file itself, mints the
-ticket itself, and exposes two tools:
+same machine as the agent, holds its own token, reads the file itself, and mints
+the ticket itself. Its upload and sign-in tools are:
 
 ```
-upload_artifact_from_path({ path, title?, description?, artifactId? })
+upload_artifact_from_path({ path, contentType?, markdownPath?, title?, description?, artifactId? })
 sign_in()
 ```
 
-The agent passes a path and receives the artifact record, plus `newArtifact`
-saying whether the upload created the artifact or added a version to one that
-already existed. No document bytes and no credential cross the tool boundary,
-which is what makes the upload allowable rather than merely possible.
+It also exposes local tools that need no deployment or sign-in:
+
+```
+get_artifact_style({ stylePath? })
+prepare_artifact_draft({ path, title, template?, stylePath?, overwrite? })
+finalize_artifact({ path, outputPath?, stylePath?, maxBytes? })
+validate_artifact({ path, maxBytes? })
+```
+
+The agent passes paths and receives metadata. Document and embedded font bytes
+do not cross the tool boundary. The upload result includes the artifact record
+and `newArtifact`, which says whether the upload created the artifact or added
+a version to one that already existed.
 
 Its client id names `mcp-clients/claude-code.json`, whose document is in
 `tools/portego-upload/`. Install it and its nginx block the same way as any other
@@ -334,9 +349,14 @@ a plugin from the marketplace in this repository:
 ```
 
 The plugin asks for the address of the deployment, registers the MCP server,
-and adds a skill, `/portego-upload:share-html`. Any other MCP client starts the
-server with `npx -y portego-upload`, and gives it `PORTEGO_ORIGIN` in the
-server entry's `env`. In Claude Code without the plugin, that is:
+and adds `/portego-upload:share-html` for an existing HTML file,
+`/portego-upload:share-markdown` for a Markdown file, and
+`/portego-upload:create-artifact` for a new styled document. A new document
+is a visual HTML artifact by default; Markdown is for content the user already
+has as text, and the server renders it in the same style. Any other MCP
+client starts the server with `npx -y portego-upload`, and gives it
+`PORTEGO_ORIGIN` in the server entry's `env`. In Claude Code without the plugin,
+that is:
 
 ```sh
 claude mcp add portego-upload --scope user \
@@ -384,10 +404,20 @@ should stay out of the repository:
 { "env": { "PORTEGO_ORIGIN": "https://other.acme.example" } }
 ```
 
-The same binary uploads from a terminal, which is what CI wants:
+`PORTEGO_ARTIFACT_STYLE` names an optional style directory or manifest. A
+project can instead commit `.portego/artifact-style/`, and a user can keep one
+under `~/.config/portego/artifact-style/`. The bundled Portego style is the
+fallback. [artifact-styles.md](artifact-styles.md) defines the manifest,
+templates, resource embedding, validation, and resolution order.
+
+The same binary creates, validates, and uploads from a terminal:
 
 ```sh
-npx -y portego-upload upload report.html --title "Weekly report"
+npx -y portego-upload prepare report.html --title "Weekly report"
+# Edit report.html.
+npx -y portego-upload finalize report.html
+npx -y portego-upload validate report.portego.html
+npx -y portego-upload upload report.portego.html --title "Weekly report" --markdown-file report.md
 ```
 
 From a clone, `bun run tools/portego-upload/index.ts` takes the same commands.

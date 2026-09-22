@@ -5,7 +5,7 @@ description: Publish a self-contained HTML file to the user's Portego deployment
 
 # Share an HTML file on Portego
 
-1. The file must be self-contained HTML that renders with no network access. If it is not, say so and stop.
+1. Call `validate_artifact` with the absolute path. The file must be self-contained HTML that renders with no network access. If validation reports an error, explain it and stop. Do not modify a file the user only asked to share.
 2. Call `upload_artifact_from_path` with the absolute path. Pass `title` only when the user gave one. Pass `artifactId` when the user wants a new version of a known artifact.
 3. If the tool says the user is not signed in, call `sign_in`, tell the user to approve the request in the browser that opens, and then repeat the upload.
 4. If the tool says no deployment is set, give the user the command from the message. Do not guess the address.

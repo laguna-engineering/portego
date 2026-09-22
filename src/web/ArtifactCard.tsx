@@ -1,7 +1,7 @@
 import type { Artifact } from "./api.ts";
 import { excerpt, formatBytes } from "./format.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
-import { fullScreenPath } from "./router.ts";
+import { artifactPath } from "./router.ts";
 
 export type ArtifactCardProps = { artifact: Artifact; onOpen: (id: string) => void };
 
@@ -21,7 +21,8 @@ export function ArtifactCard({ artifact, onOpen }: ArtifactCardProps) {
     <li className="card">
       <a
         className="card-link"
-        href={fullScreenPath(artifact.id)}
+        href={artifactPath(artifact.id)}
+        rel="noopener noreferrer"
         onClick={(event) => {
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
           event.preventDefault();

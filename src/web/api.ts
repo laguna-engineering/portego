@@ -249,13 +249,14 @@ export async function deleteComment(artifactId: string, commentId: string): Prom
 export type Markdown = {
   markdown: string;
   empty: boolean;
+  source: "provided" | "generated";
   converterVersion: string;
   generatedAt: string;
 };
 
 /**
- * The artifact's static content as text. Scripts are dropped, never run.
- * `versionId` defaults to the current version on the server.
+ * The artifact's supplied Markdown or static content. HTML is parsed without
+ * running scripts. `versionId` defaults to the current version on the server.
  */
 export function fetchMarkdown(artifactId: string, versionId?: string | null): Promise<Markdown> {
   const suffix = versionId ? `?version=${encodeURIComponent(versionId)}` : "";

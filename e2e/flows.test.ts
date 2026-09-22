@@ -77,8 +77,8 @@ describe("the whole flow in a browser", () => {
     expect(source?.startsWith(app.server.contentOrigin)).toBe(true);
     expect(source?.startsWith(app.server.origin)).toBe(false);
 
-    // The gallery lists it, and the search finds it.
-    await page.getByRole("button", { name: "← All artifacts" }).click();
+    // The wordmark leads back to the gallery, which lists it, and the search finds it.
+    await page.getByRole("button", { name: "portego" }).click();
     await page.getByText("Quarterly chart").waitFor();
 
     await page.getByLabel("Search artifacts").fill("Quarterly");
@@ -105,26 +105,25 @@ describe("the whole flow in a browser", () => {
     if (!box) throw new Error("The short card is not on the page.");
 
     // The bottom edge of the card, which is below where its own text ends.
-    // A card click opens the full-screen view, not the detail page.
     await page.mouse.click(box.x + box.width / 2, box.y + box.height - 3);
-    await page.waitForURL(`${app.server.origin}/a/${short}/full`);
+    await page.waitForURL(`${app.server.origin}/a/${short}`);
   });
 
-  test("keeps the masthead where it is when the artifact goes full screen", async () => {
+  test("keeps the masthead where it is when an artifact opens from the gallery", async () => {
     const id = await uploadArtifact(app, { title: "Steady header", html: SELF_CONTAINED_ARTIFACT });
     const context = await app.signedIn();
     const page = await context.newPage();
-    await page.goto(`${app.server.origin}/a/${id}`);
+    await page.goto(app.server.origin);
 
     const masthead = page.getByRole("banner");
     const before = await masthead.boundingBox();
 
-    await page.getByRole("link", { name: "Full screen" }).click();
-    await page.waitForURL(`${app.server.origin}/a/${id}/full`);
+    await page.locator("li.card", { hasText: "Steady header" }).getByRole("link").click();
+    await page.waitForURL(`${app.server.origin}/a/${id}`);
     const after = await masthead.boundingBox();
 
-    // A masthead that changed width or place would jump on every trip in and
-    // out of the full-screen view.
+    // A masthead that changed width or place would jump on every trip between
+    // the gallery and an artifact.
     expect(after).toEqual(before);
   });
 
@@ -150,20 +149,6 @@ describe("the whole flow in a browser", () => {
     expect(Buffer.concat(chunks).toString()).toBe(SELF_CONTAINED_ARTIFACT);
   });
 
-  test("reads an artifact as text without rendering it", async () => {
-    const id = await uploadArtifact(app, {
-      title: "Readable",
-      html: "<!doctype html><html><title>t</title><h1>A heading</h1><p>Some text.</p></html>",
-    });
-
-    const context = await app.signedIn();
-    const page = await context.newPage();
-    await page.goto(`${app.server.origin}/a/${id}`);
-
-    await page.getByRole("tab", { name: "Text" }).click();
-    await page.getByText("# A heading").waitFor();
-  });
-
   test("marks an artifact solved and comments on it", async () => {
     const id = await uploadArtifact(app, { title: "A question", html: SELF_CONTAINED_ARTIFACT });
 
@@ -174,8 +159,9 @@ describe("the whole flow in a browser", () => {
     await page.getByRole("button", { name: "Mark solved" }).click();
     await page.getByRole("button", { name: "Reopen" }).waitFor();
 
+    await page.getByRole("button", { name: "Versions & comments" }).click();
     await page.getByLabel("Add a comment").fill("Answered offline.");
-    await page.getByRole("button", { name: "Comment" }).click();
+    await page.getByRole("button", { name: "Comment", exact: true }).click();
     await page.getByText("Answered offline.").waitFor();
   });
 
@@ -185,6 +171,7 @@ describe("the whole flow in a browser", () => {
     const page = await context.newPage();
     await page.goto(`${app.server.origin}/a/${id}`);
 
+    await page.getByRole("button", { name: "Versions & comments" }).click();
     await page.getByLabel("Add a comment").fill("Is the axis label right?");
     await page.getByRole("button", { name: "Comment", exact: true }).click();
     await page.getByText("Is the axis label right?").waitFor();
@@ -214,7 +201,7 @@ describe("the whole flow in a browser", () => {
 
     const context = await app.signedIn();
     const page = await context.newPage();
-    await page.goto(`${app.server.origin}/a/${id}/full`);
+    await page.goto(`${app.server.origin}/a/${id}`);
 
     await page.getByRole("button", { name: "Mark solved" }).click();
     await page.getByRole("button", { name: "Reopen" }).waitFor();
@@ -245,7 +232,7 @@ describe("the whole flow in a browser", () => {
       const id = await uploadArtifact(app, { title, html: SELF_CONTAINED_ARTIFACT });
       const context = await app.signedIn();
       const page = await context.newPage();
-      await page.goto(`${app.server.origin}/a/${id}/full`);
+      await page.goto(`${app.server.origin}/a/${id}`);
       await page.getByRole("button", { name: "Copy link" }).waitFor();
       return { context, page };
     }
@@ -320,7 +307,7 @@ describe("the whole flow in a browser", () => {
       const context = await app.signedIn();
       const page = await context.newPage();
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto(`${app.server.origin}/a/${id}/full`);
+      await page.goto(`${app.server.origin}/a/${id}`);
       await page.getByRole("button", { name: "Menu" }).waitFor();
       return { context, page };
     }
@@ -430,7 +417,7 @@ describe("the whole flow in a browser", () => {
       const context = await app.signedIn();
       const page = await context.newPage();
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto(`${app.server.origin}/a/${id}/full`);
+      await page.goto(`${app.server.origin}/a/${id}`);
       const menu = page.locator(".masthead-menu");
 
       await page.getByRole("button", { name: "Menu" }).waitFor();
@@ -471,7 +458,7 @@ describe("the whole flow in a browser", () => {
       });
       const context = await app.signedIn();
       const page = await context.newPage();
-      await page.goto(`${app.server.origin}/a/${id}/full`);
+      await page.goto(`${app.server.origin}/a/${id}`);
       await page.getByRole("button", { name: "Copy link" }).waitFor();
 
       expect(await page.getByRole("button", { name: "Menu" }).count()).toBe(0);
@@ -657,7 +644,7 @@ describe("the whole flow in a browser", () => {
 
     const context = await app.signedIn();
     const page = await context.newPage();
-    await page.goto(`${app.server.origin}/a/${id}/full`);
+    await page.goto(`${app.server.origin}/a/${id}`);
     const frame = page.frameLocator('iframe[title="Preview of Annotated"]');
     await frame.locator("p").first().waitFor();
 
@@ -763,10 +750,13 @@ describe("changes reach a page that is already open", () => {
       await withPages(2, async ([actor, watcher]) => {
         await actor.goto(`${app.server.origin}/a/${id}`);
         await watcher.goto(`${app.server.origin}/a/${id}`);
+        for (const page of [actor, watcher]) {
+          await page.getByRole("button", { name: "Versions & comments" }).click();
+        }
         await watcher.getByText("No comments yet.").waitFor();
 
         await actor.getByLabel("Add a comment").fill("Written in the other browser");
-        await actor.getByRole("button", { name: "Comment" }).click();
+        await actor.getByRole("button", { name: "Comment", exact: true }).click();
 
         await watcher.getByText("Written in the other browser").waitFor();
       });

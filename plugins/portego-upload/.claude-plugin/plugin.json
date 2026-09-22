@@ -1,7 +1,7 @@
 {
   "name": "portego-upload",
-  "version": "0.1.2",
-  "description": "Upload an HTML file to your Portego deployment by its path, without the file passing through the conversation.",
+  "version": "0.2.0",
+  "description": "Create, validate, and upload HTML or Markdown artifacts in a configurable style.",
   "license": "Apache-2.0",
   "userConfig": {
     "origin": {
@@ -9,13 +9,22 @@
       "title": "Portego deployment",
       "description": "The address of your deployment, for example https://share.acme.example. Leave it empty to use the one set with `npx -y portego-upload auth <origin>`.",
       "sensitive": false
+    },
+    "style": {
+      "type": "string",
+      "title": "Artifact style",
+      "description": "An optional path to an artifact style directory or manifest. Project and user styles are discovered automatically when this is empty.",
+      "sensitive": false
     }
   },
   "mcpServers": {
     "portego-upload": {
       "command": "npx",
       "args": ["-y", "portego-upload"],
-      "env": { "PORTEGO_ORIGIN": "${user_config.origin}" }
+      "env": {
+        "PORTEGO_ORIGIN": "${user_config.origin}",
+        "PORTEGO_ARTIFACT_STYLE": "${user_config.style}"
+      }
     }
   }
 }

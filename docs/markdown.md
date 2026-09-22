@@ -1,9 +1,18 @@
 # Markdown representation
 
 An artifact can be read as text: `GET /api/artifacts/:id/markdown`, the **Text**
-view on the detail page, and the `get_artifact_markdown` MCP tool. All three go
-through the same conversion and need the same session or token the source
-needs.
+view on the artifact page, and the `get_artifact_markdown` MCP tool. A version
+uploaded as Markdown returns its supplied Markdown. An HTML version uses the
+conversion below. The response identifies the source as `provided` or
+`generated`. Both paths need the same session or token as the source.
+
+## Provided Markdown
+
+The upload tool can send a Markdown file with `contentType: "markdown"`. The
+backend stores that text with the new version and renders a complete static HTML
+page. Raw HTML is escaped, images are omitted, and links retain only `http:`,
+`https:`, and `mailto:` destinations. The renderer does not execute scripts or
+load embedded resources.
 
 ## What the conversion does
 
@@ -43,9 +52,11 @@ they survive.
 
 ## Caching
 
-A conversion is stored with the source digest and the converter version, and is
-reused only when both still match. Changing the converter means bumping
-`CONVERTER_VERSION`, after which the next read regenerates.
+A generated conversion is stored with the source digest and the converter
+version, and is reused only when both still match. Changing the converter means
+bumping `CONVERTER_VERSION`, after which the next read regenerates. Supplied
+Markdown belongs only to the version that uploaded it and is never inherited by
+a later HTML version.
 
 ## The limitation
 

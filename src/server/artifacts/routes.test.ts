@@ -15,9 +15,19 @@ afterEach(() => {
   server.cleanup();
 });
 
-function upload(fields: { file?: File; title?: string; description?: string } = {}) {
+function upload(
+  fields: {
+    file?: File;
+    title?: string;
+    description?: string;
+    contentType?: "html" | "markdown";
+    markdown?: string;
+  } = {},
+) {
   const form = new FormData();
   form.set("file", fields.file ?? htmlFile("<h1>A chart</h1>", "chart.html"));
+  if (fields.contentType !== undefined) form.set("contentType", fields.contentType);
+  if (fields.markdown !== undefined) form.set("markdown", fields.markdown);
   if (fields.title !== undefined) form.set("title", fields.title);
   if (fields.description !== undefined) form.set("description", fields.description);
   return server.app.request("/api/artifacts", {
@@ -103,6 +113,61 @@ describe("upload", () => {
     const res = await upload({});
     const body = (await res.json()) as { artifact: { title: string } };
     expect(body.artifact.title).toBe("Doc");
+  });
+
+  test("keeps the Markdown sent with an HTML upload as what agents read back", async () => {
+    const res = await upload({
+      file: htmlFile("<h1>A chart</h1><svg><text>42%</text></svg>", "chart.html"),
+      markdown: "# A chart\n\nConversion is 42%.",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { artifact: { id: string } };
+
+    const markdown = await server.app.request(`/api/artifacts/${body.artifact.id}/markdown`, {
+      headers: { cookie },
+    });
+    await expect(markdown.json()).resolves.toMatchObject({
+      markdown: "# A chart\n\nConversion is 42%.",
+      source: "provided",
+    });
+  });
+
+  test("refuses companion Markdown on a Markdown upload, which is its own text", async () => {
+    const res = await upload({
+      file: new File(["# Report"], "report.md"),
+      contentType: "markdown",
+      markdown: "# Report",
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("renders Markdown to static HTML and returns the supplied Markdown", async () => {
+    const res = await upload({
+      file: new File(
+        ["# Weekly report\n\n<script>run()</script>\n\n[Source](https://example.com)"],
+        "weekly.md",
+      ),
+      contentType: "markdown",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { artifact: { id: string; originalFilename: string } };
+    expect(body.artifact.originalFilename).toBe("weekly.html");
+
+    const source = await server.app.request(`/api/artifacts/${body.artifact.id}/source`, {
+      headers: { cookie },
+    });
+    const html = await source.text();
+    expect(html).toContain("<h1>Weekly report</h1>");
+    expect(html).toContain("&lt;script&gt;run()&lt;/script&gt;");
+
+    const markdown = await server.app.request(`/api/artifacts/${body.artifact.id}/markdown`, {
+      headers: { cookie },
+    });
+    await expect(markdown.json()).resolves.toMatchObject({
+      markdown: "# Weekly report\n\n<script>run()</script>\n\n[Source](https://example.com)",
+      source: "provided",
+      converterVersion: "provided",
+    });
   });
 
   test("refuses a document with no title anywhere, rather than inventing one", async () => {

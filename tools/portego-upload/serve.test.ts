@@ -36,6 +36,16 @@ async function uploadError(): Promise<string> {
   return result.content[0]?.text ?? "";
 }
 
+test("uses a positional argument after a flag value", async () => {
+  const path = join(directory, "draft.html");
+  const child = Bun.spawn(
+    ["bun", "run", join(import.meta.dir, "index.ts"), "prepare", "--title", "Q3 Report", path],
+    { env: { PATH: process.env.PATH ?? "" }, stdout: "pipe", stderr: "pipe" },
+  );
+  expect(await child.exited).toBe(0);
+  expect(await Bun.file(path).exists()).toBe(true);
+});
+
 // A client shows this version to the person, who compares it with the npm
 // package and with the plugin to see which release is running.
 test("reports the version of the package, which the plugin shares", async () => {
@@ -58,6 +68,25 @@ describe("a first run with no deployment set", () => {
     const { tools } = await client.listTools();
     const signIn = tools.find((tool) => tool.name === "sign_in");
     expect(signIn?.inputSchema.properties ?? {}).toEqual({});
+  });
+
+  test("offers local style and validation tools before setup", async () => {
+    const { tools } = await client.listTools();
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "finalize_artifact",
+      "get_artifact_style",
+      "prepare_artifact_draft",
+      "sign_in",
+      "upload_artifact_from_path",
+      "validate_artifact",
+    ]);
+
+    const result = (await client.callTool({
+      name: "validate_artifact",
+      arguments: { path: join(directory, "page.html") },
+    })) as { isError?: boolean; structuredContent?: { valid?: boolean } };
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent?.valid).toBe(true);
   });
 
   test("a setup done while the server runs is picked up without a restart", async () => {

@@ -9,13 +9,13 @@ export type ArtifactTextProps = {
 
 type State =
   | { status: "loading" }
-  | { status: "ready"; markdown: string; empty: boolean }
+  | { status: "ready"; markdown: string; empty: boolean; source: "provided" | "generated" }
   | { status: "error"; message: string };
 
 /**
- * The artifact's static content as text. The server parses the document
- * without running it, so an artifact that draws itself with JavaScript has
- * little or nothing to show here.
+ * The artifact's supplied Markdown or static content derived without running
+ * its document. An artifact that draws itself with JavaScript has little or
+ * nothing to show here.
  */
 export function ArtifactText({ artifactId, versionId = null }: ArtifactTextProps) {
   const [state, setState] = useState<State>({ status: "loading" });
@@ -50,5 +50,12 @@ export function ArtifactText({ artifactId, versionId = null }: ArtifactTextProps
     );
   }
 
-  return <pre className="text-view">{state.markdown}</pre>;
+  return (
+    <>
+      <p className="hint">
+        {state.source === "provided" ? "Provided Markdown." : "Generated from the artifact HTML."}
+      </p>
+      <pre className="text-view">{state.markdown}</pre>
+    </>
+  );
 }

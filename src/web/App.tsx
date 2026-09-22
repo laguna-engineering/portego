@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArtifactDetail } from "./ArtifactDetail.tsx";
 import { ArtifactFull } from "./ArtifactFull.tsx";
 import type { Provider } from "./api.ts";
 import {
@@ -16,7 +15,7 @@ import { useLiveEvents } from "./live.ts";
 import { Masthead } from "./Masthead.tsx";
 import { McpConsent } from "./McpConsent.tsx";
 import { McpLogin } from "./McpLogin.tsx";
-import { artifactPath, fullScreenPath, galleryPath, useRoute } from "./router.ts";
+import { artifactPath, galleryPath, useRoute } from "./router.ts";
 import { SignIn } from "./SignIn.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
 
@@ -149,10 +148,10 @@ export function App() {
     />
   );
 
-  // The full-screen view gives the artifact every pixel the masthead does not
+  // The artifact view gives the artifact every pixel the masthead does not
   // need. The masthead carries the artifact's own chrome there, so the view
   // renders it itself.
-  if (route.name === "artifact-full") {
+  if (route.name === "artifact") {
     return (
       <ArtifactFull
         id={route.id}
@@ -165,8 +164,8 @@ export function App() {
   }
 
   // The masthead sits outside the column so it spans the window on every page,
-  // which is the width it has full screen. Moving between the two leaves it
-  // where it was.
+  // which is the width it has on the artifact view. Moving between the two
+  // leaves it where it was.
   return (
     <>
       {masthead}
@@ -180,17 +179,8 @@ export function App() {
                 replace: options?.replace ?? false,
               })
             }
-            onOpen={(id) => navigate(fullScreenPath(id))}
+            onOpen={(id) => navigate(artifactPath(id))}
             onUpload={() => setUploading(true)}
-          />
-        ) : null}
-
-        {route.name === "artifact" ? (
-          <ArtifactDetail
-            id={route.id}
-            currentUserId={session.user.id}
-            onBack={() => navigate("/")}
-            onFullScreen={() => navigate(fullScreenPath(route.id))}
           />
         ) : null}
 

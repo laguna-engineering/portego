@@ -3,6 +3,8 @@ import type { Database } from "bun:sqlite";
 export type CachedMarkdown = {
   markdown: string;
   empty: boolean;
+  /** `provided` is authored Markdown. `generated` is converted from HTML. */
+  source: "provided" | "generated";
   converterVersion: string;
   generatedAt: Date;
 };
@@ -21,6 +23,8 @@ export type MarkdownStore = {
     markdown: string;
     empty: boolean;
   }) => CachedMarkdown;
+  /** Markdown supplied when this version was uploaded, if any. */
+  readProvided: (versionId: string) => CachedMarkdown | null;
 };
 
 type Row = {
@@ -50,6 +54,7 @@ export function createMarkdownStore(options: { database: Database }): MarkdownSt
       return {
         markdown: row.markdown,
         empty: row.isEmpty === 1,
+        source: "generated",
         converterVersion: row.converterVersion,
         generatedAt: new Date(row.generatedAt),
       };
@@ -80,8 +85,26 @@ export function createMarkdownStore(options: { database: Database }): MarkdownSt
       return {
         markdown: input.markdown,
         empty: input.empty,
+        source: "generated",
         converterVersion: input.converterVersion,
         generatedAt: new Date(generatedAt),
+      };
+    },
+
+    readProvided(versionId) {
+      const row = database
+        .query(
+          `select markdown, isEmpty, converterVersion, generatedAt from artifactMarkdown
+           where versionId = ? and converterVersion = 'provided'`,
+        )
+        .get(versionId) as Row | null;
+      if (!row) return null;
+      return {
+        markdown: row.markdown,
+        empty: row.isEmpty === 1,
+        source: "provided",
+        converterVersion: row.converterVersion,
+        generatedAt: new Date(row.generatedAt),
       };
     },
   };

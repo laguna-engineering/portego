@@ -141,9 +141,9 @@ describe("signed in", () => {
   });
 });
 
-describe("full screen", () => {
+describe("artifact", () => {
   test("frames the artifact under the masthead", async () => {
-    window.history.replaceState(null, "", "/a/artifact-1/full");
+    window.history.replaceState(null, "", "/a/artifact-1");
     stubFetch(signedIn);
     render(<App />);
 
@@ -159,7 +159,7 @@ describe("full screen", () => {
   });
 
   test("names the tab after the artifact, which is the only label it has", async () => {
-    window.history.replaceState(null, "", "/a/artifact-1/full");
+    window.history.replaceState(null, "", "/a/artifact-1");
     stubFetch(signedIn);
     render(<App />);
 
@@ -168,7 +168,7 @@ describe("full screen", () => {
   });
 
   test("says so when the artifact cannot be loaded", async () => {
-    window.history.replaceState(null, "", "/a/artifact-1/full");
+    window.history.replaceState(null, "", "/a/artifact-1");
     stubFetch((path) =>
       path === "/api/artifacts/artifact-1"
         ? { status: 404, body: { error: { code: "NOT_FOUND", message: "No such artifact." } } }

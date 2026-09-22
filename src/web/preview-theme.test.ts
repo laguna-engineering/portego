@@ -9,8 +9,6 @@ function declaration(selector: string, property: string): string | undefined {
 
 // The frame element paints its own background until the artifact document loads.
 // A fixed color shows as a flash on the dark theme.
-for (const selector of [".preview", ".preview-full"]) {
-  test(`${selector} takes its background from a theme token`, () => {
-    expect(declaration(selector, "background")).toMatch(/^var\(--[\w-]+\)$/);
-  });
-}
+test(".preview-full takes its background from a theme token", () => {
+  expect(declaration(".preview-full", "background")).toMatch(/^var\(--[\w-]+\)$/);
+});

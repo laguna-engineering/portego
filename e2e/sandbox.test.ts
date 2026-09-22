@@ -156,16 +156,13 @@ describe("hostile artifacts", () => {
 });
 
 describe("opening an artifact full screen", () => {
-  /** Clicks Full screen on the detail page and returns the page it lands on. */
+  /** Opens the artifact's page and returns it. */
   async function goFullScreen(title: string, html: string) {
     const id = await uploadArtifact(app, { title, html });
     const context = await app.signedIn();
     const requests = recordRequests(context);
     const page = await context.newPage();
     await page.goto(`${app.server.origin}/a/${id}`);
-
-    await page.getByRole("link", { name: "Full screen" }).click();
-    await page.waitForURL(`${app.server.origin}/a/${id}/full`);
     const frame = page.frameLocator(`iframe[title="Preview of ${title}"]`);
     return { id, page, context, requests, frame };
   }
@@ -188,7 +185,7 @@ describe("opening an artifact full screen", () => {
   test("fills the tab under the masthead with the artifact", async () => {
     const { id, page, frame } = await goFullScreen("Full screen", SELF_CONTAINED_ARTIFACT);
 
-    expect(page.url()).toBe(`${app.server.origin}/a/${id}/full`);
+    expect(page.url()).toBe(`${app.server.origin}/a/${id}`);
     await frame.locator("#root").waitFor();
     expect(await frame.locator("#root").textContent()).toBe("rendered");
     // The masthead is on the page, outside the frame the artifact runs in.
@@ -199,17 +196,20 @@ describe("opening an artifact full screen", () => {
     const id = await uploadArtifact(app, { title: "No opener", html: SELF_CONTAINED_ARTIFACT });
     const context = await app.signedIn();
     const page = await context.newPage();
-    await page.goto(`${app.server.origin}/a/${id}`);
+    await page.goto(app.server.origin);
 
-    // The link carries no `target`, so a new tab is the reader's choice. `rel`
-    // is what keeps the tab they choose from getting a handle on this one.
+    // The card link carries no `target`, so a new tab is the reader's choice.
+    // `rel` is what keeps the tab they choose from getting a handle on this one.
     const [opened] = await Promise.all([
       context.waitForEvent("page"),
-      page.getByRole("link", { name: "Full screen" }).click({ modifiers: ["ControlOrMeta"] }),
+      page
+        .locator("li.card", { hasText: "No opener" })
+        .getByRole("link")
+        .click({ modifiers: ["ControlOrMeta"] }),
     ]);
     await opened.waitForLoadState();
 
-    expect(opened.url()).toBe(`${app.server.origin}/a/${id}/full`);
+    expect(opened.url()).toBe(`${app.server.origin}/a/${id}`);
     expect(await opened.evaluate(() => window.opener === null)).toBe(true);
   });
 
@@ -222,7 +222,7 @@ describe("opening an artifact full screen", () => {
       "top navigation",
       HOSTILE_ARTIFACTS["navigates the top page"] ?? "",
     );
-    expect(page.url()).toBe(`${app.server.origin}/a/${id}/full`);
+    expect(page.url()).toBe(`${app.server.origin}/a/${id}`);
   });
 
   test("still sees no cookies", async () => {

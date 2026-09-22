@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { artifactPath, fullScreenPath, galleryPath, readRoute } from "./router.ts";
+import { artifactPath, galleryPath, readRoute } from "./router.ts";
 
 describe("readRoute", () => {
   test("reads the gallery and its search term from the URL", () => {
@@ -41,13 +41,11 @@ describe("readRoute", () => {
     expect(readRoute(new URL("http://app.test/a/a%2Fb"))).toEqual({ name: "artifact", id: "a/b" });
   });
 
-  test("reads the full-screen view as its own route, not as an artifact id", () => {
+  test("still opens links copied when the view lived at /full", () => {
     expect(readRoute(new URL("http://app.test/a/abc-123/full"))).toEqual({
-      name: "artifact-full",
+      name: "artifact",
       id: "abc-123",
     });
-    // The detail page keeps the bare path. Only `/full` opens the frame alone.
-    expect(readRoute(new URL("http://app.test/a/abc-123")).name).toBe("artifact");
   });
 
   test("reports anything else as unknown, so the app can say so", () => {
@@ -56,14 +54,6 @@ describe("readRoute", () => {
 });
 
 describe("paths", () => {
-  test("builds a full-screen path the router reads back", () => {
-    expect(fullScreenPath("abc-123")).toBe("/a/abc-123/full");
-    expect(readRoute(new URL(`http://app.test${fullScreenPath("a/b")}`))).toEqual({
-      name: "artifact-full",
-      id: "a/b",
-    });
-  });
-
   test("keeps the filters in the gallery URL, so a link reproduces the view", () => {
     expect(galleryPath({ query: "latency p99" })).toBe("/?q=latency+p99");
     expect(galleryPath({ status: "solved", archived: true })).toBe("/?status=solved&archived=true");

@@ -493,50 +493,12 @@ label {
   gap: 0.5rem;
 }
 
-/* Detail ------------------------------------------------------------------ */
-
-.detail {
-  display: grid;
-  gap: 1rem;
-}
-
-.back {
-  justify-self: start;
-  border: 0;
-  background: none;
-  padding: 0;
-  color: var(--ink-muted);
-}
-
-.detail-header h1 {
-  margin: 0 0 0.35rem;
-  font-size: 1.5rem;
-  overflow-wrap: anywhere;
-}
-
-.detail-description {
-  margin: 0 0 0.5rem;
-  color: var(--ink-muted);
-}
+/* Artifact ---------------------------------------------------------------- */
 
 .detail-meta {
   margin: 0;
   font-size: 0.75rem;
   color: var(--ink-muted);
-}
-
-.detail-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.preview {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
 }
 
 .preview-full {
@@ -546,13 +508,6 @@ label {
   background: var(--surface);
 }
 
-.digest {
-  margin: 0;
-  font-size: 0.72rem;
-  color: var(--ink-muted);
-}
-
-.digest code,
 .filename {
   font-family: var(--mono);
   overflow-wrap: anywhere;
@@ -624,27 +579,6 @@ label {
 .scopes li::before {
   content: "→ ";
   color: var(--accent);
-}
-
-.views {
-  display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--line);
-}
-
-.view {
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  background: none;
-  padding: 0.4rem 0.7rem;
-  color: var(--ink-muted);
-}
-
-.view.selected {
-  border-bottom-color: var(--accent);
-  color: var(--ink);
-  font-weight: 600;
 }
 
 .text-view {
