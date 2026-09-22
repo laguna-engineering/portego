@@ -115,10 +115,26 @@ h3 {
 }
 
 /* The wordmark image is a one-colour silhouette, so it is a mask filled with
-   the text colour and follows the theme. */
+   the text colour and follows the theme. It is drawn as an inline block on a
+   line with the title's font metrics (see .full-title h1), so it shares the
+   title's baseline whatever a browser makes of the font's ascent and descent. */
 .wordmark-label {
-  height: 1.25rem;
-  aspect-ratio: 249 / 66;
+  --label-height: 1.06rem;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.wordmark-label::before {
+  content: "";
+  display: inline-block;
+  vertical-align: baseline;
+  width: calc(var(--label-height) * 249 / 66);
+  height: var(--label-height);
+  /* An inline block's baseline is its bottom margin edge. The letters'
+     baseline is 50 of the image's 66 rows down, so the descenders' 16 rows
+     hang below the line's baseline. */
+  margin-bottom: calc(var(--label-height) * -16 / 66);
   background: currentColor;
   -webkit-mask: url("./assets/logo-label.png") center / contain no-repeat;
   mask: url("./assets/logo-label.png") center / contain no-repeat;
@@ -888,13 +904,21 @@ button.link {
 }
 
 /* Title and metadata share one line, so the masthead keeps the height it has
-   on every other page. */
+   on every other page. The metadata is centred on the title rather than set
+   on its baseline: at its smaller size it reads as sitting low otherwise.
+   Exact centring reads as slightly high, so it sits a little below that,
+   part of the way to the baseline. */
 .full-title {
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
+}
+
+.full-title .detail-meta {
+  position: relative;
+  top: 0.05em;
 }
 
 .full-title h1 {
