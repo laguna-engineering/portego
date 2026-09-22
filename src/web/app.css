@@ -103,10 +103,6 @@ h3 {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  font-family: var(--mono);
-  font-size: 1.05rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
   border: 0;
   background: none;
   color: inherit;
@@ -118,10 +114,14 @@ h3 {
   border-radius: 0.3rem;
 }
 
-/* On the word and not on the button, where the gap would separate the two. */
-.wordmark span::after {
-  content: ".";
-  color: var(--accent);
+/* The wordmark image is a one-colour silhouette, so it is a mask filled with
+   the text colour and follows the theme. */
+.wordmark-label {
+  height: 1.25rem;
+  aspect-ratio: 249 / 66;
+  background: currentColor;
+  -webkit-mask: url("./assets/logo-label.png") center / contain no-repeat;
+  mask: url("./assets/logo-label.png") center / contain no-repeat;
 }
 
 .masthead-end {

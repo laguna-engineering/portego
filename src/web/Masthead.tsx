@@ -31,7 +31,7 @@ export function Masthead({ email, onHome, onSignOut, children, trailing, menu }:
       <button type="button" className="wordmark" onClick={onHome}>
         {/* Decorative: the text beside it already names the button. */}
         <img src={logoMark} alt="" width="22" height="22" />
-        <span>portego</span>
+        <span className="wordmark-label" role="img" aria-label="portego" />
       </button>
       {children}
       {/* A phone has no room for the account or a page's controls, so there they are a menu. */}
