@@ -3,7 +3,8 @@ import { z } from "zod";
 import { ServiceError } from "../artifacts/errors.ts";
 import type { ArtifactService, ArtifactSummary, VersionSummary } from "../artifacts/service.ts";
 import type { UploadTicketIssuer } from "../artifacts/tickets.ts";
-import { LIST_SORTS, type ListSort } from "../storage/artifacts.ts";
+import type { OrganizationService } from "../organization/service.ts";
+import { LIST_SORTS, type ListSort, type TagMatch } from "../storage/artifacts.ts";
 
 /**
  * Largest source document a tool returns. A client's own limits are usually
@@ -16,6 +17,7 @@ const UNTRUSTED = "Artifact HTML is untrusted, self-contained, and at most 5 MiB
 
 export type ToolContext = {
   service: ArtifactService;
+  organization: OrganizationService;
   /** The authenticated user. Never taken from tool arguments. */
   userId: string;
   /** Where a person can open the artifact. */
@@ -40,6 +42,10 @@ const metadataShape = {
   archivedAt: z.string().nullable(),
   versionCount: z.number().int(),
   currentVersionId: z.string(),
+  folder: z
+    .object({ id: z.string(), name: z.string(), parentId: z.string().nullable() })
+    .nullable(),
+  tags: z.array(z.object({ id: z.string(), name: z.string() })),
   url: z.string(),
 };
 
@@ -72,6 +78,8 @@ function describe(artifact: ArtifactSummary, context: ToolContext) {
     archivedAt: artifact.archivedAt?.toISOString() ?? null,
     versionCount: artifact.versionCount,
     currentVersionId: artifact.currentVersionId,
+    folder: artifact.folder,
+    tags: artifact.tags,
     url: context.webUrl(artifact.id),
   };
 }
@@ -87,6 +95,57 @@ function describeVersion(version: VersionSummary) {
     createdAt: version.createdAt.toISOString(),
   };
 }
+
+function describeFolder(folder: {
+  id: string;
+  name: string;
+  parentId: string | null;
+  artifactCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: folder.id,
+    name: folder.name,
+    parentId: folder.parentId,
+    artifactCount: folder.artifactCount,
+    createdAt: folder.createdAt.toISOString(),
+    updatedAt: folder.updatedAt.toISOString(),
+  };
+}
+
+function describeTag(tag: {
+  id: string;
+  name: string;
+  artifactCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    id: tag.id,
+    name: tag.name,
+    artifactCount: tag.artifactCount,
+    createdAt: tag.createdAt.toISOString(),
+    updatedAt: tag.updatedAt.toISOString(),
+  };
+}
+
+const folderShape = {
+  id: z.string(),
+  name: z.string(),
+  parentId: z.string().nullable(),
+  artifactCount: z.number().int(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+};
+
+const tagShape = {
+  id: z.string(),
+  name: z.string(),
+  artifactCount: z.number().int(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+};
 
 /** A refusal a client can read, rather than a stack trace. */
 function refuse(error: unknown): never {
@@ -130,6 +189,15 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         limit: z.number().int().min(1).max(100).optional().describe("Page size, 24 by default."),
         query: z.string().optional().describe("Filter on title and description."),
         status: z.enum(["open", "solved"]).optional().describe("Filter by workflow status."),
+        folderId: z
+          .string()
+          .optional()
+          .describe("Filter to artifacts filed directly in this folder."),
+        tagIds: z.array(z.string()).max(20).optional().describe("Filter by selected tag ids."),
+        tagMatch: z
+          .enum(["all", "any"])
+          .optional()
+          .describe("Require all selected tags, or any one."),
         includeArchived: z
           .boolean()
           .optional()
@@ -141,13 +209,17 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ cursor, sort, limit, query, status, includeArchived }) => {
+    async ({ cursor, sort, limit, query, status, folderId, tagIds, tagMatch, includeArchived }) => {
       try {
+        context.organization.validateListFilters({ folderId, tagIds });
         const page = context.service.list({
           cursor: cursor ?? null,
           sort: sort ?? null,
           query: query ?? null,
           status: status ?? null,
+          folderId: folderId ?? null,
+          tagIds,
+          tagMatch: tagMatch as TagMatch | undefined,
           includeArchived: includeArchived ?? false,
           ...(limit === undefined ? {} : { limit }),
         });
@@ -502,6 +574,207 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
           versionId: comment.versionId,
           versionNumber: comment.versionNumber,
         });
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_folders",
+    {
+      title: "List folders",
+      description:
+        "List the shared folder tree. Each row names its parent and direct artifact count.",
+      inputSchema: {},
+      outputSchema: { folders: z.array(z.object(folderShape)) },
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      try {
+        return asJson({ folders: context.organization.folders().map(describeFolder) });
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_folder",
+    {
+      title: "Create folder",
+      description: "Create a shared folder. Omit parentId to create a root folder.",
+      inputSchema: { name: z.string(), parentId: z.string().nullable().optional() },
+      outputSchema: folderShape,
+    },
+    async ({ name, parentId }) => {
+      requireWriteScope(context, "not manage folders");
+      try {
+        return asJson(
+          describeFolder(
+            context.organization.createFolder({
+              name,
+              ...(parentId === undefined ? {} : { parentId }),
+              actorId: context.userId,
+            }),
+          ),
+        );
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_folder",
+    {
+      title: "Update folder",
+      description:
+        "Rename a shared folder or move it under another folder. Use parentId null for root.",
+      inputSchema: {
+        id: z.string(),
+        name: z.string().optional(),
+        parentId: z.string().nullable().optional(),
+      },
+      outputSchema: folderShape,
+    },
+    async ({ id, name, parentId }) => {
+      requireWriteScope(context, "not manage folders");
+      try {
+        return asJson(
+          describeFolder(
+            context.organization.updateFolder(id, {
+              ...(name === undefined ? {} : { name }),
+              ...(parentId === undefined ? {} : { parentId }),
+              actorId: context.userId,
+            }),
+          ),
+        );
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_folder",
+    {
+      title: "Delete folder",
+      description:
+        "Delete a shared folder. Its children move to its parent and its direct artifacts file there too.",
+      inputSchema: { id: z.string() },
+      outputSchema: { deleted: z.boolean() },
+    },
+    async ({ id }) => {
+      requireWriteScope(context, "not manage folders");
+      try {
+        context.organization.deleteFolder(id);
+        return asJson({ deleted: true });
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_tags",
+    {
+      title: "List tags",
+      description: "List the shared tags and how many artifacts use each one.",
+      inputSchema: {},
+      outputSchema: { tags: z.array(z.object(tagShape)) },
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      try {
+        return asJson({ tags: context.organization.tags().map(describeTag) });
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_tag",
+    {
+      title: "Create tag",
+      description: "Create a shared tag.",
+      inputSchema: { name: z.string() },
+      outputSchema: tagShape,
+    },
+    async ({ name }) => {
+      requireWriteScope(context, "not manage tags");
+      try {
+        return asJson(
+          describeTag(context.organization.createTag({ name, actorId: context.userId })),
+        );
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_tag",
+    {
+      title: "Update tag",
+      description: "Rename a shared tag.",
+      inputSchema: { id: z.string(), name: z.string() },
+      outputSchema: tagShape,
+    },
+    async ({ id, name }) => {
+      requireWriteScope(context, "not manage tags");
+      try {
+        return asJson(
+          describeTag(context.organization.updateTag(id, { name, actorId: context.userId })),
+        );
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_tag",
+    {
+      title: "Delete tag",
+      description: "Delete a shared tag and remove it from every artifact. Artifacts remain.",
+      inputSchema: { id: z.string() },
+      outputSchema: { deleted: z.boolean() },
+    },
+    async ({ id }) => {
+      requireWriteScope(context, "not manage tags");
+      try {
+        context.organization.deleteTag(id);
+        return asJson({ deleted: true });
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "set_artifact_organization",
+    {
+      title: "Set artifact organization",
+      description:
+        "File an artifact in one shared folder and replace its tags. Omit either field to keep it unchanged; use folderId null or tagIds [] to clear it.",
+      inputSchema: {
+        id: z.string(),
+        folderId: z.string().nullable().optional(),
+        tagIds: z.array(z.string()).max(20).optional(),
+      },
+      outputSchema: metadataShape,
+    },
+    async ({ id, folderId, tagIds }) => {
+      requireWriteScope(context, "not organize artifacts");
+      try {
+        context.organization.setArtifactOrganization(id, {
+          ...(folderId === undefined ? {} : { folderId }),
+          ...(tagIds === undefined ? {} : { tagIds }),
+          actorId: context.userId,
+        });
+        return asJson(describe(context.service.get(id), context));
       } catch (error) {
         return refuse(error);
       }

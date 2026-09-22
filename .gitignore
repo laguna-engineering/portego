@@ -7,6 +7,7 @@ dist/
 
 # Local secrets and runtime data
 .claude/settings.local.json
+.pi/
 .claude/skills/
 .env
 .env.*

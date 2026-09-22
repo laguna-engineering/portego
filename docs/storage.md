@@ -57,6 +57,20 @@ The Markdown cache is keyed by version id rather than artifact id, so an
 older version's converted Markdown survives a later upload. Comments carry
 the id of the version they were written on.
 
+## Folders and tags
+
+`folders` stores the shared nested tree. `parentId` references another folder
+and is null at the root. `artifacts.folderId` is nullable, so filing is
+optional and each artifact has one location at most. `tags` stores the shared
+tag catalog. `artifactTags` is the many-to-many assignment table, with one row
+per artifact and tag pair.
+
+Foreign keys remove assignments when a tag or artifact is removed. Folder
+delete behavior is a service transaction: child folders are reparented and
+direct artifacts are filed in the deleted folder's parent before the row is
+removed. The database therefore cannot leave an artifact pointing to a deleted
+folder.
+
 ## Writing an upload
 
 1. The bytes go to `tmp/<random>.part`, which is written, flushed, and closed.
@@ -80,6 +94,12 @@ its bytes land. Reading also refuses any key that does not have that exact
 shape, so a tampered database row cannot reach a file elsewhere on the host.
 
 ## Listing
+
+The artifact listing stays global unless a folder or tag filter is supplied.
+A folder filter matches direct assignments. Repeated tag filters require every
+tag by default, or any selected tag with `tagMatch=any`. These conditions are
+part of the same SQL query as pagination and ordering, so a cursor never
+crosses into a different filtered result set.
 
 Rows are ordered by a sort key and then by `id` in the same direction. The
 default key is `updatedAt` descending; `createdAt` in either direction and

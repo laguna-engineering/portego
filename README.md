@@ -3,6 +3,62 @@
 A single TypeScript application. [Hono](https://hono.dev) serves the API, and
 [Vite](https://vite.dev) builds the React client. Bun runs both.
 
+## Connect an agent
+
+Two MCP servers exist. The remote one at `/mcp` on the deployment lists, reads,
+and uploads artifacts. The local `portego-upload` server adds styled artifact
+creation and validation, and uploads through the same deployment.
+
+### Claude Code
+
+Install the plugin from the marketplace in this repository. It carries the
+local server, asks for the address of the deployment, and adds the
+`/portego-upload:create-artifact`, `/portego-upload:share-html`, and
+`/portego-upload:share-markdown` skills:
+
+```
+/plugin marketplace add <owner>/<repository>
+/plugin install portego-upload@portego
+```
+
+To also read artifacts, add the remote server:
+
+```sh
+claude mcp add --transport http portego https://share.acme.example/mcp
+```
+
+Sign-in opens a browser. Over SSH the OAuth callback needs a forwarded port;
+[docs/mcp.md](docs/mcp.md#connecting-a-client) shows the commands.
+
+### Pi
+
+Pi connects to the remote server with a pre-registered client id. Host the
+client metadata document as described in [docs/mcp.md](docs/mcp.md), then add
+the server to `~/.config/mcp/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "portego": {
+      "url": "https://share.acme.example/mcp",
+      "auth": "oauth",
+      "oauth": {
+        "clientId": "https://share.acme.example/mcp-clients/pi.json",
+        "redirectUri": "http://localhost:19876/callback",
+        "scope": "artifacts:read artifacts:write offline_access"
+      }
+    }
+  }
+}
+```
+
+The first tool call opens the browser for sign-in. After the server is
+redeployed, run `/mcp reconnect portego` in Pi so it refreshes its cached tool
+list.
+
+Any other MCP client starts the local server with `npx -y portego-upload` and
+passes `PORTEGO_ORIGIN` in the server entry's `env`.
+
 ## Requirements
 
 - [Bun](https://bun.com) 1.4 or later
@@ -217,12 +273,21 @@ Component tests need a DOM, so `bun run test:web` registers happy-dom first.
 ## Artifact API
 
 `GET`, `POST` under `/api/artifacts` covers listing, upload, metadata, and
-source download, and every route there needs a session. `POST /api/uploads`
+source download, and every route there needs a session. `GET`, `POST`, `PATCH`,
+and `DELETE` under `/api/folders` and `/api/tags` manage shared organization. `POST /api/uploads`
 takes a signed upload ticket instead, for an MCP client sending a file. The
 rules live in a transport-independent service that the MCP tools call
 directly.
 [docs/api.md](docs/api.md) lists the endpoints, the shared error codes, and the
 upload limits.
+
+## Folders and tags
+
+Folders form a shared nested tree. An artifact has zero or one folder and any
+number of shared tags. They organize artifacts only: the normal gallery remains
+a global view across folders and tags, with its existing open and solved filters.
+[docs/organization.md](docs/organization.md) defines the model, API behavior,
+and the boundary prepared for a later permission system.
 
 ## Status, archiving, and comments
 

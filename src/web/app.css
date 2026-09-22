@@ -591,8 +591,6 @@ label {
   font-size: 0.85rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 32rem;
-  overflow: auto;
 }
 
 .filters {

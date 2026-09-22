@@ -6,7 +6,9 @@
 export type ChangeEvent =
   | { type: "artifact.created"; id: string }
   | { type: "artifact.changed"; id: string }
-  | { type: "comment.changed"; artifactId: string };
+  | { type: "comment.changed"; artifactId: string }
+  | { type: "folder.changed"; id: string }
+  | { type: "tag.changed"; id: string };
 
 export type EventBus = {
   publish: (event: ChangeEvent) => void;

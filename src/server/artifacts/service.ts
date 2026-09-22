@@ -9,9 +9,11 @@ import type {
   ArtifactVersion,
   ListResult,
   ListSort,
+  TagMatch,
 } from "../storage/artifacts.ts";
 import { ContentMissingError, InvalidCursorError } from "../storage/artifacts.ts";
 import type { Comment, CommentAnchor, CommentStore } from "../storage/comments.ts";
+import type { ArtifactOrganization } from "../storage/organization.ts";
 import { ServiceError } from "./errors.ts";
 import {
   DESCRIPTION_MAX_LENGTH,
@@ -29,10 +31,11 @@ export const DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 export type ArtifactSummary = Omit<
   Artifact,
   "storageKey" | "createdBy" | "createdByName" | "createdByEmail"
-> & {
-  /** Who uploaded it. A name, because a card shows a person and not an id. */
-  creator: { id: string; name: string; email: string };
-};
+> &
+  ArtifactOrganization & {
+    /** Who uploaded it. A name, because a card shows a person and not an id. */
+    creator: { id: string; name: string; email: string };
+  };
 
 export type VersionSummary = Omit<
   ArtifactVersion,
@@ -76,6 +79,9 @@ export type ListInput = {
   sort?: ListSort | null;
   limit?: number;
   status?: ArtifactStatus | null;
+  folderId?: string | null;
+  tagIds?: string[];
+  tagMatch?: TagMatch;
   includeArchived?: boolean;
 };
 
@@ -156,9 +162,14 @@ export type ArtifactService = {
   maxUploadBytes: number;
 };
 
-function toSummary(artifact: Artifact): ArtifactSummary {
+function toSummary(artifact: Artifact, organization?: ArtifactOrganization): ArtifactSummary {
   const { storageKey: _hidden, createdBy, createdByName, createdByEmail, ...summary } = artifact;
-  return { ...summary, creator: { id: createdBy, name: createdByName, email: createdByEmail } };
+  return {
+    ...summary,
+    creator: { id: createdBy, name: createdByName, email: createdByEmail },
+    folder: organization?.folder ?? null,
+    tags: organization?.tags ?? [],
+  };
 }
 
 function toVersionSummary(version: ArtifactVersion): VersionSummary {
@@ -173,8 +184,11 @@ function toVersionSummary(version: ArtifactVersion): VersionSummary {
   return { ...summary, creator: { id: createdBy, name: createdByName, email: createdByEmail } };
 }
 
-function toResult(result: ListResult) {
-  return { items: result.items.map(toSummary), nextCursor: result.nextCursor };
+function toResult(result: ListResult, assignments: Map<string, ArtifactOrganization>) {
+  return {
+    items: result.items.map((artifact) => toSummary(artifact, assignments.get(artifact.id))),
+    nextCursor: result.nextCursor,
+  };
 }
 
 /**
@@ -189,8 +203,14 @@ export function createArtifactService(options: {
   maxUploadBytes?: number;
   /** Where a committed change is announced. Absent in tests that ignore it. */
   events?: EventBus;
+  /** Adds shared folder and tag metadata without giving this service write access to it. */
+  organization?: { assignments: (artifactIds: string[]) => Map<string, ArtifactOrganization> };
 }): ArtifactService {
   const { store, markdownStore, commentStore } = options;
+  const assignments =
+    options.organization?.assignments ?? (() => new Map<string, ArtifactOrganization>());
+  const summary = (artifact: Artifact) =>
+    toSummary(artifact, assignments([artifact.id]).get(artifact.id));
   const maxUploadBytes = options.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   // Published after the write returns, so a failed write announces nothing.
   const publish = options.events?.publish ?? (() => {});
@@ -200,7 +220,8 @@ export function createArtifactService(options: {
 
     list(input = {}) {
       try {
-        return toResult(store.list(input));
+        const result = store.list(input);
+        return toResult(result, assignments(result.items.map((artifact) => artifact.id)));
       } catch (cause) {
         if (cause instanceof InvalidCursorError) {
           throw new ServiceError("INVALID_CURSOR", "The pagination cursor is not valid.");
@@ -212,7 +233,7 @@ export function createArtifactService(options: {
     get(id) {
       const artifact = store.get(id);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
-      return toSummary(artifact);
+      return summary(artifact);
     },
 
     async upload(input) {
@@ -288,7 +309,7 @@ export function createArtifactService(options: {
         });
         if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
         publish({ type: "artifact.changed", id: artifact.id });
-        return { artifact: toSummary(artifact), newArtifact: false };
+        return { artifact: summary(artifact), newArtifact: false };
       }
 
       const artifact = await store.create({
@@ -300,7 +321,7 @@ export function createArtifactService(options: {
         createdBy: input.createdBy,
       });
       publish({ type: "artifact.created", id: artifact.id });
-      return { artifact: toSummary(artifact), newArtifact: true };
+      return { artifact: summary(artifact), newArtifact: true };
     },
 
     versions(id) {
@@ -315,14 +336,14 @@ export function createArtifactService(options: {
       const artifact = store.setStatus(id, status, actorId);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
-      return toSummary(artifact);
+      return summary(artifact);
     },
 
     setArchived(id, archived, actorId) {
       const artifact = store.setArchived(id, archived, actorId);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
-      return toSummary(artifact);
+      return summary(artifact);
     },
 
     comments(id) {
@@ -396,10 +417,10 @@ export function createArtifactService(options: {
       const version = requireVersion(store, id, versionId ?? artifact.currentVersionId);
 
       const provided = markdownStore.readProvided(version.id);
-      if (provided) return { artifact: toSummary(artifact), ...provided };
+      if (provided) return { artifact: summary(artifact), ...provided };
 
       const cached = markdownStore.read(version.id, version.sha256, CONVERTER_VERSION);
-      if (cached) return { artifact: toSummary(artifact), ...cached };
+      if (cached) return { artifact: summary(artifact), ...cached };
 
       const content = await readSource(store, version.id);
       // Parsing only. The document's own scripts are dropped, never run.
@@ -411,7 +432,7 @@ export function createArtifactService(options: {
         markdown: converted.markdown,
         empty: converted.empty,
       });
-      return { artifact: toSummary(artifact), ...stored };
+      return { artifact: summary(artifact), ...stored };
     },
 
     async source(id, versionId) {
@@ -419,7 +440,7 @@ export function createArtifactService(options: {
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       const version = requireVersion(store, id, versionId ?? artifact.currentVersionId);
       const content = await readSource(store, version.id);
-      return { artifact: toSummary(artifact), version: toVersionSummary(version), content };
+      return { artifact: summary(artifact), version: toVersionSummary(version), content };
     },
   };
 }

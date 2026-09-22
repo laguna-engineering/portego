@@ -44,6 +44,7 @@ describe("applyMigrations", () => {
       "statusChangedBy",
       "archivedAt",
       "archivedBy",
+      "folderId",
     ]);
   });
 

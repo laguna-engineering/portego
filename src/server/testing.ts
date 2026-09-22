@@ -15,9 +15,11 @@ import { createTestAuth, signIn, type TestClaims } from "./auth/testing.ts";
 import { databasePath, openDatabase } from "./db.ts";
 import { createEventBus, type EventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
+import { createOrganizationService, type OrganizationService } from "./organization/service.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
 import { applyMigrations } from "./storage/migrations.ts";
+import { createOrganizationStore } from "./storage/organization.ts";
 
 /** A different host from TEST_BASE_URL, which is what isolates a preview. */
 export const TEST_CONTENT_ORIGIN = "http://127.0.0.1:5173";
@@ -34,6 +36,7 @@ export type TestServer = {
   auth: Auth;
   database: Database;
   artifacts: ArtifactService;
+  organization: OrganizationService;
   events: EventBus;
   dataDir: string;
   signingSecret: string;
@@ -64,10 +67,17 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
   applyMigrations(database);
 
   const events = createEventBus();
+  const artifactStore = createArtifactStore({ database, dataDir });
+  const organization = createOrganizationService({
+    store: createOrganizationStore(database),
+    artifactExists: (id) => artifactStore.get(id) !== null,
+    events,
+  });
   const artifacts = createArtifactService({
-    store: createArtifactStore({ database, dataDir }),
+    store: artifactStore,
     markdownStore: createMarkdownStore({ database }),
     commentStore: createCommentStore({ database }),
+    organization,
     events,
     ...(options.maxUploadBytes ? { maxUploadBytes: options.maxUploadBytes } : {}),
   });
@@ -78,6 +88,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     auth,
     authConfig: config,
     artifacts,
+    organization,
     contentOrigin: options.contentOrigin ?? TEST_CONTENT_ORIGIN,
     signingSecret: config.secret,
     events,
@@ -88,6 +99,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     auth,
     database,
     artifacts,
+    organization,
     events,
     dataDir,
     signingSecret: config.secret,

@@ -16,6 +16,8 @@ import type { EventBus } from "./events/bus.ts";
 import { eventRoutes } from "./events/routes.ts";
 import { createPrincipalResolver } from "./mcp/principal.ts";
 import { createMcpHandler } from "./mcp/routes.ts";
+import { organizationRoutes } from "./organization/routes.ts";
+import type { OrganizationService } from "./organization/service.ts";
 import { previewRoutes } from "./preview/routes.ts";
 import { createPreviewIssuer } from "./preview/tokens.ts";
 
@@ -26,6 +28,7 @@ export type AppOptions = {
   auth: Auth;
   authConfig: AuthConfig;
   artifacts: ArtifactService;
+  organization: OrganizationService;
   /** Origin that serves artifact previews. Must be a different host from the app. */
   contentOrigin: string;
   /** Signs preview tokens and upload tickets. Each derives its own key from it. */
@@ -68,6 +71,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   const mcp = createMcpHandler({
     auth: options.auth,
     service: options.artifacts,
+    organization: options.organization,
     resource: options.authConfig.mcp.resource,
     webUrl: (id) => `${appOrigin}/a/${encodeURIComponent(id)}`,
     issueUploadTicket: createUploadTicketIssuer({ secret: options.signingSecret, appOrigin }),
@@ -109,6 +113,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   // The change stream. It is registered before the artifact routes only for
   // readability; Hono matches on the path.
   app.route("/api/events", eventRoutes({ bus: options.events }));
+  app.route("/api", organizationRoutes(options.organization));
 
   app.route(
     "/api/artifacts",
@@ -118,6 +123,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
         secret: options.signingSecret,
         contentOrigin: options.contentOrigin,
       }),
+      options.organization,
     ),
   );
 

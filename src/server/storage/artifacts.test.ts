@@ -335,6 +335,19 @@ describe("mergeInto", () => {
       body: "on the newer one",
     });
 
+    storage.database
+      .query(
+        `insert into tags (id, name, createdBy, createdAt, updatedBy, updatedAt)
+         values ('shared', 'Shared', ?, 1, ?, 1), ('newer', 'Newer', ?, 1, ?, 1)`,
+      )
+      .run(storage.userId, storage.userId, storage.userId, storage.userId);
+    storage.database
+      .query(
+        `insert into artifactTags (artifactId, tagId, createdBy, createdAt)
+         values (?, 'shared', ?, 1), (?, 'shared', ?, 1), (?, 'newer', ?, 1)`,
+      )
+      .run(older.id, storage.userId, newer.id, storage.userId, newer.id, storage.userId);
+
     const merged = storage.store.mergeInto(older.id, newer.id);
     if (!merged) throw new Error("expected the merged artifact");
 
@@ -352,6 +365,11 @@ describe("mergeInto", () => {
     expect(storage.store.get(newer.id)).toBeNull();
     expect(comments.get(comment.id)?.artifactId).toBe(older.id);
     expect(comments.get(comment.id)?.versionNumber).toBe(2);
+    expect(
+      storage.database
+        .query("select tagId from artifactTags where artifactId = ? order by tagId")
+        .all(older.id),
+    ).toEqual([{ tagId: "newer" }, { tagId: "shared" }]);
     // Both files are still accounted for.
     expect(storage.store.storageKeys()).toHaveLength(2);
   });

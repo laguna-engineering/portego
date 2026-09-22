@@ -24,6 +24,15 @@ check an upload before sending it.
 | `GET` | `/api/artifacts/:id/versions` | List an artifact's versions, highest number first |
 | `PATCH` | `/api/artifacts/:id/status` | Mark open or solved |
 | `PATCH` | `/api/artifacts/:id/archived` | Archive or restore |
+| `PATCH` | `/api/artifacts/:id/organization` | Set its folder or tags |
+| `GET` | `/api/folders` | List the shared folder tree |
+| `POST` | `/api/folders` | Create a shared folder |
+| `PATCH` | `/api/folders/:id` | Rename or move a folder |
+| `DELETE` | `/api/folders/:id` | Delete a folder and preserve its contents |
+| `GET` | `/api/tags` | List shared tags |
+| `POST` | `/api/tags` | Create a shared tag |
+| `PATCH` | `/api/tags/:id` | Rename a tag |
+| `DELETE` | `/api/tags/:id` | Delete a tag and preserve artifacts |
 | `GET` | `/api/artifacts/:id/comments` | The comment thread, across every version |
 | `POST` | `/api/artifacts/:id/comments` | Add a comment, optionally anchored to a passage of text, on a version, or replying to a root comment |
 | `DELETE` | `/api/artifacts/:id/comments/:commentId` | Remove your own comment |
@@ -37,8 +46,14 @@ check an upload before sending it.
 
 Query parameters: `q` filters on title and description, `status` is `open` or
 `solved`, `archived=true` includes archived artifacts (they are left out
-otherwise), `sort` picks the order, `cursor` continues a page, and `limit` sets
-the page size (24 by default, 100 at most).
+otherwise), `folderId` filters to artifacts filed directly in one folder, and
+repeated `tagId` filters by tags. Tag filters require every selected tag by
+default; `tagMatch=any` matches any selected tag. `sort` picks the order,
+`cursor` continues a page, and `limit` sets the page size (24 by default, 100
+at most).
+
+Omit `folderId` and `tagId` for the global listing. This is the default view and
+always includes artifacts regardless of their folder or tags.
 
 `sort` is one of `updated-desc` (the default), `updated-asc`, `created-desc`,
 `created-asc`, `title-asc`, or `title-desc`. Title order ignores case.
@@ -66,8 +81,9 @@ data: {"type":"artifact.created","id":"01J…"}
 : keep-alive
 ```
 
-Three event types are sent: `artifact.created` and `artifact.changed` carry
-`id`, and `comment.changed` carries `artifactId`.
+Five event types are sent: `artifact.created`, `artifact.changed`,
+`folder.changed`, and `tag.changed` carry `id`; `comment.changed` carries
+`artifactId`.
 
 An event names what changed and carries nothing else. A client reads the new
 state through the ordinary endpoints above, so every answer stays subject to
@@ -153,6 +169,33 @@ current version. A version id that does not belong to the artifact is
 refused with `NOT_FOUND`. The source download's `Content-Disposition` names
 that version's original filename. `POST /api/artifacts/:id/preview` still
 responds `{ url, expiresAt }`; the URL serves that version's bytes.
+
+### Organization
+
+`GET /api/folders` returns the shared folders as a flat array. Each record has
+`id`, `name`, `parentId`, timestamps, and `artifactCount` for artifacts filed
+directly in that folder. `POST /api/folders` accepts `{ "name", "parentId"? }`;
+omit `parentId` for a root folder. `PATCH /api/folders/:id` accepts either or
+both fields, with `parentId: null` moving a folder to the root. A folder cannot
+be its own parent or descendant. Deleting one reparents its children and moves
+its direct artifacts to its parent, or unfiles them when it was a root.
+
+`GET /api/tags` returns the shared tags with `id`, `name`, timestamps, and
+`artifactCount`. `POST /api/tags` accepts `{ "name" }`; `PATCH /api/tags/:id`
+accepts the same. Deleting a tag removes its assignments and preserves its
+artifacts.
+
+`PATCH /api/artifacts/:id/organization` accepts either or both of:
+
+```json
+{ "folderId": "…", "tagIds": ["…", "…"] }
+```
+
+Omit a field to keep it. Set `folderId` to `null` to unfile the artifact. Set
+`tagIds` to `[]` to remove every tag. `tagIds` replaces the complete set, must
+not repeat an id, and has a limit of 20. Folder and tag names are at most 100
+characters and are unique without regard to case (folder names only among the
+same siblings).
 
 ### Comments
 

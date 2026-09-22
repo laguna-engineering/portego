@@ -118,6 +118,44 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    id: "007-folders-tags",
+    sql: `
+      create table folders (
+        id text not null primary key,
+        name text not null,
+        parentId text references folders (id) on delete restrict,
+        createdBy text not null references "user" ("id"),
+        createdAt integer not null,
+        updatedBy text not null references "user" ("id"),
+        updatedAt integer not null
+      );
+      create unique index folders_parent_name on folders (coalesce(parentId, ''), name collate nocase);
+      create index folders_parent on folders (parentId);
+
+      create table tags (
+        id text not null primary key,
+        name text not null,
+        createdBy text not null references "user" ("id"),
+        createdAt integer not null,
+        updatedBy text not null references "user" ("id"),
+        updatedAt integer not null
+      );
+      create unique index tags_name on tags (name collate nocase);
+
+      alter table artifacts add column folderId text references folders (id) on delete set null;
+      create index artifacts_folder on artifacts (folderId);
+
+      create table artifactTags (
+        artifactId text not null references artifacts (id) on delete cascade,
+        tagId text not null references tags (id) on delete cascade,
+        createdBy text not null references "user" ("id"),
+        createdAt integer not null,
+        primary key (artifactId, tagId)
+      );
+      create index artifactTags_tag on artifactTags (tagId, artifactId);
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

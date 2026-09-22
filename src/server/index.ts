@@ -7,18 +7,27 @@ import { databasePath, openDatabase } from "./db.ts";
 import { parseEnv } from "./env.ts";
 import { createEventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
+import { createOrganizationService } from "./organization/service.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
+import { createOrganizationStore } from "./storage/organization.ts";
 
 const env = parseEnv(Bun.env);
 const authConfig = parseAuthConfig(env, Bun.env);
 const database = openDatabase(databasePath(env.DATA_DIR));
 const auth = createAuth({ config: authConfig, database });
 const events = createEventBus();
+const artifactStore = createArtifactStore({ database, dataDir: env.DATA_DIR });
+const organization = createOrganizationService({
+  store: createOrganizationStore(database),
+  artifactExists: (id) => artifactStore.get(id) !== null,
+  events,
+});
 const artifacts = createArtifactService({
-  store: createArtifactStore({ database, dataDir: env.DATA_DIR }),
+  store: artifactStore,
   markdownStore: createMarkdownStore({ database }),
   commentStore: createCommentStore({ database }),
+  organization,
   maxUploadBytes: env.ARTIFACT_MAX_BYTES,
   events,
 });
@@ -29,6 +38,7 @@ const app = createApp({
   auth,
   authConfig,
   artifacts,
+  organization,
   contentOrigin: env.CONTENT_URL,
   signingSecret: authConfig.secret,
   events,

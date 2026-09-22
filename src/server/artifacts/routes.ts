@@ -1,8 +1,9 @@
 import { type Context, Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.ts";
 import { currentUser, requireUser } from "../auth/middleware.ts";
+import type { OrganizationService } from "../organization/service.ts";
 import type { PreviewIssuer } from "../preview/tokens.ts";
-import { LIST_SORTS, type ListSort } from "../storage/artifacts.ts";
+import { LIST_SORTS, type ListSort, type TagMatch } from "../storage/artifacts.ts";
 import type { ErrorCode } from "./errors.ts";
 import { ServiceError } from "./errors.ts";
 import type { ArtifactService, UploadResult } from "./service.ts";
@@ -50,6 +51,7 @@ export function handleServiceError(error: Error, c: Context<AppEnv>): Response {
 export function artifactRoutes(
   service: ArtifactService,
   issuePreview: PreviewIssuer,
+  organization: OrganizationService,
 ): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
 
@@ -74,11 +76,22 @@ export function artifactRoutes(
       throw new ServiceError("INVALID_INPUT", `sort must be one of ${LIST_SORTS.join(", ")}.`);
     }
 
+    const folderId = c.req.query("folderId") ?? null;
+    const tagIds = c.req.queries("tagId") ?? [];
+    const tagMatch = c.req.query("tagMatch") ?? "all";
+    if (tagMatch !== "all" && tagMatch !== "any") {
+      throw new ServiceError("INVALID_INPUT", "tagMatch must be all or any.");
+    }
+    organization.validateListFilters({ folderId, tagIds });
+
     const page = service.list({
       query: c.req.query("q") ?? null,
       cursor: c.req.query("cursor") ?? null,
       sort: (sort as ListSort | undefined) ?? null,
       status: status ?? null,
+      folderId,
+      tagIds,
+      tagMatch: tagMatch as TagMatch,
       // Archived artifacts stay out of the gallery unless they are asked for.
       includeArchived: c.req.query("archived") === "true",
       ...(limit === undefined ? {} : { limit }),
@@ -124,6 +137,16 @@ export function artifactRoutes(
     return c.json({
       artifact: service.setArchived(c.req.param("id"), body.archived, currentUser(c).id),
     });
+  });
+
+  routes.patch("/:id/organization", async (c) => {
+    const body = await readJson(c);
+    organization.setArtifactOrganization(c.req.param("id"), {
+      ...(Object.hasOwn(body, "folderId") ? { folderId: body.folderId } : {}),
+      ...(Object.hasOwn(body, "tagIds") ? { tagIds: body.tagIds } : {}),
+      actorId: currentUser(c).id,
+    });
+    return c.json({ artifact: service.get(c.req.param("id")) });
   });
 
   routes.get("/:id/comments", (c) => c.json({ comments: service.comments(c.req.param("id")) }));

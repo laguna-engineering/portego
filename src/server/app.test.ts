@@ -7,8 +7,10 @@ import { createArtifactService } from "./artifacts/service.ts";
 import { createTestAuth, TEST_BASE_URL } from "./auth/testing.ts";
 import { createEventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
+import { createOrganizationService } from "./organization/service.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
+import { createOrganizationStore } from "./storage/organization.ts";
 import { createTestServer, TEST_CONTENT_ORIGIN } from "./testing.ts";
 
 const cleanups: (() => void)[] = [];
@@ -20,19 +22,28 @@ afterAll(() => {
 /** These tests never reach the artifact routes, so nothing is written to disk. */
 async function createTestApp(options?: { serveClient: boolean; clientDist: string }) {
   const { auth, config, database } = await createTestAuth();
+  const events = createEventBus();
+  const artifactStore = createArtifactStore({ database, dataDir: "data" });
+  const organization = createOrganizationService({
+    store: createOrganizationStore(database),
+    artifactExists: (id) => artifactStore.get(id) !== null,
+    events,
+  });
   return createApp({
     serveClient: options?.serveClient ?? false,
     clientDist: options?.clientDist ?? "dist/client",
     auth,
     authConfig: config,
     artifacts: createArtifactService({
-      store: createArtifactStore({ database, dataDir: "data" }),
+      store: artifactStore,
       markdownStore: createMarkdownStore({ database }),
       commentStore: createCommentStore({ database }),
+      organization,
     }),
+    organization,
     contentOrigin: TEST_CONTENT_ORIGIN,
     signingSecret: config.secret,
-    events: createEventBus(),
+    events,
   });
 }
 

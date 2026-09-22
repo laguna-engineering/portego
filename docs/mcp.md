@@ -37,7 +37,7 @@ Google (or whichever provider the deployment enables) is the upstream sign-in.
 | Scope | Grants |
 | --- | --- |
 | `artifacts:read` | List and read artifacts. Required for every MCP request. |
-| `artifacts:write` | Create artifacts. |
+| `artifacts:write` | Create artifacts and manage folders, tags, and artifact organization. |
 | `offline_access` | A refresh token. The MCP endpoint does not check this scope. |
 
 A token without `artifacts:read` receives a 403 with an `insufficient_scope`
@@ -130,6 +130,11 @@ of it has to pass the browser's `Host` through unchanged.
 | `upload_artifact` | Title, optional description, optional `artifactId` to add a version to an existing artifact, and either self-contained HTML or Markdown, or both. Markdown alone becomes a static HTML page in the Portego style; with HTML, it is the text agents read back. Returns the id, digest, version number, whether the upload created the artifact, and the web URL. |
 | `create_upload_ticket` | A short-lived URL and ticket for sending an HTML file directly, without putting it in a tool argument. |
 | `set_artifact_status` | Mark an artifact solved or open again, archive it, or both. Records the caller as the actor. |
+| `list_folders` | List the shared folder tree. |
+| `create_folder`, `update_folder`, `delete_folder` | Manage shared folders. Deletion reparents children and preserves artifacts. |
+| `list_tags` | List shared tags. |
+| `create_tag`, `update_tag`, `delete_tag` | Manage shared tags. Deletion removes assignments and preserves artifacts. |
+| `set_artifact_organization` | Set an artifact's one folder and complete tag set. |
 | `list_artifact_comments` | The comments on one artifact, oldest first, with their authors and the version each was written on. |
 | `add_artifact_comment` | Adds a comment as the caller, on the current version by default or the one named by an optional `versionId`, optionally as a reply to a root comment via `parentId`. Comments cannot be edited. |
 | `get_artifact_markdown` | The artifact's static content as Markdown, current version by default or the one named by an optional `versionId`. Its `source` says whether the version supplied Markdown or the server generated it from HTML. `empty` says so when a page renders everything from JavaScript. |

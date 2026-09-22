@@ -6,6 +6,7 @@ import type { ArtifactService } from "../artifacts/service.ts";
 import type { UploadTicketIssuer } from "../artifacts/tickets.ts";
 import type { Auth } from "../auth/auth.ts";
 import { MCP_SCOPES } from "../auth/config.ts";
+import type { OrganizationService } from "../organization/service.ts";
 import { registerArtifactTools } from "./tools.ts";
 
 export const SERVER_NAME = "portego";
@@ -17,6 +18,7 @@ export type ResolvePrincipal = (claims: JWTPayload) => Promise<{ userId: string 
 export type McpHandlerOptions = {
   auth: Auth;
   service: ArtifactService;
+  organization: OrganizationService;
   /** The exact MCP URL. Tokens carry it as their audience. */
   resource: string;
   webUrl: (artifactId: string) => string;
@@ -75,6 +77,7 @@ export function createMcpHandler(
       const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
       registerArtifactTools(server, {
         service: options.service,
+        organization: options.organization,
         userId: principal.userId,
         webUrl: options.webUrl,
         issueUploadTicket: options.issueUploadTicket,

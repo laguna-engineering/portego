@@ -17,8 +17,9 @@ ever breaks.
 
 ## Who may do what
 
-Anyone the admission policy admits may change a status, archive, restore, and
-comment on any artifact. There are no roles here, so the record of who did what
+Anyone the admission policy admits may change a status, archive, restore,
+comment, and organize any artifact. They may also manage shared folders and
+tags. There are no roles here, so the record of who did what
 is what matters: every status change stores `statusChangedBy` and
 `statusChangedAt`, archiving stores `archivedBy` and `archivedAt`, and a
 comment stores its author and creation time.
@@ -57,9 +58,9 @@ can tell which version a comment was about even after later versions arrive.
 
 ## Everyone sees a change as it happens
 
-A status change, an archive, an upload, and a comment each announce themselves
-on `GET /api/events`, so a page that is already open shows them without a
-reload. See [api.md](api.md) for the stream itself.
+A status change, an archive, an upload, a comment, and organization changes
+announce themselves on `GET /api/events`, so a page that is already open shows
+them without a reload. See [api.md](api.md) for the stream itself.
 
 The announcement carries an id and nothing else. The client refetches through
 the ordinary endpoints, so what a person is shown still comes from a route that

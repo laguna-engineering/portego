@@ -182,6 +182,15 @@ describe("tools", () => {
       "set_artifact_status",
       "list_artifact_comments",
       "add_artifact_comment",
+      "list_folders",
+      "create_folder",
+      "update_folder",
+      "delete_folder",
+      "list_tags",
+      "create_tag",
+      "update_tag",
+      "delete_tag",
+      "set_artifact_organization",
       "get_artifact_markdown",
     ]);
   });
@@ -260,6 +269,32 @@ describe("tools", () => {
       })
     ).result?.structuredContent as { items: { id: string }[] };
     expect(withArchived.items[0]?.id).toBe(created.id);
+  });
+
+  test("organizes artifacts through MCP without changing the global listing", async () => {
+    const folder = (await callTool(client, "create_folder", { name: "Research" })).result
+      ?.structuredContent as { id: string };
+    const tag = (await callTool(client, "create_tag", { name: "Urgent" })).result
+      ?.structuredContent as { id: string };
+    const created = await upload("Organized through MCP");
+
+    const organized = (
+      await callTool(client, "set_artifact_organization", {
+        id: created.id,
+        folderId: folder.id,
+        tagIds: [tag.id],
+      })
+    ).result?.structuredContent as { folder: { id: string } | null; tags: { id: string }[] };
+    expect(organized.folder?.id).toBe(folder.id);
+    expect(organized.tags.map((entry) => entry.id)).toEqual([tag.id]);
+
+    const inFolder = (await callTool(client, "list_artifacts", { folderId: folder.id })).result
+      ?.structuredContent as { items: { id: string }[] };
+    expect(inFolder.items.map((item) => item.id)).toContain(created.id);
+
+    const global = (await callTool(client, "list_artifacts", { query: "Organized through MCP" }))
+      .result?.structuredContent as { items: { id: string }[] };
+    expect(global.items.map((item) => item.id)).toContain(created.id);
   });
 
   test("adds and reads comments, recording the caller as the author", async () => {

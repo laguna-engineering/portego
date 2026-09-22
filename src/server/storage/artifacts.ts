@@ -93,6 +93,8 @@ export const LIST_SORTS: readonly ListSort[] = [
 
 export const DEFAULT_LIST_SORT: ListSort = "updated-desc";
 
+export type TagMatch = "all" | "any";
+
 export type ListOptions = {
   limit?: number;
   cursor?: string | null;
@@ -100,6 +102,11 @@ export type ListOptions = {
   /** Matches title and description. Absent or empty means no filter. */
   query?: string | null;
   status?: ArtifactStatus | null;
+  /** Filters to artifacts filed directly in this folder. */
+  folderId?: string | null;
+  /** Filters by tag ids. All selected tags must match unless tagMatch is any. */
+  tagIds?: string[];
+  tagMatch?: TagMatch;
   /** Archived artifacts are left out unless they are asked for. */
   includeArchived?: boolean;
 };
@@ -493,6 +500,26 @@ export function createArtifactStore(options: {
         conditions.push("artifacts.status = ?");
         parameters.push(listOptions.status);
       }
+      if (listOptions.folderId) {
+        conditions.push("artifacts.folderId = ?");
+        parameters.push(listOptions.folderId);
+      }
+      if (listOptions.tagIds && listOptions.tagIds.length > 0) {
+        const placeholders = listOptions.tagIds.map(() => "?").join(", ");
+        if (listOptions.tagMatch === "any") {
+          conditions.push(
+            `exists (select 1 from artifactTags where artifactTags.artifactId = artifacts.id
+              and artifactTags.tagId in (${placeholders}))`,
+          );
+          parameters.push(...listOptions.tagIds);
+        } else {
+          conditions.push(
+            `artifacts.id in (select artifactId from artifactTags where tagId in (${placeholders})
+              group by artifactId having count(distinct tagId) = ?)`,
+          );
+          parameters.push(...listOptions.tagIds, listOptions.tagIds.length);
+        }
+      }
       if (!listOptions.includeArchived) {
         conditions.push("artifacts.archivedAt is null");
       }
@@ -555,6 +582,15 @@ export function createArtifactStore(options: {
         database
           .query("update artifactComments set artifactId = ? where artifactId = ?")
           .run(intoId, fromId);
+        // Keep every tag from both artifacts. A duplicate pair stays once,
+        // then no assignment points at the row the cascade will remove.
+        database
+          .query(
+            `insert or ignore into artifactTags (artifactId, tagId, createdBy, createdAt)
+             select ?, tagId, createdBy, createdAt from artifactTags where artifactId = ?`,
+          )
+          .run(intoId, fromId);
+        database.query("delete from artifactTags where artifactId = ?").run(fromId);
         // Nothing points at the old row any more, so the cascade removes nothing.
         database.query("delete from artifacts where id = ?").run(fromId);
 
