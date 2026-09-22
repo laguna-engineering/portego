@@ -349,7 +349,7 @@ repository to use it. It runs on Node 20 or later. In Claude Code, install it as
 a plugin from the marketplace in this repository:
 
 ```
-/plugin marketplace add <owner>/<repository>
+/plugin marketplace add laguna-engineering/portego
 /plugin install portego-upload@portego
 ```
 

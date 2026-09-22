@@ -17,7 +17,7 @@ local server, asks for the address of the deployment, and adds the
 `/portego-upload:share-markdown` skills:
 
 ```
-/plugin marketplace add <owner>/<repository>
+/plugin marketplace add laguna-engineering/portego
 /plugin install portego-upload@portego
 ```
 
