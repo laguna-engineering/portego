@@ -21,6 +21,7 @@ export const DEFAULT_GALLERY_SORT: GallerySort = "updated-desc";
 
 export type GalleryFilters = {
   query: string;
+  /** `null` is every status. The default is `open`, so "all" is explicit in the URL. */
   status: "open" | "solved" | null;
   archived: boolean;
   sort: GallerySort;
@@ -49,7 +50,7 @@ export function readRoute(url: URL): Route {
     return {
       name: "gallery",
       query: url.searchParams.get("q") ?? "",
-      status: status === "open" || status === "solved" ? status : null,
+      status: status === "all" ? null : status === "solved" ? "solved" : "open",
       archived: url.searchParams.get("archived") === "true",
       sort: GALLERY_SORTS.includes(sort as GallerySort)
         ? (sort as GallerySort)
@@ -62,7 +63,8 @@ export function readRoute(url: URL): Route {
 export function galleryPath(filters: Partial<GalleryFilters>): string {
   const search = new URLSearchParams();
   if (filters.query?.trim()) search.set("q", filters.query.trim());
-  if (filters.status) search.set("status", filters.status);
+  if (filters.status === null) search.set("status", "all");
+  else if (filters.status && filters.status !== "open") search.set("status", filters.status);
   if (filters.archived) search.set("archived", "true");
   if (filters.sort && filters.sort !== DEFAULT_GALLERY_SORT) search.set("sort", filters.sort);
   return search.size === 0 ? "/" : `/?${search}`;

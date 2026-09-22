@@ -6,7 +6,7 @@ describe("readRoute", () => {
     expect(readRoute(new URL("http://app.test/"))).toEqual({
       name: "gallery",
       query: "",
-      status: null,
+      status: "open",
       archived: false,
       sort: "updated-desc",
     });
@@ -16,12 +16,13 @@ describe("readRoute", () => {
     });
   });
 
-  test("reads the status and archived filters, ignoring a status it does not define", () => {
+  test("reads the status and archived filters, falling back to open for a status it does not define", () => {
     expect(readRoute(new URL("http://app.test/?status=solved&archived=true"))).toMatchObject({
       status: "solved",
       archived: true,
     });
-    expect(readRoute(new URL("http://app.test/?status=wontfix"))).toMatchObject({ status: null });
+    expect(readRoute(new URL("http://app.test/?status=all"))).toMatchObject({ status: null });
+    expect(readRoute(new URL("http://app.test/?status=wontfix"))).toMatchObject({ status: "open" });
   });
 
   test("reads the sort order, falling back to the default for one it does not define", () => {
@@ -58,12 +59,13 @@ describe("paths", () => {
     expect(galleryPath({ query: "latency p99" })).toBe("/?q=latency+p99");
     expect(galleryPath({ status: "solved", archived: true })).toBe("/?status=solved&archived=true");
     expect(galleryPath({ sort: "created-asc" })).toBe("/?sort=created-asc");
+    expect(galleryPath({ status: null })).toBe("/?status=all");
   });
 
-  test("leaves empty filters and the default order out of the URL", () => {
-    expect(galleryPath({ query: "   ", status: null, archived: false, sort: "updated-desc" })).toBe(
-      "/",
-    );
+  test("leaves empty filters, the default status, and the default order out of the URL", () => {
+    expect(
+      galleryPath({ query: "   ", status: "open", archived: false, sort: "updated-desc" }),
+    ).toBe("/");
   });
 
   test("escapes an artifact id", () => {
