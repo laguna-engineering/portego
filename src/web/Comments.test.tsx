@@ -46,11 +46,37 @@ describe("reading", () => {
     expect(screen.getByText(/A Person/)).toBeDefined();
   });
 
-  test("folds a data entry away behind its type", async () => {
-    stubFetch(() => ({ body: { comments: [comment({ body: '{"type":"vote","item":"P-01"}' })] } }));
+  test("lists data entries apart from the discussion, one line each", async () => {
+    stubFetch(() => ({
+      body: {
+        comments: [
+          comment(),
+          comment({ id: "comment-2", body: '{"type":"vote","item":"P-01"}' }),
+          comment({ id: "comment-3", body: '{"type":"vote","item":"P-02"}' }),
+        ],
+      },
+    }));
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    expect(await screen.findByText("2 data entries")).toBeDefined();
+    expect(screen.getByText("vote · item P-01")).toBeDefined();
+    expect(screen.getByText("A thought")).toBeDefined();
+    expect(screen.queryByText(/"type"/)).toBeNull();
+  });
+
+  test("keeps a data entry that has replies in the discussion, folded", async () => {
+    stubFetch(() => ({
+      body: {
+        comments: [
+          comment({ body: '{"type":"vote","item":"P-01"}' }),
+          comment({ id: "reply-1", body: "Why?", parentId: "comment-1" }),
+        ],
+      },
+    }));
     render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
 
     expect(await screen.findByText("Data: vote")).toBeDefined();
+    expect(screen.getByText("Why?")).toBeDefined();
   });
 
   test("shows JSON without a string type as an ordinary comment", async () => {

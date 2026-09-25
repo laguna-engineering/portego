@@ -69,8 +69,9 @@ comments, and the document still cannot send anything out.
 This lets a comment carry data for the document. A comment whose whole text
 is a JSON object with a string `type`, such as `{"type":"vote","item":"P-01"}`,
 is a data entry. The document decides which types it accepts and what they
-mean, and ignores the rest. The comments panel folds a data entry away behind
-its type.
+mean, and ignores the rest. The comments panel keeps data entries out of the
+discussion and lists them, collapsed, after it, one line each. A data entry
+that has replies stays in the discussion, folded behind its type.
 
 ## Everyone sees a change as it happens
 
