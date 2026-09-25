@@ -33,6 +33,7 @@ import { Masthead } from "./Masthead.tsx";
 import { FolderPicker, TagPicker } from "./Organize.tsx";
 import {
   type BridgeMessage,
+  openFromPreview,
   type SelectionRect,
   sendToPreview,
   usePreviewBridge,
@@ -164,6 +165,8 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
           message.anchor && message.rect ? { anchor: message.anchor, rect: message.rect } : null,
         );
         if (panelOpen) setSelection(message.anchor);
+      } else if (message.type === "open") {
+        openFromPreview(message.url);
       } else {
         setFocusedId(message.id);
         setPanelOpen(true);

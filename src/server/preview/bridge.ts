@@ -2,7 +2,8 @@
  * The script every preview carries so the application can attach comments to
  * a passage. The document runs in an opaque origin, so the page that frames
  * it cannot read a selection made inside. This script reports selections and
- * paints highlights instead, over `postMessage` and nothing else.
+ * paints highlights instead, over `postMessage` and nothing else. It also
+ * passes link clicks to the page, which opens them in a new tab.
  *
  * The document is untrusted, and it can remove, replace, or imitate this
  * script. Nothing here grants it anything: the parent treats every message as
@@ -148,6 +149,29 @@ export const BRIDGE_SCRIPT = `(() => {
       } catch (error) {}
     }
   });
+
+  // Most sites refuse to be framed, and the sandbox allows no popups, so the
+  // page opens links in a new tab. On the window, this runs after the
+  // document's own handlers and skips a click they already handled.
+  const follow = (event) => {
+    if (event.defaultPrevented || (event.type === "auxclick" && event.button !== 1)) return;
+    const link = event
+      .composedPath()
+      .find((node) => node instanceof Element && node.matches("a[href]"));
+    if (!link) return;
+    let url;
+    try {
+      url = new URL(link.getAttribute("href"), document.baseURI);
+    } catch (error) {
+      return;
+    }
+    if (url.origin === location.origin) return;
+    if (url.protocol !== "http:" && url.protocol !== "https:") return;
+    event.preventDefault();
+    send({ type: "open", url: url.href });
+  };
+  window.addEventListener("click", follow);
+  window.addEventListener("auxclick", follow);
 
   window.addEventListener("message", (event) => {
     if (event.source !== parent) return;

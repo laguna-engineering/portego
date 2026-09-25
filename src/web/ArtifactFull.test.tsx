@@ -583,6 +583,28 @@ describe("comments panel", () => {
   });
 });
 
+describe("links in the artifact", () => {
+  test("opens a link the artifact passes up in a new tab that cannot reach this one", async () => {
+    stubFetch(answer);
+    const opened: unknown[][] = [];
+    const original = window.open;
+    window.open = ((...args: unknown[]) => {
+      opened.push(args);
+      return null;
+    }) as typeof window.open;
+    try {
+      renderFull();
+      const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+
+      await sendFromFrame(frame, { type: "open", url: "https://example.com/" });
+
+      expect(opened).toEqual([["https://example.com/", "_blank", "noopener,noreferrer"]]);
+    } finally {
+      window.open = original;
+    }
+  });
+});
+
 describe("selection overlay", () => {
   test("offers to comment on a selection made while the panel is closed", async () => {
     stubFetch(answer);
