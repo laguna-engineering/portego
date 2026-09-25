@@ -348,6 +348,23 @@ describe("organizing", () => {
     ]);
   });
 
+  test("marks the Tags button while the artifact has at least one tag", async () => {
+    stubOrganization(artifact({ tags: [{ id: "launch", name: "launch" }] }));
+    renderFull();
+
+    const opener = await screen.findByRole("button", { name: "Tags" });
+    expect(opener.hasAttribute("data-dot")).toBe(true);
+
+    await userEvent.click(opener);
+    const dialog = await screen.findByRole("dialog", { name: "Tags" });
+    await userEvent.click(
+      await within(dialog).findByRole("button", { name: "launch", pressed: true }),
+    );
+    await within(dialog).findByRole("button", { name: "launch", pressed: false });
+
+    expect(opener.hasAttribute("data-dot")).toBe(false);
+  });
+
   test("creates a tag from a new name and applies it", async () => {
     const sent = stubOrganization();
     renderFull();
