@@ -59,6 +59,8 @@ type HeaderAction = {
   pressed?: boolean;
   expanded?: boolean;
   keepsMenuOpen?: boolean;
+  /** Puts a dot on the header button, e.g. when the artifact has tags. */
+  dot?: boolean;
 };
 
 function HeaderControl({
@@ -90,6 +92,7 @@ function HeaderControl({
       disabled={action.disabled}
       aria-pressed={action.pressed}
       aria-expanded={action.expanded}
+      data-dot={action.dot || undefined}
       onClick={() => {
         action.onSelect?.();
         onDone?.();
@@ -326,6 +329,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
           icon: <TagIcon />,
           pressed: organizing === "tags",
           expanded: organizing === "tags",
+          dot: artifact.tags.length > 0,
           onSelect: () => setOrganizing(organizing === "tags" ? null : "tags"),
         },
         {
