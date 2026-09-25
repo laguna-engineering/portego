@@ -111,6 +111,29 @@ describe("hostile artifacts", () => {
     expect(page.url()).not.toContain("attacker.example");
   });
 
+  test("cannot get a tab opened without the reader clicking", async () => {
+    const title = "open request";
+    const id = await uploadArtifact(app, {
+      title,
+      html: HOSTILE_ARTIFACTS["asks the page to open a tab without a click"] ?? "",
+    });
+    const context = await app.signedIn();
+    const page = await context.newPage();
+
+    // Playwright runs locators and evaluate() as a user gesture, which would
+    // activate the page. So nothing touches the page until the request has
+    // been handled.
+    await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/preview/")),
+      page.goto(`${app.server.origin}/a/${id}`),
+    ]);
+    await page.waitForTimeout(500);
+    expect(context.pages()).toHaveLength(1);
+
+    const frame = page.frameLocator(`iframe[title="Preview of ${title}"]`);
+    expect(await frame.locator("#outcome").textContent()).toContain("SENT");
+  });
+
   test("cannot register a service worker", async () => {
     const { outcome } = await preview(
       "service worker",
@@ -261,6 +284,61 @@ describe("opening an artifact full screen", () => {
     );
     expect(outcome).toContain("BLOCKED");
     expect(await page.title()).not.toBe("taken");
+  });
+});
+
+describe("links in an artifact", () => {
+  const LINKS = `<!doctype html><html><head><title>links</title></head><body>
+<a id="plain" href="https://elsewhere.example/plain">plain</a>
+<a id="blank" href="https://elsewhere.example/blank" target="_blank">blank</a>
+<a id="anchor" href="#below">anchor</a>
+<p id="below" style="margin-top: 200vh">below</p>
+</body></html>`;
+
+  async function open() {
+    const id = await uploadArtifact(app, { title: "Links", html: LINKS });
+    const context = await app.signedIn();
+    // Most real sites refuse to be framed, which is why links used to fail.
+    await context.route("https://elsewhere.example/**", (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        headers: { "x-frame-options": "DENY" },
+        body: "<p>elsewhere</p>",
+      }),
+    );
+    const page = await context.newPage();
+    await page.goto(`${app.server.origin}/a/${id}`);
+    const frame = page.frameLocator('iframe[title="Preview of Links"]');
+    await frame.locator("#plain").waitFor();
+    return { id, page, context, frame };
+  }
+
+  for (const link of ["plain", "blank"]) {
+    test(`open a ${link} link in a new tab and leave the artifact in place`, async () => {
+      const { id, page, context, frame } = await open();
+
+      const [opened] = await Promise.all([
+        context.waitForEvent("page"),
+        frame.locator(`#${link}`).click(),
+      ]);
+      await opened.waitForLoadState();
+
+      expect(opened.url()).toBe(`https://elsewhere.example/${link}`);
+      expect(await opened.evaluate(() => window.opener === null)).toBe(true);
+      expect(await opened.evaluate(() => document.referrer)).toBe("");
+      expect(page.url()).toBe(`${app.server.origin}/a/${id}`);
+      expect(await frame.locator("#plain").count()).toBe(1);
+    });
+  }
+
+  test("scroll to an in-page anchor without opening anything", async () => {
+    const { page, context, frame } = await open();
+
+    await frame.locator("#anchor").click();
+    await page.waitForTimeout(300);
+
+    expect(await frame.locator("html").evaluate(() => window.scrollY)).toBeGreaterThan(0);
+    expect(context.pages()).toHaveLength(1);
   });
 });
 

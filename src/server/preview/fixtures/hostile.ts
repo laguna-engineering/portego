@@ -48,6 +48,12 @@ export const HOSTILE_ARTIFACTS: Record<string, string> = {
      report(opened ? "ALLOWED: opened a window" : "BLOCKED: window.open returned null");`,
   ),
 
+  "asks the page to open a tab without a click": document_(
+    "open request",
+    `parent.postMessage({ portego: 1, type: "open", url: "https://attacker.example/" }, "*");
+     report("SENT: asked for a tab");`,
+  ),
+
   "navigates the top page": document_(
     "top navigation",
     `top.location = "https://attacker.example/"; report("ALLOWED: navigated the top page");`,

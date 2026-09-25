@@ -92,6 +92,12 @@ bridge. That grants it nothing:
 - What the application sends the frame is a mode flag, the quotes of comments
   the reader can already see, and comment ids. No token, session, or account
   detail crosses.
+- Links are passed up the same way. A link click inside the frame would load
+  the other site into the frame, and most sites refuse to be framed, so the
+  bridge cancels the click and sends the URL. The page accepts only an absolute
+  `http:` or `https:` URL, opens it only while the reader's click is still
+  active, and opens it with `noopener,noreferrer`. The new tab gets no handle
+  on the page and no referrer, and the frame never gets a window of its own.
 - The bridge does not change what the document can reach. The headers above
   still apply to it, and the frame still has no origin, storage, or network.
 
@@ -105,6 +111,7 @@ bridge. That grants it nothing:
 | Submit a form | `form-action 'none'` and no `allow-forms` |
 | Open a window | No `allow-popups` |
 | Navigate the top page | No `allow-top-navigation` |
+| Get a tab opened without a click | The page opens a link only during the reader's click |
 | Register a service worker | `worker-src 'none'`, and an opaque origin cannot register one |
 | Load a remote script, image, or font | `default-src 'none'` with only inline and `data:`/`blob:` allowed |
 | Frame another page | `frame-src 'none'` and `child-src 'none'` |
@@ -171,6 +178,8 @@ title is visible only to someone who was given the link.
 - Nothing stops a person from copying a preview URL out of the page and opening
   it directly, which gives up the framing described above for those five
   minutes. The application never produces such a link itself.
+- A reader's click anywhere in an artifact lets it ask for one `http:` or
+  `https:` page in a new tab, as a link on any web page can.
 - An artifact can still consume CPU and memory in the tab that renders it. The
   sandbox limits what it can reach, not what it can spend.
 - The protections are browser-enforced. A client that ignores CSP, or an
