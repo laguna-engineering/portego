@@ -765,45 +765,6 @@ label {
   font-size: 0.8rem;
 }
 
-.comment-data-log {
-  margin: 0.5rem 0 1rem;
-}
-
-.comment-data-log > summary {
-  cursor: pointer;
-  color: var(--ink-muted);
-  font-size: 0.85rem;
-}
-
-.comments .comment-data-log ul {
-  margin: 0.4rem 0 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  gap: 0;
-}
-
-.comments .comment-data-log li {
-  border: 0;
-  border-top: 1px solid var(--line);
-  border-radius: 0;
-  padding: 0.4rem 0.8rem;
-  background: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0 0.6rem;
-}
-
-.comments .comment-data-log li:first-child {
-  border-top: 0;
-}
-
-.comment-data-log .comment-meta {
-  margin: 0;
-}
-
 .comment-data-text {
   font-family: var(--mono);
   font-size: 0.8rem;
@@ -1535,4 +1496,44 @@ button.link {
 .selection-overlay:hover {
   border-color: var(--accent);
   filter: brightness(1.1);
+}
+
+/* After the lists above, so the data entry rows can undo their card look. */
+.comment-data-log {
+  margin: 0.5rem 0 1rem;
+}
+
+.comment-data-log > summary {
+  cursor: pointer;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+}
+
+.comments .comment-data-log ul {
+  margin: 0.4rem 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  gap: 0;
+}
+
+.comments .comment-data-log li {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0.4rem 0.8rem;
+  background: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 0.6rem;
+}
+
+.comments .comment-data-log li:first-child {
+  border-top: 0;
+}
+
+.comment-data-log .comment-meta {
+  margin: 0;
 }
