@@ -40,6 +40,35 @@ function truncate(text: string, limit: number): string {
 type Thread = { root: Comment; replies: Comment[] };
 
 /** Groups a flat, creation-ordered list into root comments and their replies. */
+/**
+ * The type of a data entry: a comment whose whole text is a JSON object with
+ * a string `type`, written for the artifact to read. Null for anything else.
+ */
+export function dataEntryType(body: string): string | null {
+  const text = body.trim();
+  if (!text.startsWith("{")) return null;
+  try {
+    const value: unknown = JSON.parse(text);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    const type = (value as Record<string, unknown>).type;
+    return typeof type === "string" ? type : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A comment's text, with a data entry folded away behind its type. */
+function CommentBody({ body }: { body: string }) {
+  const type = dataEntryType(body);
+  if (type === null) return <p className="comment-body">{body}</p>;
+  return (
+    <details className="comment-body comment-data">
+      <summary>Data: {type}</summary>
+      <pre>{body}</pre>
+    </details>
+  );
+}
+
 function threadComments(comments: Comment[]): Thread[] {
   const repliesByRoot = new Map<string, Comment[]>();
   for (const comment of comments) {
@@ -230,7 +259,7 @@ export function Comments({
                 </button>
               ) : null}
             </p>
-            <p className="comment-body">{root.body}</p>
+            <CommentBody body={root.body} />
 
             {replies.length > 0 ? (
               <ul className="comment-replies">
@@ -252,7 +281,7 @@ export function Comments({
                         </button>
                       ) : null}
                     </p>
-                    <p className="comment-body">{reply.body}</p>
+                    <CommentBody body={reply.body} />
                   </li>
                 ))}
               </ul>

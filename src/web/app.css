@@ -758,6 +758,19 @@ label {
   overflow-wrap: anywhere;
 }
 
+.comment-data summary {
+  cursor: pointer;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.comment-data pre {
+  margin: 0.3rem 0 0;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+
 .comments form {
   display: grid;
   gap: 0.4rem;

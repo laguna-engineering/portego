@@ -18,7 +18,22 @@ export type BridgeMessage =
 export type BridgeCommand =
   | { type: "mode"; enabled: boolean }
   | { type: "highlights"; anchors: (CommentAnchor & { id: string })[] }
-  | { type: "reveal"; id: string };
+  | { type: "reveal"; id: string }
+  | { type: "comments"; comments: PageComment[] };
+
+/**
+ * A comment as the artifact sees it. The author's email is left out: the page
+ * is untrusted and has no use for it.
+ */
+export type PageComment = {
+  id: string;
+  body: string;
+  author: string;
+  createdAt: string;
+  anchor: CommentAnchor | null;
+  parentId: string | null;
+  versionNumber: number;
+};
 
 const QUOTE_LIMIT = 500;
 const CONTEXT_LIMIT = 100;

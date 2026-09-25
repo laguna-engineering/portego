@@ -56,6 +56,22 @@ is written on its parent's version regardless of any `versionId` given.
 `list` reports each comment's `versionId` and `versionNumber`, so a reader
 can tell which version a comment was about even after later versions arrive.
 
+## Artifacts can read their comments
+
+The artifact page sends the document its comments over the preview bridge,
+when the document loads and whenever the list changes. Each carries `id`,
+`body`, `author` (the name, never the email), `createdAt`, `anchor`,
+`parentId`, and `versionNumber`. The document finds them on
+`window.portego.comments` and hears of each update as a `portego:comments`
+event on `window`. Anyone who can open the artifact can already read these
+comments, and the document still cannot send anything out.
+
+This lets a comment carry data for the document. A comment whose whole text
+is a JSON object with a string `type`, such as `{"type":"vote","item":"P-01"}`,
+is a data entry. The document decides which types it accepts and what they
+mean, and ignores the rest. The comments panel folds a data entry away behind
+its type.
+
 ## Everyone sees a change as it happens
 
 A status change, an archive, an upload, a comment, and organization changes

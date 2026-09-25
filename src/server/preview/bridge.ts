@@ -159,6 +159,11 @@ export const BRIDGE_SCRIPT = `(() => {
     } else if (message.type === "highlights") {
       anchors = Array.isArray(message.anchors) ? message.anchors : [];
       paint(null);
+    } else if (message.type === "comments") {
+      // The page may read the comments, e.g. to replay JSON data entries.
+      const comments = Array.isArray(message.comments) ? message.comments : [];
+      window.portego = Object.assign(window.portego || {}, { comments });
+      window.dispatchEvent(new CustomEvent("portego:comments", { detail: comments }));
     } else if (message.type === "reveal") {
       paint(message.id);
       const range = ranges.get(message.id);

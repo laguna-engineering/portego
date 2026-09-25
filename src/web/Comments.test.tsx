@@ -46,6 +46,21 @@ describe("reading", () => {
     expect(screen.getByText(/A Person/)).toBeDefined();
   });
 
+  test("folds a data entry away behind its type", async () => {
+    stubFetch(() => ({ body: { comments: [comment({ body: '{"type":"vote","item":"P-01"}' })] } }));
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    expect(await screen.findByText("Data: vote")).toBeDefined();
+  });
+
+  test("shows JSON without a string type as an ordinary comment", async () => {
+    stubFetch(() => ({ body: { comments: [comment({ body: '{"item":"P-01"}' })] } }));
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    expect(await screen.findByText('{"item":"P-01"}')).toBeDefined();
+    expect(screen.queryByText(/^Data:/)).toBeNull();
+  });
+
   test("says when there is nothing yet", async () => {
     stubFetch(() => ({ body: { comments: [] } }));
     render(<Comments artifactId="artifact-1" currentUserId="user-1" />);

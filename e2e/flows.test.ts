@@ -801,6 +801,46 @@ describe("the whole flow in a browser", () => {
 
     await context.close();
   });
+
+  test("hands the artifact its comments, data entries included", async () => {
+    const id = await uploadArtifact(app, {
+      title: "Tally",
+      html: `<!doctype html><html><head><title>t</title></head><body><p id="count">0</p><script>
+        addEventListener("portego:comments", (event) => {
+          const votes = event.detail.filter((c) => {
+            try { return JSON.parse(c.body).type === "vote"; } catch { return false; }
+          });
+          document.getElementById("count").textContent = String(votes.length);
+        });
+      </script></body></html>`,
+    });
+
+    const context = await app.signedIn();
+    const page = await context.newPage();
+    await page.goto(`${app.server.origin}/a/${id}`);
+    const frame = page.frameLocator('iframe[title="Preview of Tally"]');
+    await frame.locator("#count").waitFor();
+
+    await page.evaluate(async (artifactId) => {
+      for (const body of ['{"type":"vote","item":"P-01"}', "Just a remark"]) {
+        await fetch(`/api/artifacts/${artifactId}/comments`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ body }),
+        });
+      }
+    }, id);
+
+    // The page counts one vote and ignores the ordinary comment, with no reload.
+    await frame.getByText("1", { exact: true }).waitFor();
+    const comments = await frame
+      .locator("body")
+      .evaluate(() => (window as unknown as { portego: { comments: unknown[] } }).portego.comments);
+    expect(comments).toHaveLength(2);
+    expect(JSON.stringify(comments)).not.toContain("@");
+
+    await context.close();
+  });
 });
 
 /**
