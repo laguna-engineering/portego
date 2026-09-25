@@ -17,6 +17,12 @@ export const BRIDGE_SCRIPT = `(() => {
   if (window.parent === window) return;
   const parent = window.parent;
   const send = (message) => parent.postMessage(Object.assign({ portego: 1 }, message), "*");
+  // The page's side of its data entries: the comments, and a way to add one
+  // as the person viewing. Portego decides whether to post it.
+  window.portego = {
+    comments: [],
+    post: (entry) => send({ type: "post", body: typeof entry === "string" ? entry : JSON.stringify(entry) }),
+  };
   const CONTEXT = 32;
   let mode = false;
   let anchors = [];
@@ -162,7 +168,7 @@ export const BRIDGE_SCRIPT = `(() => {
     } else if (message.type === "comments") {
       // The page may read the comments, e.g. to replay JSON data entries.
       const comments = Array.isArray(message.comments) ? message.comments : [];
-      window.portego = Object.assign(window.portego || {}, { comments });
+      window.portego.comments = comments;
       window.dispatchEvent(new CustomEvent("portego:comments", { detail: comments }));
     } else if (message.type === "reveal") {
       paint(message.id);

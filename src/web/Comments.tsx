@@ -58,7 +58,7 @@ export function dataEntry(body: string): ({ type: string } & Record<string, unkn
 }
 
 /** A data entry on one line: its type, then its other fields. */
-function describeEntry(entry: { type: string } & Record<string, unknown>): string {
+export function describeEntry(entry: { type: string } & Record<string, unknown>): string {
   const fields = Object.entries(entry)
     .filter(([key]) => key !== "type")
     .map(([key, value]) => `${key} ${typeof value === "string" ? value : JSON.stringify(value)}`);

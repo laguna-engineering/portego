@@ -13,7 +13,8 @@ export type SelectionRect = { top: number; left: number; right: number; bottom: 
 export type BridgeMessage =
   | { type: "ready" }
   | { type: "selection"; anchor: CommentAnchor | null; rect: SelectionRect | null }
-  | { type: "focus"; id: string };
+  | { type: "focus"; id: string }
+  | { type: "post"; body: string };
 
 export type BridgeCommand =
   | { type: "mode"; enabled: boolean }
@@ -38,6 +39,8 @@ export type PageComment = {
 const QUOTE_LIMIT = 500;
 const CONTEXT_LIMIT = 100;
 const ID_LIMIT = 100;
+/** The server's comment length limit. */
+const POST_LIMIT = 4000;
 
 function text(value: unknown, limit: number): string | null {
   return typeof value === "string" ? value.slice(0, limit) : null;
@@ -65,6 +68,11 @@ export function readBridgeMessage(data: unknown): BridgeMessage | null {
   if (message.type === "focus") {
     const id = text(message.id, ID_LIMIT);
     return id ? { type: "focus", id } : null;
+  }
+  if (message.type === "post") {
+    // Too long to be a comment is refused whole, never cut to fit.
+    const body = typeof message.body === "string" ? message.body : null;
+    return body && body.length <= POST_LIMIT ? { type: "post", body } : null;
   }
   if (message.type === "selection") {
     if (message.anchor === null) return { type: "selection", anchor: null, rect: null };

@@ -841,6 +841,38 @@ describe("the whole flow in a browser", () => {
 
     await context.close();
   });
+
+  test("posts a data entry when a button in the artifact is clicked, and undoes it", async () => {
+    const id = await uploadArtifact(app, {
+      title: "Voting",
+      html: `<!doctype html><html><head><title>t</title></head><body>
+        <button id="vote">Vote</button><p id="count">votes: 0</p><script>
+        document.getElementById("vote").addEventListener("click", () =>
+          window.portego.post({ type: "vote", item: "P-01" }));
+        addEventListener("portego:comments", (event) => {
+          const votes = event.detail.filter((c) => {
+            try { return JSON.parse(c.body).type === "vote"; } catch { return false; }
+          });
+          document.getElementById("count").textContent = "votes: " + votes.length;
+        });
+      </script></body></html>`,
+    });
+
+    const context = await app.signedIn();
+    const page = await context.newPage();
+    await page.goto(`${app.server.origin}/a/${id}`);
+    const frame = page.frameLocator('iframe[title="Preview of Voting"]');
+    await frame.getByText("votes: 0").waitFor();
+
+    await frame.getByRole("button", { name: "Vote" }).click();
+    await page.getByRole("status").getByText("vote · item P-01").waitFor();
+    await frame.getByText("votes: 1").waitFor();
+
+    await page.getByRole("button", { name: "Undo" }).click();
+    await frame.getByText("votes: 0").waitFor();
+
+    await context.close();
+  });
 });
 
 /**
