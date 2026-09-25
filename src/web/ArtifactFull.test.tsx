@@ -729,6 +729,41 @@ describe("versions", () => {
     );
   });
 
+  test("highlights a comment written on an older version while viewing the current one", async () => {
+    stubTwoVersions((path) =>
+      path.endsWith("/comments")
+        ? {
+            body: {
+              comments: [
+                {
+                  id: "comment-1",
+                  body: "Still true",
+                  createdAt: new Date().toISOString(),
+                  author: { id: "user-2", name: "Someone", email: "s@x.test" },
+                  anchor: { quote: "the highlighted bit", prefix: "", suffix: "" },
+                  parentId: null,
+                  versionId: "v1",
+                  versionNumber: 1,
+                },
+              ],
+            },
+          }
+        : null,
+    );
+    renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+    await screen.findByText("the highlighted bit");
+
+    await sendFromFrame(frame, { type: "ready" });
+
+    expect(sent).toContainEqual({
+      portego: 1,
+      type: "highlights",
+      anchors: [{ id: "comment-1", quote: "the highlighted bit", prefix: "", suffix: "" }],
+    });
+  });
+
   test("keeps a single version's row, showing it as the current one", async () => {
     stubFetch(answer);
     renderFull();

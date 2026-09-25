@@ -148,12 +148,9 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   const highlights = useMemo(
     () =>
       comments
-        .filter(
-          (comment): comment is Comment & { anchor: CommentAnchor } =>
-            comment.anchor != null && comment.versionId === viewedId,
-        )
+        .filter((comment): comment is Comment & { anchor: CommentAnchor } => comment.anchor != null)
         .map(({ id: commentId, anchor }) => ({ id: commentId, ...anchor })),
-    [comments, viewedId],
+    [comments],
   );
 
   const handleBridgeMessage = useCallback(
