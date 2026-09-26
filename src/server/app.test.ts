@@ -11,6 +11,7 @@ import { createOrganizationService } from "./organization/service.ts";
 import { excerpt } from "./social.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
+import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 import { createTestServer, htmlFile, TEST_CONTENT_ORIGIN } from "./testing.ts";
 
@@ -39,6 +40,7 @@ async function createTestApp(options?: { serveClient: boolean; clientDist: strin
       store: artifactStore,
       markdownStore: createMarkdownStore({ database }),
       commentStore: createCommentStore({ database }),
+      entryStore: createEntryStore({ database }),
       organization,
     }),
     organization,

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { ContentMissingError, InvalidCursorError, type ListSort } from "./artifacts.ts";
 import { createCommentStore } from "./comments.ts";
 import { artifactsDir, contentPath } from "./content.ts";
+import { createEntryStore } from "./entries.ts";
 import { createTestStorage, htmlBytes, type TestStorage } from "./testing.ts";
 
 let storage: TestStorage;
@@ -372,6 +373,30 @@ describe("mergeInto", () => {
     ).toEqual([{ tagId: "newer" }, { tagId: "shared" }]);
     // Both files are still accounted for.
     expect(storage.store.storageKeys()).toHaveLength(2);
+  });
+
+  test("keeps entries from both, and a person's newer value where both have the key", async () => {
+    const older = await storage.store.create(input({ title: "Poll" }));
+    const newer = await storage.store.create(input({ title: "Poll" }));
+    const entries = createEntryStore({ database: storage.database });
+    const write = (artifactId: string, key: string, value: string, updatedAt: number) =>
+      storage.database
+        .query(
+          "insert into artifactEntries (artifactId, authorId, key, value, updatedAt) values (?, ?, ?, ?, ?)",
+        )
+        .run(artifactId, storage.userId, key, JSON.stringify(value), updatedAt);
+    write(older.id, "poll", "stale", 1);
+    write(newer.id, "poll", "fresh", 2);
+    write(older.id, "only-older", "a", 1);
+    write(newer.id, "only-newer", "b", 1);
+
+    storage.store.mergeInto(older.id, newer.id);
+
+    const merged = Object.fromEntries(
+      entries.list(older.id).map((entry) => [entry.key, entry.value]),
+    );
+    expect(merged).toEqual({ poll: "fresh", "only-older": "a", "only-newer": "b" });
+    expect(entries.list(newer.id)).toEqual([]);
   });
 
   test("refuses to merge an artifact into itself or into nothing", async () => {

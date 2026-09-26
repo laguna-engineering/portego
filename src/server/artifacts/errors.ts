@@ -12,6 +12,7 @@ export type ErrorCode =
   | "UNSUPPORTED_CONTENT"
   | "INVALID_CURSOR"
   | "CONTENT_MISSING"
+  | "RATE_LIMITED"
   /** Nothing the caller can fix. Reported for an unexpected server failure. */
   | "INTERNAL";
 

@@ -58,6 +58,8 @@ export type CreateArtifactInput = {
   content: Uint8Array;
   /** Markdown supplied with this version, instead of generated from its HTML. */
   providedMarkdown?: string;
+  /** The entry schema this version declares, already checked. */
+  entrySchema?: string | null;
   /** Taken from the session by the caller. Never from the request body. */
   createdBy: string;
 };
@@ -70,6 +72,8 @@ export type AddVersionInput = {
   content: Uint8Array;
   /** Markdown supplied with this version, instead of generated from its HTML. */
   providedMarkdown?: string;
+  /** The entry schema this version declares, already checked. */
+  entrySchema?: string | null;
   createdBy: string;
 };
 
@@ -269,8 +273,8 @@ export type ArtifactStore = {
   /** Every storage key the database knows about, in key order. */
   storageKeys: () => string[];
   /**
-   * Folds one artifact into another: every version and comment of `fromId`
-   * moves under `intoId`, versions are renumbered by upload time, and the
+   * Folds one artifact into another: every version, comment, and entry of
+   * `fromId` moves under `intoId`, versions are renumbered by upload time, and the
    * `fromId` row is removed. Null when either artifact is gone.
    */
   mergeInto: (intoId: string, fromId: string) => Artifact | null;
@@ -298,8 +302,9 @@ export function createArtifactStore(options: {
   const insertVersion = () =>
     database.query(
       `insert into artifactVersions
-         (id, artifactId, number, originalFilename, storageKey, sha256, byteSize, createdBy, createdAt)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, artifactId, number, originalFilename, storageKey, sha256, byteSize, createdBy, createdAt,
+          entrySchema)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
   const insertProvidedMarkdown = () =>
@@ -353,6 +358,7 @@ export function createArtifactStore(options: {
             stored.byteSize,
             input.createdBy,
             now,
+            input.entrySchema ?? null,
           );
           if (input.providedMarkdown !== undefined) {
             insertProvidedMarkdown().run(
@@ -400,6 +406,7 @@ export function createArtifactStore(options: {
             stored.byteSize,
             input.createdBy,
             now,
+            input.entrySchema ?? null,
           );
           if (input.providedMarkdown !== undefined) {
             insertProvidedMarkdown().run(
@@ -591,6 +598,17 @@ export function createArtifactStore(options: {
           )
           .run(intoId, fromId);
         database.query("delete from artifactTags where artifactId = ?").run(fromId);
+        // One value per person per key survives: the one written last.
+        database
+          .query(
+            `insert into artifactEntries (artifactId, authorId, key, value, updatedAt)
+             select ?, authorId, key, value, updatedAt from artifactEntries where artifactId = ? and true
+             on conflict (artifactId, authorId, key) do update
+               set value = excluded.value, updatedAt = excluded.updatedAt
+               where excluded.updatedAt > artifactEntries.updatedAt`,
+          )
+          .run(intoId, fromId);
+        database.query("delete from artifactEntries where artifactId = ?").run(fromId);
         // Nothing points at the old row any more, so the cascade removes nothing.
         database.query("delete from artifacts where id = ?").run(fromId);
 

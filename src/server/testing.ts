@@ -18,6 +18,7 @@ import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService, type OrganizationService } from "./organization/service.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
+import { createEntryStore } from "./storage/entries.ts";
 import { applyMigrations } from "./storage/migrations.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 
@@ -77,6 +78,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     store: artifactStore,
     markdownStore: createMarkdownStore({ database }),
     commentStore: createCommentStore({ database }),
+    entryStore: createEntryStore({ database }),
     organization,
     events,
     ...(options.maxUploadBytes ? { maxUploadBytes: options.maxUploadBytes } : {}),

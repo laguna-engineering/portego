@@ -135,6 +135,8 @@ describe("006-artifact-versions", () => {
         byteSize: 1,
         createdBy: "u1",
         createdAt: 5,
+        // Added by 008. A version from before it declares no entry schema.
+        entrySchema: null,
       },
     ]);
     expect(db.query("select versionId from artifactComments where id = 'c1'").get()).toEqual({

@@ -156,6 +156,23 @@ export const migrations: readonly Migration[] = [
       create index artifactTags_tag on artifactTags (tagId, artifactId);
     `,
   },
+  {
+    // Data an artifact's page and agents record: one value per person per key.
+    // The schema a version declares for them is kept with that version.
+    id: "008-artifact-entries",
+    sql: `
+      create table artifactEntries (
+        artifactId text not null references artifacts (id) on delete cascade,
+        authorId text not null references "user" ("id"),
+        key text not null,
+        value text not null,
+        updatedAt integer not null,
+        primary key (artifactId, authorId, key)
+      );
+
+      alter table artifactVersions add column entrySchema text;
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

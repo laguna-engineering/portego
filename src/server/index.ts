@@ -10,6 +10,7 @@ import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService } from "./organization/service.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
+import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 
 const env = parseEnv(Bun.env);
@@ -27,6 +28,7 @@ const artifacts = createArtifactService({
   store: artifactStore,
   markdownStore: createMarkdownStore({ database }),
   commentStore: createCommentStore({ database }),
+  entryStore: createEntryStore({ database }),
   organization,
   maxUploadBytes: env.ARTIFACT_MAX_BYTES,
   events,
