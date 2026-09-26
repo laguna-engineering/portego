@@ -802,15 +802,12 @@ describe("the whole flow in a browser", () => {
     await context.close();
   });
 
-  test("hands the artifact its comments, data entries included", async () => {
+  test("hands the artifact its comments as they change", async () => {
     const id = await uploadArtifact(app, {
       title: "Tally",
       html: `<!doctype html><html><head><title>t</title></head><body><p id="count">0</p><script>
         addEventListener("portego:comments", (event) => {
-          const votes = event.detail.filter((c) => {
-            try { return JSON.parse(c.body).type === "vote"; } catch { return false; }
-          });
-          document.getElementById("count").textContent = String(votes.length);
+          document.getElementById("count").textContent = String(event.detail.length);
         });
       </script></body></html>`,
     });
@@ -822,7 +819,7 @@ describe("the whole flow in a browser", () => {
     await frame.locator("#count").waitFor();
 
     await page.evaluate(async (artifactId) => {
-      for (const body of ['{"type":"vote","item":"P-01"}', "Just a remark"]) {
+      for (const body of ["First remark", "Second remark"]) {
         await fetch(`/api/artifacts/${artifactId}/comments`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -831,45 +828,13 @@ describe("the whole flow in a browser", () => {
       }
     }, id);
 
-    // The page counts one vote and ignores the ordinary comment, with no reload.
-    await frame.getByText("1", { exact: true }).waitFor();
+    // The page sees both comments with no reload, and no author's email.
+    await frame.getByText("2", { exact: true }).waitFor();
     const comments = await frame
       .locator("body")
       .evaluate(() => (window as unknown as { portego: { comments: unknown[] } }).portego.comments);
     expect(comments).toHaveLength(2);
     expect(JSON.stringify(comments)).not.toContain("@");
-
-    await context.close();
-  });
-
-  test("posts a data entry when a button in the artifact is clicked, and undoes it", async () => {
-    const id = await uploadArtifact(app, {
-      title: "Voting",
-      html: `<!doctype html><html><head><title>t</title></head><body>
-        <button id="vote">Vote</button><p id="count">votes: 0</p><script>
-        document.getElementById("vote").addEventListener("click", () =>
-          window.portego.post({ type: "vote", item: "P-01" }));
-        addEventListener("portego:comments", (event) => {
-          const votes = event.detail.filter((c) => {
-            try { return JSON.parse(c.body).type === "vote"; } catch { return false; }
-          });
-          document.getElementById("count").textContent = "votes: " + votes.length;
-        });
-      </script></body></html>`,
-    });
-
-    const context = await app.signedIn();
-    const page = await context.newPage();
-    await page.goto(`${app.server.origin}/a/${id}`);
-    const frame = page.frameLocator('iframe[title="Preview of Voting"]');
-    await frame.getByText("votes: 0").waitFor();
-
-    await frame.getByRole("button", { name: "Vote" }).click();
-    await page.getByRole("status").getByText("vote · item P-01").waitFor();
-    await frame.getByText("votes: 1").waitFor();
-
-    await page.getByRole("button", { name: "Undo" }).click();
-    await frame.getByText("votes: 0").waitFor();
 
     await context.close();
   });

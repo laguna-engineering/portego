@@ -40,43 +40,6 @@ function truncate(text: string, limit: number): string {
 type Thread = { root: Comment; replies: Comment[] };
 
 /** Groups a flat, creation-ordered list into root comments and their replies. */
-/**
- * A data entry: a comment whose whole text is a JSON object with a string
- * `type`, written for the artifact to read. Null for anything else.
- */
-export function dataEntry(body: string): ({ type: string } & Record<string, unknown>) | null {
-  const text = body.trim();
-  if (!text.startsWith("{")) return null;
-  try {
-    const value: unknown = JSON.parse(text);
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-    const entry = value as Record<string, unknown>;
-    return typeof entry.type === "string" ? (entry as { type: string }) : null;
-  } catch {
-    return null;
-  }
-}
-
-/** A data entry on one line: its type, then its other fields. */
-export function describeEntry(entry: { type: string } & Record<string, unknown>): string {
-  const fields = Object.entries(entry)
-    .filter(([key]) => key !== "type")
-    .map(([key, value]) => `${key} ${typeof value === "string" ? value : JSON.stringify(value)}`);
-  return [entry.type, ...fields].join(" · ");
-}
-
-/** A comment's text, with a data entry folded away behind its type. */
-function CommentBody({ body }: { body: string }) {
-  const entry = dataEntry(body);
-  if (entry === null) return <p className="comment-body">{body}</p>;
-  return (
-    <details className="comment-body comment-data">
-      <summary>Data: {entry.type}</summary>
-      <pre>{body}</pre>
-    </details>
-  );
-}
-
 function threadComments(comments: Comment[]): Thread[] {
   const repliesByRoot = new Map<string, Comment[]>();
   for (const comment of comments) {
@@ -137,19 +100,7 @@ export function Comments({
     if (comments) onComments?.(comments);
   }, [comments, onComments]);
 
-  // Data entries without replies are kept out of the discussion and listed
-  // on their own, collapsed, at the end.
-  const { threads, entries } = useMemo(() => {
-    const all = threadComments(comments ?? []);
-    const threads: Thread[] = [];
-    const entries: { comment: Comment; text: string }[] = [];
-    for (const thread of all) {
-      const entry = thread.replies.length === 0 ? dataEntry(thread.root.body) : null;
-      if (entry) entries.push({ comment: thread.root, text: describeEntry(entry) });
-      else threads.push(thread);
-    }
-    return { threads, entries };
-  }, [comments]);
+  const threads = useMemo(() => threadComments(comments ?? []), [comments]);
 
   // A reply has no spot of its own to scroll or highlight: its thread's root
   // stands in for it.
@@ -250,7 +201,7 @@ export function Comments({
       {heading ? <h2>Comments</h2> : null}
 
       {comments === null ? <p className="hint">Loading comments...</p> : null}
-      {comments !== null && threads.length === 0 ? <p className="hint">No comments yet.</p> : null}
+      {comments?.length === 0 ? <p className="hint">No comments yet.</p> : null}
 
       <ul>
         {threads.map(({ root, replies }) => (
@@ -279,7 +230,7 @@ export function Comments({
                 </button>
               ) : null}
             </p>
-            <CommentBody body={root.body} />
+            <p className="comment-body">{root.body}</p>
 
             {replies.length > 0 ? (
               <ul className="comment-replies">
@@ -301,7 +252,7 @@ export function Comments({
                         </button>
                       ) : null}
                     </p>
-                    <CommentBody body={reply.body} />
+                    <p className="comment-body">{reply.body}</p>
                   </li>
                 ))}
               </ul>
@@ -339,29 +290,6 @@ export function Comments({
           </li>
         ))}
       </ul>
-
-      {entries.length > 0 ? (
-        <details className="comment-data-log">
-          <summary>
-            {entries.length === 1 ? "1 data entry" : `${entries.length} data entries`}
-          </summary>
-          <ul>
-            {entries.map(({ comment, text }) => (
-              <li key={comment.id} id={`comment-${comment.id}`}>
-                <span className="comment-data-text">{text}</span>
-                <span className="comment-meta">
-                  {comment.author.name} · <RelativeTime iso={comment.createdAt} />
-                  {comment.author.id === currentUserId ? (
-                    <button type="button" className="link" onClick={() => void remove(comment.id)}>
-                      Remove
-                    </button>
-                  ) : null}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
 
       <form onSubmit={submit}>
         {anchor ? (

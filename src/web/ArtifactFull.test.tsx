@@ -773,7 +773,7 @@ describe("versions", () => {
               comments: [
                 {
                   id: "comment-1",
-                  body: '{"type":"vote","item":"P-01"}',
+                  body: "Section two needs a source.",
                   createdAt,
                   author: { id: "user-2", name: "Someone", email: "s@x.test" },
                   anchor: null,
@@ -789,7 +789,9 @@ describe("versions", () => {
     renderFull();
     const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
     const sent = stubPostMessage(frame);
+    await screen.findByText("Section two needs a source.");
 
+    await sendFromFrame(frame, { type: "ready" });
     await waitFor(() =>
       expect(sent).toContainEqual({
         portego: 1,
@@ -797,7 +799,7 @@ describe("versions", () => {
         comments: [
           {
             id: "comment-1",
-            body: '{"type":"vote","item":"P-01"}',
+            body: "Section two needs a source.",
             author: "Someone",
             createdAt,
             anchor: null,
@@ -807,66 +809,6 @@ describe("versions", () => {
         ],
       }),
     );
-  });
-
-  test("posts a data entry the artifact asks for, and undoes it", async () => {
-    const calls: { method: string; path: string; body?: string }[] = [];
-    stubFetch((path, init) => {
-      const method = init?.method ?? "GET";
-      if (path.includes("/comments") && method !== "GET")
-        calls.push({ method, path, body: init?.body as string | undefined });
-      if (method === "POST" && path.endsWith("/comments")) {
-        const sent = JSON.parse(String(init?.body)) as { body: string };
-        return {
-          status: 201,
-          body: {
-            comment: {
-              id: "comment-9",
-              body: sent.body,
-              createdAt: new Date().toISOString(),
-              author: { id: "user-1", name: "A Person", email: "person@acme.example" },
-              anchor: null,
-              parentId: null,
-              versionId: "artifact-1",
-              versionNumber: 1,
-            },
-          },
-        };
-      }
-      if (method === "DELETE") return { status: 204, body: {} };
-      return answer(path);
-    });
-    renderFull();
-    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
-
-    await sendFromFrame(frame, { type: "post", body: '{"type":"vote","item":"P-01"}' });
-
-    const notice = await screen.findByRole("status");
-    expect(notice.textContent).toContain("vote · item P-01");
-    expect(JSON.parse(String(calls[0]?.body)).body).toBe('{"type":"vote","item":"P-01"}');
-
-    await userEvent.click(screen.getByRole("button", { name: "Undo" }));
-    await waitFor(() =>
-      expect(
-        calls.some((call) => call.method === "DELETE" && call.path.endsWith("/comment-9")),
-      ).toBe(true),
-    );
-  });
-
-  test("posts nothing the artifact asks for that is not a data entry", async () => {
-    const posts: string[] = [];
-    stubFetch((path, init) => {
-      if (init?.method === "POST" && path.endsWith("/comments")) posts.push(path);
-      return answer(path);
-    });
-    renderFull();
-    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
-
-    await sendFromFrame(frame, { type: "post", body: "I agree with everything" });
-    await sendFromFrame(frame, { type: "post", body: '{"item":"P-01"}' });
-
-    expect(posts).toEqual([]);
-    expect(screen.queryByRole("status")).toBeNull();
   });
 
   test("keeps a single version's row, showing it as the current one", async () => {

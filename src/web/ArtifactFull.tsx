@@ -5,17 +5,14 @@ import {
   ApiError,
   type Artifact,
   type ArtifactVersion,
-  addComment,
   type Comment,
   type CommentAnchor,
-  deleteComment,
   fetchArtifact,
   fetchVersions,
   setArtifactArchived,
   setArtifactStatus,
   sourceUrl,
 } from "./api.ts";
-import { dataEntry, describeEntry } from "./Comments.tsx";
 import { CommentsPanel } from "./CommentsPanel.tsx";
 import { formatBytes } from "./format.ts";
 import {
@@ -107,12 +104,6 @@ function HeaderControl({
   );
 }
 
-/** How many data entries an artifact may post within the window. */
-const POST_LIMIT = 10;
-const POST_WINDOW_MS = 60_000;
-/** How long the notice with Undo stays after a post. */
-const POSTED_NOTICE_MS = 6_000;
-
 /**
  * One artifact filling everything below the masthead, which carries the
  * artifact's name, its metadata and the actions on it. The frame scrolls its
@@ -131,10 +122,6 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   /** What is selected in the artifact right now, and where, for the overlay. */
   const [live, setLive] = useState<{ anchor: CommentAnchor; rect: SelectionRect } | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  /** The data entry the artifact just posted, offered for undoing. */
-  const [posted, setPosted] = useState<{ id: string; text: string } | null>(null);
-  /** When the artifact's recent posts were made, to cap how fast it can post. */
-  const postTimes = useRef<number[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   /** The version being viewed. Null means the current version. */
@@ -180,47 +167,6 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
     [comments],
   );
 
-  // The artifact asks to add a data entry as the person viewing it, e.g. when
-  // they click a vote button. Only a data entry is posted, only here, and only
-  // a few a minute; each one is shown with a way to undo it.
-  const postEntry = useCallback(
-    async (body: string) => {
-      if (!artifact) return;
-      const entry = dataEntry(body);
-      if (!entry) return;
-      const now = Date.now();
-      postTimes.current = postTimes.current.filter((time) => now - time < POST_WINDOW_MS);
-      if (postTimes.current.length >= POST_LIMIT) {
-        setProblem("This artifact is adding entries too fast. Try again in a minute.");
-        return;
-      }
-      postTimes.current.push(now);
-      try {
-        const created = await addComment(artifact.id, body, { versionId: viewedId });
-        setPosted({ id: created.id, text: describeEntry(entry) });
-      } catch (error) {
-        setProblem(error instanceof ApiError ? error.message : "Could not add that entry.");
-      }
-    },
-    [artifact, viewedId],
-  );
-
-  async function undoPost() {
-    if (!artifact || !posted) return;
-    setPosted(null);
-    try {
-      await deleteComment(artifact.id, posted.id);
-    } catch (error) {
-      setProblem(error instanceof ApiError ? error.message : "Could not remove that entry.");
-    }
-  }
-
-  useEffect(() => {
-    if (!posted) return;
-    const timer = window.setTimeout(() => setPosted(null), POSTED_NOTICE_MS);
-    return () => window.clearTimeout(timer);
-  }, [posted]);
-
   const handleBridgeMessage = useCallback(
     (message: BridgeMessage) => {
       if (message.type === "ready") {
@@ -233,14 +179,12 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
           message.anchor && message.rect ? { anchor: message.anchor, rect: message.rect } : null,
         );
         if (panelOpen) setSelection(message.anchor);
-      } else if (message.type === "post") {
-        void postEntry(message.body);
       } else {
         setFocusedId(message.id);
         setPanelOpen(true);
       }
     },
-    [panelOpen, highlights, pageComments, postEntry],
+    [panelOpen, highlights, pageComments],
   );
 
   usePreviewBridge(frameRef, handleBridgeMessage);
@@ -550,16 +494,6 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       <div className="full-body">
         {body}
         {overlay}
-        {posted ? (
-          <div className="posted-notice" role="status">
-            <span>
-              Added <code>{posted.text}</code>
-            </span>
-            <button type="button" className="link" onClick={() => void undoPost()}>
-              Undo
-            </button>
-          </div>
-        ) : null}
         {artifact ? (
           <CommentsPanel
             open={panelOpen}

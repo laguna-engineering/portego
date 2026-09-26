@@ -58,15 +58,6 @@ describe("readBridgeMessage", () => {
     expect(readBridgeMessage(rest)).toBeNull();
   });
 
-  test("accepts a post up to the comment length limit and refuses a longer one whole", () => {
-    expect(readBridgeMessage({ portego: 1, type: "post", body: "x".repeat(4000) })).toEqual({
-      type: "post",
-      body: "x".repeat(4000),
-    });
-    expect(readBridgeMessage({ portego: 1, type: "post", body: "x".repeat(4001) })).toBeNull();
-    expect(readBridgeMessage({ portego: 1, type: "post", body: { type: "vote" } })).toBeNull();
-  });
-
   test("ignores a message of a type the bridge does not know", () => {
     expect(readBridgeMessage({ portego: 1, type: "eval" })).toBeNull();
   });
