@@ -13,6 +13,8 @@ people.
   `vote:P-01`.
 - A value is any JSON value, at most 4000 bytes as JSON text.
 - One person can hold at most 200 keys on one artifact.
+- The values on one artifact are at most 1 MiB of JSON text together, so the
+  whole list fits in one response. Past that, a write is refused.
 - One person can make at most 60 changes a minute to one artifact's entries.
   Past that, a write is refused with `RATE_LIMITED`.
 - Entries belong to the artifact, not to a version. A new version keeps them.
@@ -118,7 +120,8 @@ any well-formed key and value is accepted.
 - `pattern` is not supported. The server would run a regular expression that
   an uploaded page wrote, and a backtracking one can hold the process for
   minutes on a short input. Use `enum` or length limits instead.
-- The schema is at most 16 KiB, with at most 100 key templates.
+- The schema is at most 16 KiB, with at most 100 key templates. A page
+  declares at most one schema block.
 
 The upload checks the schema. A schema that is not valid JSON, uses a keyword
 outside the list, or breaks a template rule refuses the upload with a message

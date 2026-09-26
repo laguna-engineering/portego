@@ -171,7 +171,10 @@ URL. Every page the application serves therefore sends
 `Content-Security-Policy: frame-src <content origin>`, and the browser applies
 the framing page's `frame-src` to each navigation of the frame. The document
 can load another preview and nothing else. The Vite dev server sends the same
-header.
+header. That other preview then runs in this artifact's frame: it receives
+this artifact's entries and can ask to write them after a click. It has no
+way to send them anywhere else, and any admitted person could put the same
+code in a version of this artifact.
 
 The wrapper page carries the masthead and nothing else of the application. The
 reader's own email is on it, and the opaque origin the frame runs in is what

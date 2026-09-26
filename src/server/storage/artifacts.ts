@@ -602,7 +602,7 @@ export function createArtifactStore(options: {
         database
           .query(
             `insert into artifactEntries (artifactId, authorId, key, value, updatedAt)
-             select ?, authorId, key, value, updatedAt from artifactEntries where artifactId = ? and true
+             select ?, authorId, key, value, updatedAt from artifactEntries where artifactId = ?
              on conflict (artifactId, authorId, key) do update
                set value = excluded.value, updatedAt = excluded.updatedAt
                where excluded.updatedAt > artifactEntries.updatedAt`,

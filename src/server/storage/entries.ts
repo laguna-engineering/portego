@@ -18,6 +18,8 @@ export type EntryStore = {
   remove: (artifactId: string, authorId: string, key: string) => boolean;
   /** How many keys this author holds on the artifact. */
   count: (artifactId: string, authorId: string) => number;
+  /** Bytes of JSON in the artifact's values, leaving out one author's value for one key. */
+  valueBytes: (artifactId: string, except: { authorId: string; key: string }) => number;
   /** The schema text the version declared, or null. */
   schema: (versionId: string) => string | null;
 };
@@ -102,6 +104,16 @@ export function createEntryStore(options: { database: Database }): EntryStore {
       const row = database
         .query("select count(*) as n from artifactEntries where artifactId = ? and authorId = ?")
         .get(artifactId, authorId) as { n: number };
+      return row.n;
+    },
+
+    valueBytes(artifactId, except) {
+      const row = database
+        .query(
+          `select coalesce(sum(length(cast(value as blob))), 0) as n from artifactEntries
+           where artifactId = ? and not (authorId = ? and key = ?)`,
+        )
+        .get(artifactId, except.authorId, except.key) as { n: number };
       return row.n;
     },
 

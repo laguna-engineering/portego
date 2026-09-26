@@ -175,13 +175,13 @@ describe("the change stream over a connection", () => {
   test("keeps delivering after longer than the server's idle timeout", async () => {
     // Bun closes a quiet connection after its idle timeout, and a proxy may not
     // pass that on, leaving a client that never hears another event. Bun checks
-    // timeouts every few seconds, so a one-second timeout needs this long a wait.
+    // timeouts every 4 seconds, so a one-second timeout fires within that.
     const server = await createLiveTestServer({ idleTimeout: 1 });
     try {
       const cookie = await server.signIn();
       const res = await fetch(`${server.origin}/api/events`, { headers: { cookie } });
       expect(res.status).toBe(200);
-      await Bun.sleep(9000);
+      await Bun.sleep(5000);
 
       server.events.publish({ type: "entry.changed", artifactId: "quiet" });
 
@@ -189,7 +189,7 @@ describe("the change stream over a connection", () => {
     } finally {
       server.stop();
     }
-  }, 15_000);
+  }, 10_000);
 
   test("lets go of the subscription when the client disconnects", async () => {
     const server = await createLiveTestServer();

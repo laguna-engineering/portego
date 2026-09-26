@@ -52,11 +52,9 @@ export function eventRoutes(options: EventRouteOptions): Hono<AppEnv> {
     total += 1;
     perUser.set(user.id, held + 1);
 
-    // Bun closes a connection idle for 10 seconds, well before the heartbeat,
-    // and a proxy in front may not pass that close on: the client then waits
-    // on a stream that will never deliver. A stream is idle between events by
-    // design, so this one has no idle timeout. Bun passes the server as the
-    // environment; other runtimes, such as tests calling app.request, do not.
+    // Bun's 10-second idle timeout would close the stream before the heartbeat,
+    // and a proxy may not pass the close on. `env` is the Bun server only when
+    // Bun serves the request, not in app.request tests.
     (c.env as { timeout?: (request: Request, seconds: number) => void } | undefined)?.timeout?.(
       c.req.raw,
       0,

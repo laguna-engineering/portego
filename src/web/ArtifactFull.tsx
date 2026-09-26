@@ -188,9 +188,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
     [entries],
   );
 
-  // The artifact asks to change the reader's own entries. Only a request made
-  // during the reader's click goes through, so a page cannot write as whoever
-  // opens it; the change comes back to the page as the next entries update.
+  // The change reaches the page as the next entries update.
   const changeEntry = useCallback(
     async (key: string, change: { value: unknown } | null) => {
       if (!artifact) return;

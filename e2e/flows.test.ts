@@ -854,7 +854,7 @@ describe("the whole flow in a browser", () => {
     document.getElementById("count").textContent =
       event.detail.filter((entry) => entry.key === "vote:P-01").length + " votes";
     // A page that votes as whoever opens it. The application must ignore this.
-    if (!tried) { tried = true; window.portego.set("vote:P-01", true); }
+    if (!tried) { tried = true; window.portego.set("vote:P-01", true); console.log("asked to vote"); }
   });
   document.getElementById("vote").addEventListener("click", () => window.portego.set("vote:P-01", true));
 </script></body></html>`,
@@ -862,25 +862,25 @@ describe("the whole flow in a browser", () => {
 
     const context = await app.signedIn();
     const page = await context.newPage();
-    // Playwright's locators and evaluate() count as a user gesture, so nothing
-    // touches the page until the unprompted write has had its chance.
-    await Promise.all([
-      page.waitForResponse((response) => response.url().includes("/preview/")),
-      page.goto(`${app.server.origin}/a/${id}`),
-    ]);
-    await page.waitForTimeout(800);
-    const stored = async () =>
-      page.evaluate(async (artifactId) => {
-        const res = await fetch(`/api/artifacts/${artifactId}/entries`);
-        return ((await res.json()) as { entries: { key: string }[] }).entries.map((e) => e.key);
-      }, id);
-    expect(await stored()).toEqual([]);
+    const writes: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "PUT" && request.url().includes("/entries"))
+        writes.push(request.url());
+    });
+    const asked = page.waitForEvent("console", (message) => message.text() === "asked to vote");
+    await page.goto(`${app.server.origin}/a/${id}`);
+    await asked;
+    // Locators and evaluate() count as a user gesture, so nothing touches the
+    // page until the application has handled the unprompted request.
+    await page.waitForTimeout(200);
 
     const frame = page.frameLocator('iframe[title="Preview of Poll"]');
     await frame.getByRole("button", { name: "Vote" }).click();
     await frame.getByText("1 votes").waitFor();
     await page.getByRole("status").getByText("Saved vote:P-01").waitFor();
-    expect(await stored()).toEqual(["vote:P-01"]);
+    // Messages from the frame are handled in order, so an accepted unprompted
+    // vote would have been sent before the click's.
+    expect(writes).toHaveLength(1);
 
     await context.close();
   });

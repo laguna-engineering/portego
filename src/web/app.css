@@ -1505,7 +1505,6 @@ button.link {
   filter: brightness(1.1);
 }
 
-/* What the artifact just recorded for the reader, over the bottom of the frame. */
 .recorded-notice {
   position: absolute;
   left: 50%;

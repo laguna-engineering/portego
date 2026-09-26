@@ -122,11 +122,10 @@ describe("hostile artifacts", () => {
     const requests = recordRequests(context);
     const page = await context.newPage();
 
-    await Promise.all([
-      page.waitForResponse((response) => response.url().includes("/preview/")),
-      page.goto(`${app.server.origin}/a/${id}`),
-    ]);
-    await page.waitForTimeout(500);
+    // Chromium reports the refusal on the console of the page that owns the policy.
+    const refused = page.waitForEvent("console", (message) => message.text().includes("frame-src"));
+    await page.goto(`${app.server.origin}/a/${id}`);
+    expect((await refused).text()).toContain("attacker.example");
     expect(requests.attempted.some((url) => url.includes("attacker.example"))).toBe(false);
   });
 

@@ -18,6 +18,7 @@ import type { ArtifactOrganization } from "../storage/organization.ts";
 import {
   checkEntry,
   ENTRY_KEY_MAX_LENGTH,
+  type EntrySchema,
   EntrySchemaError,
   extractEntrySchema,
   isEntryKey,
@@ -102,6 +103,8 @@ export const ANCHOR_CONTEXT_MAX_LENGTH = 100;
 export const ENTRY_VALUE_MAX_BYTES = 4000;
 /** Keys one person may hold on one artifact. */
 export const ENTRIES_PER_AUTHOR = 200;
+/** The JSON text of all values on one artifact, so its list fits in one response. */
+export const ENTRY_VALUES_MAX_BYTES = 1024 * 1024;
 /** Writes one person may make to one artifact's entries per minute. */
 export const ENTRY_WRITES_PER_MINUTE = 60;
 
@@ -238,6 +241,17 @@ export function createArtifactService(options: {
   // Published after the write returns, so a failed write announces nothing.
   const publish = options.events?.publish ?? (() => {});
   const entryWrites = createWriteLimiter(ENTRY_WRITES_PER_MINUTE, 60_000);
+  // A version's schema never changes, so each one is parsed once.
+  const entrySchemas = new Map<string, EntrySchema | null>();
+  const entrySchema = (versionId: string): EntrySchema | null => {
+    let schema = entrySchemas.get(versionId);
+    if (schema === undefined) {
+      const text = entryStore.schema(versionId);
+      schema = text === null ? null : parseEntrySchema(text);
+      entrySchemas.set(versionId, schema);
+    }
+    return schema;
+  };
 
   const writableKey = (id: string, key: string) => {
     const artifact = store.get(id);
@@ -478,9 +492,9 @@ export function createArtifactService(options: {
       }
       // Entries belong to the artifact, so the current version's schema is the
       // one they have to fit, whichever version the writer is looking at.
-      const schemaText = entryStore.schema(artifact.currentVersionId);
-      if (schemaText !== null) {
-        const problem = checkEntry(parseEntrySchema(schemaText), input.key, input.value);
+      const schema = entrySchema(artifact.currentVersionId);
+      if (schema !== null) {
+        const problem = checkEntry(schema, input.key, input.value);
         if (problem) throw new ServiceError("INVALID_INPUT", problem);
       }
       const existing = entryStore.get(id, input.authorId, input.key);
@@ -488,6 +502,13 @@ export function createArtifactService(options: {
         throw new ServiceError(
           "INVALID_INPUT",
           `One person can hold at most ${ENTRIES_PER_AUTHOR} entries on an artifact.`,
+        );
+      }
+      const otherBytes = entryStore.valueBytes(id, { authorId: input.authorId, key: input.key });
+      if (otherBytes + Buffer.byteLength(value) > ENTRY_VALUES_MAX_BYTES) {
+        throw new ServiceError(
+          "INVALID_INPUT",
+          `An artifact's entry values are at most ${ENTRY_VALUES_MAX_BYTES} bytes of JSON together.`,
         );
       }
       limitWrites(id, input.authorId);
@@ -614,17 +635,16 @@ function readDescription(given: string | null | undefined): string | null {
 
 /** The checked schema text a page declares, or null. A broken schema refuses the upload. */
 function readEntrySchema(html: string): string | null {
-  const text = extractEntrySchema(html);
-  if (text === null) return null;
   try {
-    parseEntrySchema(text);
+    const text = extractEntrySchema(html);
+    if (text !== null) parseEntrySchema(text);
+    return text;
   } catch (cause) {
     if (cause instanceof EntrySchemaError) {
       throw new ServiceError("INVALID_INPUT", `The portego-entries schema: ${cause.message}`);
     }
     throw cause;
   }
-  return text;
 }
 
 /**

@@ -59,6 +59,11 @@ describe("extractEntrySchema", () => {
     const html = `<script id="portego-entries">{"keys":{}}</script>`;
     expect(extractEntrySchema(html)).toBeNull();
   });
+
+  test("refuses two blocks, since the browser and the server could each read a different one", () => {
+    const block = `<script type="application/json" id="portego-entries">{"keys":{}}</script>`;
+    expect(() => extractEntrySchema(block + block)).toThrow("Keep one");
+  });
 });
 
 describe("parseEntrySchema", () => {
@@ -117,6 +122,15 @@ describe("checkEntry", () => {
     expect(checkEntry(backlog, "propose:x1", { kind: "bug", title: "x".repeat(21) })).toContain(
       "at most 20 characters",
     );
+  });
+
+  test("treats names like toString as fields, not as rules inherited by every object", () => {
+    const fields = JSON.parse('{"kind":"bug","title":"x","toString":"y"}');
+    expect(checkEntry(backlog, "propose:x1", fields)).toBe("value.toString is not allowed.");
+    const needsConstructor = parseEntrySchema(
+      JSON.stringify({ keys: { k: { value: { type: "object", required: ["constructor"] } } } }),
+    );
+    expect(checkEntry(needsConstructor, "k", {})).toBe("value.constructor is required.");
   });
 
   test("refuses a key the schema does not declare and names the ones it does", () => {

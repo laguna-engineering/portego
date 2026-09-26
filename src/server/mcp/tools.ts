@@ -21,8 +21,9 @@ const ENTRIES =
   "Entries are data an artifact's page and agents record: each person holds at most one " +
   "JSON value per key on an artifact, and writing a key again replaces that person's value. " +
   "Keys are 1 to 200 printable characters with no spaces, such as `vote:P-01`. A value is " +
-  "at most 4000 bytes of JSON. When the current version declares a schema, a key must match " +
-  "one of its templates and the value must fit it.";
+  "at most 4000 bytes of JSON, and all values on an artifact at most 1 MiB together. When " +
+  "the current version declares a schema, a key must match one of its templates and the " +
+  "value must fit it.";
 
 export type ToolContext = {
   service: ArtifactService;

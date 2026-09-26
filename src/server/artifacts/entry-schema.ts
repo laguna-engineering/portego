@@ -75,8 +75,12 @@ export class EntrySchemaError extends Error {
   }
 }
 
-/** The text of the schema block, or null when the document declares none. */
+/**
+ * The text of the schema block, or null when the document declares none.
+ * Throws EntrySchemaError when it declares more than one.
+ */
 export function extractEntrySchema(html: string): string | null {
+  const found: string[] = [];
   const stack: Node[] = [parse(html)];
   while (stack.length > 0) {
     const node = stack.pop() as Node;
@@ -86,12 +90,15 @@ export function extractEntrySchema(html: string): string | null {
         attrs.get("id") === ENTRY_SCHEMA_ELEMENT_ID &&
         attrs.get("type")?.toLowerCase() === "application/json"
       ) {
-        return node.childNodes.map((child) => ("value" in child ? child.value : "")).join("");
+        found.push(node.childNodes.map((child) => ("value" in child ? child.value : "")).join(""));
       }
     }
     if ("childNodes" in node) stack.push(...node.childNodes);
   }
-  return null;
+  if (found.length > 1) {
+    throw new EntrySchemaError(`The page declares ${found.length} entry schemas. Keep one.`);
+  }
+  return found[0] ?? null;
 }
 
 /** Parses and checks a schema. Throws EntrySchemaError saying what to fix. */
@@ -326,10 +333,13 @@ function checkValue(value: unknown, schema: ValueSchema, where: string): string 
   }
   if (isRecord(value)) {
     for (const name of schema.required ?? []) {
-      if (!(name in value)) return `${where}.${name} is required.`;
+      if (!Object.hasOwn(value, name)) return `${where}.${name} is required.`;
     }
     for (const [name, property] of Object.entries(value)) {
-      const rule = schema.properties?.[name];
+      const rule =
+        schema.properties && Object.hasOwn(schema.properties, name)
+          ? schema.properties[name]
+          : undefined;
       if (rule) {
         const problem = checkValue(property, rule, `${where}.${name}`);
         if (problem) return problem;
