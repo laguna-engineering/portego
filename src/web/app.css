@@ -313,6 +313,12 @@ label {
   gap: 0.85rem;
 }
 
+/* The delay keeps a fast reload from flashing. Clearing it is immediate. */
+.cards[aria-busy="true"] {
+  opacity: 0.55;
+  transition: opacity 0.2s 0.15s;
+}
+
 .card {
   /* The row makes every card as tall as the tallest one. The link has to fill
      that height, or a short card stops responding below its own text. */

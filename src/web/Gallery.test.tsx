@@ -3,7 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Gallery } from "./Gallery.tsx";
 import type { GalleryFilters, GallerySort } from "./router.ts";
-import { artifact, restoreFetch, StubEventSource, stubFetch } from "./testing.ts";
+import { artifact, restoreFetch, StubEventSource, stubFetch, stubFetchWith } from "./testing.ts";
 
 afterEach(restoreFetch);
 beforeEach(() => StubEventSource.install());
@@ -192,6 +192,48 @@ describe("filters", () => {
       />,
     );
     await waitFor(() => expect(requested.at(-1)).toContain("sort=title-asc"));
+  });
+
+  test("keeps the cards in place while another folder loads, so nothing on the page moves", async () => {
+    let release: () => void = () => {};
+    stubFetchWith((path) => {
+      const items = path.includes("folderId")
+        ? [artifact({ id: "artifact-2", title: "In the folder" })]
+        : [artifact({ title: "First" })];
+      const response = Response.json({ items, nextCursor: null });
+      if (!path.includes("folderId")) return Promise.resolve(response);
+      return new Promise((resolve) => {
+        release = () => resolve(response);
+      });
+    });
+    const { rerender } = renderGallery();
+    expect(await screen.findByText("First")).toBeDefined();
+
+    rerender(
+      <Gallery
+        filters={{
+          query: "",
+          status: null,
+          archived: false,
+          sort: "updated-desc",
+          folderId: "folder-1",
+          tagIds: [],
+        }}
+        onFilter={() => {}}
+        onOpen={() => {}}
+        onUpload={() => {}}
+      />,
+    );
+
+    const cards = screen.getByRole("list");
+    await waitFor(() => expect(cards.getAttribute("aria-busy")).toBe("true"));
+    // A line above the cards would push them down, then back up on arrival.
+    expect(screen.queryByText("Loading artifacts...")).toBeNull();
+    expect(screen.getByText("First")).toBeDefined();
+
+    await act(async () => release());
+    expect(await screen.findByText("In the folder")).toBeDefined();
+    expect(cards.getAttribute("aria-busy")).toBe("false");
   });
 
   test("reports the order a person picked, so the URL can carry it", async () => {

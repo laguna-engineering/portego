@@ -188,7 +188,11 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
         </div>
       ) : null}
 
-      {load.status === "loading" ? <p className="hint">Loading artifacts...</p> : null}
+      {/* With cards on screen, a line above them would push them down while the
+          next page loads. The cards dim instead. */}
+      {load.status === "loading" && items.length === 0 ? (
+        <p className="hint">Loading artifacts...</p>
+      ) : null}
 
       {load.status === "error" ? (
         <div className="empty">
@@ -227,7 +231,7 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
       ) : null}
 
       {items.length > 0 ? (
-        <ul className="cards">
+        <ul className="cards" aria-busy={load.status === "loading"}>
           {items.map((artifact) => (
             <ArtifactCard key={artifact.id} artifact={artifact} onOpen={onOpen} />
           ))}
