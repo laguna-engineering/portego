@@ -3,6 +3,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ArtifactFull } from "./ArtifactFull.tsx";
 import type { ArtifactVersion } from "./api.ts";
+import { ACTIVATION_MS } from "./preview-bridge.ts";
 import { artifact, restoreFetch, StubEventSource, stubFetch } from "./testing.ts";
 
 afterEach(restoreFetch);
@@ -660,9 +661,16 @@ describe("entries", () => {
     });
     renderFull();
     const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    // Active, with no input on this page for a while (earlier tests clicked
+    // here): the click was inside the frame.
+    const now = performance.now.bind(performance);
+    performance.now = () => now() + ACTIVATION_MS;
     withActivation(true);
-
-    await sendFromFrame(frame, { type: "set", key: "vote:P-01", value: true });
+    try {
+      await sendFromFrame(frame, { type: "set", key: "vote:P-01", value: true });
+    } finally {
+      performance.now = now;
+    }
 
     expect(await screen.findByText("Saved vote:P-01")).toBeDefined();
     expect(writes).toEqual([
@@ -683,12 +691,35 @@ describe("entries", () => {
     renderFull();
     const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
     withActivation(false);
-
     await sendFromFrame(frame, { type: "set", key: "vote:P-01", value: true });
     await sendFromFrame(frame, { type: "clear", key: "vote:P-01" });
 
+    // Active, but from a click on this page, like the one that opened the artifact.
+    await userEvent.click(await screen.findByRole("button", { name: "Versions & comments" }));
+    withActivation(true);
+    await sendFromFrame(frame, { type: "set", key: "vote:P-01", value: true });
+
     expect(writes).toEqual([]);
     expect(screen.queryByText("Saved vote:P-01")).toBeNull();
+  });
+
+  test("asks for another click when a real one comes right after a click on this page", async () => {
+    const writes: string[] = [];
+    stubFetch((path, init) => {
+      if (path.includes("/entries") && init?.method) writes.push(init.method);
+      return answer(path);
+    });
+    renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    await userEvent.click(await screen.findByRole("button", { name: "Versions & comments" }));
+    // A click inside the frame focuses it.
+    frame.focus();
+    withActivation(true);
+
+    await sendFromFrame(frame, { type: "set", key: "vote:P-01", value: true });
+
+    expect(await screen.findByText("Not saved. Click again in a moment.")).toBeDefined();
+    expect(writes).toEqual([]);
   });
 });
 

@@ -100,8 +100,12 @@ bridge. That grants it nothing:
   on the page and no referrer, and the frame never gets a window of its own.
 - A document can ask to set or clear the reader's entries
   ([entries.md](entries.md)). The application makes the write only while the
-  reader's click is still active, and a browser that cannot report that gets
-  no writes, so a document cannot record anything as whoever opens it. The
+  page is active and has had no click or key press of its own for 5 seconds.
+  Input inside the frame never reaches the page, so that activation came from
+  the frame. Focus is no signal: a document can move focus into its own frame.
+  A browser that cannot report activation gets no writes. So a document cannot
+  record anything as whoever opens it, including right after the gallery click
+  that opened it. The
   reader sees what was saved and can remove it in the comments panel. The
   document receives every entry with its author's name and an opaque id, never
   an email.
@@ -120,7 +124,7 @@ bridge. That grants it nothing:
 | Navigate the top page | No `allow-top-navigation` |
 | Navigate its own frame to another site | `frame-src` on the application page names only the content origin |
 | Get a tab opened without a click | The page opens a link only during the reader's click |
-| Record entries as the reader without a click | The page writes an entry only during the reader's click |
+| Record entries as the reader without a click | The page writes an entry only while active from a click in the frame, not on the page |
 | Register a service worker | `worker-src 'none'`, and an opaque origin cannot register one |
 | Load a remote script, image, or font | `default-src 'none'` with only inline and `data:`/`blob:` allowed |
 | Frame another page | `frame-src 'none'` and `child-src 'none'` |
