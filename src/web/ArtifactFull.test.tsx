@@ -786,6 +786,53 @@ describe("versions", () => {
     });
   });
 
+  test("sends the artifact its comments, without the authors' emails", async () => {
+    const createdAt = new Date().toISOString();
+    stubTwoVersions((path) =>
+      path.endsWith("/comments")
+        ? {
+            body: {
+              comments: [
+                {
+                  id: "comment-1",
+                  body: "Section two needs a source.",
+                  createdAt,
+                  author: { id: "user-2", name: "Someone", email: "s@x.test" },
+                  anchor: null,
+                  parentId: null,
+                  versionId: "v1",
+                  versionNumber: 1,
+                },
+              ],
+            },
+          }
+        : null,
+    );
+    renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+    await screen.findByText("Section two needs a source.");
+
+    await sendFromFrame(frame, { type: "ready" });
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        portego: 1,
+        type: "comments",
+        comments: [
+          {
+            id: "comment-1",
+            body: "Section two needs a source.",
+            author: "Someone",
+            createdAt,
+            anchor: null,
+            parentId: null,
+            versionNumber: 1,
+          },
+        ],
+      }),
+    );
+  });
+
   test("keeps a single version's row, showing it as the current one", async () => {
     stubFetch(answer);
     renderFull();

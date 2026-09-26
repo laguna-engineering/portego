@@ -19,7 +19,22 @@ export type BridgeMessage =
 export type BridgeCommand =
   | { type: "mode"; enabled: boolean }
   | { type: "highlights"; anchors: (CommentAnchor & { id: string })[] }
-  | { type: "reveal"; id: string };
+  | { type: "reveal"; id: string }
+  | { type: "comments"; comments: PageComment[] };
+
+/**
+ * A comment as the artifact sees it. The author's email is left out: the page
+ * is untrusted and has no use for it.
+ */
+export type PageComment = {
+  id: string;
+  body: string;
+  author: string;
+  createdAt: string;
+  anchor: CommentAnchor | null;
+  parentId: string | null;
+  versionNumber: number;
+};
 
 const QUOTE_LIMIT = 500;
 const CONTEXT_LIMIT = 100;
@@ -89,7 +104,7 @@ export function readBridgeMessage(data: unknown): BridgeMessage | null {
 export function sendToPreview(frame: HTMLIFrameElement | null, command: BridgeCommand): void {
   // The frame's origin is opaque and cannot be named, so the target is "*".
   // Nothing sent this way is secret: a mode flag, quotes the reader already
-  // sees, and comment ids.
+  // sees, and the comments with author names.
   frame?.contentWindow?.postMessage({ portego: 1, ...command }, "*");
 }
 

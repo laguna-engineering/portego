@@ -154,12 +154,27 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
     [comments],
   );
 
+  const pageComments = useMemo(
+    () =>
+      comments.map((comment) => ({
+        id: comment.id,
+        body: comment.body,
+        author: comment.author.name,
+        createdAt: comment.createdAt,
+        anchor: comment.anchor,
+        parentId: comment.parentId,
+        versionNumber: comment.versionNumber,
+      })),
+    [comments],
+  );
+
   const handleBridgeMessage = useCallback(
     (message: BridgeMessage) => {
       if (message.type === "ready") {
         // The frame just loaded (or reloaded), so it knows nothing yet.
         sendToPreview(frameRef.current, { type: "mode", enabled: panelOpen });
         sendToPreview(frameRef.current, { type: "highlights", anchors: highlights });
+        sendToPreview(frameRef.current, { type: "comments", comments: pageComments });
       } else if (message.type === "selection") {
         setLive(
           message.anchor && message.rect ? { anchor: message.anchor, rect: message.rect } : null,
@@ -172,7 +187,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
         setPanelOpen(true);
       }
     },
-    [panelOpen, highlights],
+    [panelOpen, highlights, pageComments],
   );
 
   usePreviewBridge(frameRef, handleBridgeMessage);
@@ -185,6 +200,10 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   useEffect(() => {
     sendToPreview(frameRef.current, { type: "highlights", anchors: highlights });
   }, [highlights]);
+
+  useEffect(() => {
+    sendToPreview(frameRef.current, { type: "comments", comments: pageComments });
+  }, [pageComments]);
 
   // Takes the selection into the composer, like the comment control in the
   // margin of a document. The panel opens if it was closed.
