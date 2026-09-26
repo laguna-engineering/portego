@@ -18,6 +18,7 @@ import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService, type OrganizationService } from "./organization/service.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
+import { createEntryStore } from "./storage/entries.ts";
 import { applyMigrations } from "./storage/migrations.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 
@@ -77,6 +78,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     store: artifactStore,
     markdownStore: createMarkdownStore({ database }),
     commentStore: createCommentStore({ database }),
+    entryStore: createEntryStore({ database }),
     organization,
     events,
     ...(options.maxUploadBytes ? { maxUploadBytes: options.maxUploadBytes } : {}),
@@ -135,14 +137,16 @@ export type LiveTestServer = TestServer & {
  * rather than an in-process request.
  */
 export async function createLiveTestServer(
-  options: { serveClient?: boolean } = {},
+  options: { serveClient?: boolean; idleTimeout?: number } = {},
 ): Promise<LiveTestServer> {
   let handle: TestServer | null = null;
   const listener = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
-    fetch: (request) =>
-      handle ? handle.app.fetch(request) : new Response("not ready", { status: 503 }),
+    ...(options.idleTimeout === undefined ? {} : { idleTimeout: options.idleTimeout }),
+    // The server goes along as the environment, as it does in production.
+    fetch: (request, server) =>
+      handle ? handle.app.fetch(request, server) : new Response("not ready", { status: 503 }),
   });
 
   const origin = `http://127.0.0.1:${listener.port}`;

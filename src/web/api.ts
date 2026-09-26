@@ -297,6 +297,42 @@ export async function deleteComment(artifactId: string, commentId: string): Prom
   if (!res.ok) throw new ApiError("DELETE_FAILED", "Could not remove that comment.", res.status);
 }
 
+/** One person's value for one key on an artifact. */
+export type Entry = {
+  key: string;
+  value: unknown;
+  updatedAt: string;
+  author: { id: string; name: string; email: string };
+};
+
+/** Every person's entries, and the schema the current version declares, if any. */
+export function fetchEntries(id: string): Promise<{ entries: Entry[]; schema: unknown }> {
+  return request(`/api/artifacts/${encodeURIComponent(id)}/entries`);
+}
+
+export function setEntry(id: string, key: string, value: unknown): Promise<Entry> {
+  return request<{ entry: Entry }>(`/api/artifacts/${encodeURIComponent(id)}/entries`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ key, value }),
+  }).then((body) => body.entry);
+}
+
+export async function clearEntry(id: string, key: string): Promise<void> {
+  const res = await fetch(
+    `/api/artifacts/${encodeURIComponent(id)}/entries?key=${encodeURIComponent(key)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as ApiErrorBody | null;
+    throw new ApiError(
+      body?.error.code ?? "UNKNOWN",
+      body?.error.message ?? "Could not remove that entry.",
+      res.status,
+    );
+  }
+}
+
 export type Markdown = {
   markdown: string;
   empty: boolean;

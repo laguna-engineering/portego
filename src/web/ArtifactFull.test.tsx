@@ -35,6 +35,7 @@ function answer(path: string) {
   const base = path.split("?")[0] ?? path;
   if (base.endsWith("/preview")) return { body: { url: "http://127.0.0.1:5173/preview/token" } };
   if (base.endsWith("/comments")) return { body: { comments: [] } };
+  if (base.endsWith("/entries")) return { body: { entries: [], schema: null } };
   if (base.endsWith("/versions")) return { body: { versions: [version()] } };
   if (base.endsWith("/markdown")) {
     return {
@@ -602,6 +603,92 @@ describe("links in the artifact", () => {
     } finally {
       window.open = original;
     }
+  });
+});
+
+describe("entries", () => {
+  const ENTRY = {
+    key: "vote:P-01",
+    value: true,
+    updatedAt: new Date().toISOString(),
+    author: { id: "user-2", name: "Someone", email: "someone@acme.example" },
+  };
+
+  function withActivation(isActive: boolean) {
+    Object.defineProperty(navigator, "userActivation", { value: { isActive }, configurable: true });
+  }
+
+  afterEach(() => {
+    delete (navigator as { userActivation?: unknown }).userActivation;
+  });
+
+  test("gives the artifact its entries, without anyone's email", async () => {
+    stubFetch((path) =>
+      path.endsWith("/entries") ? { body: { entries: [ENTRY], schema: null } } : answer(path),
+    );
+    renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+    await screen.findByText("1 data entry");
+
+    await sendFromFrame(frame, { type: "ready" });
+
+    expect(sent).toContainEqual({
+      portego: 1,
+      type: "entries",
+      entries: [
+        {
+          key: "vote:P-01",
+          value: true,
+          authorId: "user-2",
+          author: "Someone",
+          updatedAt: ENTRY.updatedAt,
+        },
+      ],
+    });
+    expect(JSON.stringify(sent)).not.toContain("someone@acme.example");
+  });
+
+  test("records an entry the artifact asks for during the reader's click, and says so", async () => {
+    const writes: { path: string; method?: string; body?: unknown }[] = [];
+    stubFetch((path, init) => {
+      if (path.includes("/entries") && init?.method) {
+        writes.push({ path, method: init.method, body: init.body });
+        return init.method === "PUT" ? { body: { entry: ENTRY } } : { status: 204, body: null };
+      }
+      return answer(path);
+    });
+    renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    withActivation(true);
+
+    await sendFromFrame(frame, { type: "set", key: "vote:P-01", value: true });
+
+    expect(await screen.findByText("Saved vote:P-01")).toBeDefined();
+    expect(writes).toEqual([
+      {
+        path: "/api/artifacts/artifact-1/entries",
+        method: "PUT",
+        body: JSON.stringify({ key: "vote:P-01", value: true }),
+      },
+    ]);
+  });
+
+  test("ignores a write the artifact asks for without a click, so a page cannot act as its reader", async () => {
+    const writes: string[] = [];
+    stubFetch((path, init) => {
+      if (path.includes("/entries") && init?.method) writes.push(init.method);
+      return answer(path);
+    });
+    renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    withActivation(false);
+
+    await sendFromFrame(frame, { type: "set", key: "vote:P-01", value: true });
+    await sendFromFrame(frame, { type: "clear", key: "vote:P-01" });
+
+    expect(writes).toEqual([]);
+    expect(screen.queryByText("Saved vote:P-01")).toBeNull();
   });
 });
 

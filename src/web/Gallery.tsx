@@ -76,8 +76,8 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
   );
 
   useLiveEvents((event) => {
-    // A comment changes nothing a card shows.
-    if (event.type === "comment.changed") return;
+    // A comment or an entry changes nothing a card shows.
+    if (event.type === "comment.changed" || event.type === "entry.changed") return;
     // A gallery showing more than its first page is a place the reader walked
     // to. Rebuilding it underneath them would lose that, so it asks first.
     if (expanded) {

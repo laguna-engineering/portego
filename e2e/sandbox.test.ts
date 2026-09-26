@@ -111,6 +111,24 @@ describe("hostile artifacts", () => {
     expect(page.url()).not.toContain("attacker.example");
   });
 
+  test("cannot navigate their own frame to another site", async () => {
+    // The sandbox allows this navigation. The application page's frame-src
+    // refuses it before a request is made, so nothing reaches the site.
+    const id = await uploadArtifact(app, {
+      title: "frame navigation",
+      html: HOSTILE_ARTIFACTS["navigates its own frame"] ?? "",
+    });
+    const context = await app.signedIn();
+    const requests = recordRequests(context);
+    const page = await context.newPage();
+
+    // Chromium reports the refusal on the console of the page that owns the policy.
+    const refused = page.waitForEvent("console", (message) => message.text().includes("frame-src"));
+    await page.goto(`${app.server.origin}/a/${id}`);
+    expect((await refused).text()).toContain("attacker.example");
+    expect(requests.attempted.some((url) => url.includes("attacker.example"))).toBe(false);
+  });
+
   test("cannot get a tab opened without the reader clicking", async () => {
     const title = "open request";
     const id = await uploadArtifact(app, {

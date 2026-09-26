@@ -1,5 +1,6 @@
-import type { ArtifactVersion, Comment, CommentAnchor } from "./api.ts";
+import type { ArtifactVersion, Comment, CommentAnchor, Entry } from "./api.ts";
 import { Comments } from "./Comments.tsx";
+import { Entries } from "./Entries.tsx";
 import { formatBytes } from "./format.ts";
 import { CloseIcon } from "./Icons.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
@@ -19,6 +20,7 @@ export type CommentsPanelProps = {
   onClearAnchor: () => void;
   onClose: () => void;
   onComments: (comments: Comment[]) => void;
+  onEntries: (entries: Entry[]) => void;
   onFocusComment: (id: string) => void;
   focusedId: string | null;
 };
@@ -43,6 +45,7 @@ export function CommentsPanel({
   onClearAnchor,
   onClose,
   onComments,
+  onEntries,
   onFocusComment,
   focusedId,
 }: CommentsPanelProps) {
@@ -104,6 +107,7 @@ export function CommentsPanel({
         versionId={viewedId}
         viewedVersionNumber={viewedVersion?.number ?? null}
       />
+      <Entries artifactId={artifactId} currentUserId={currentUserId} onEntries={onEntries} />
     </aside>
   );
 }

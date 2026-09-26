@@ -13,7 +13,17 @@ import type {
 } from "../storage/artifacts.ts";
 import { ContentMissingError, InvalidCursorError } from "../storage/artifacts.ts";
 import type { Comment, CommentAnchor, CommentStore } from "../storage/comments.ts";
+import type { Entry, EntryStore } from "../storage/entries.ts";
 import type { ArtifactOrganization } from "../storage/organization.ts";
+import {
+  checkEntry,
+  ENTRY_KEY_MAX_LENGTH,
+  type EntrySchema,
+  EntrySchemaError,
+  extractEntrySchema,
+  isEntryKey,
+  parseEntrySchema,
+} from "./entry-schema.ts";
 import { ServiceError } from "./errors.ts";
 import {
   DESCRIPTION_MAX_LENGTH,
@@ -89,6 +99,15 @@ export const COMMENT_MAX_LENGTH = 4000;
 export const ANCHOR_QUOTE_MAX_LENGTH = 500;
 export const ANCHOR_CONTEXT_MAX_LENGTH = 100;
 
+/** The JSON text of one entry's value. */
+export const ENTRY_VALUE_MAX_BYTES = 4000;
+/** Keys one person may hold on one artifact. */
+export const ENTRIES_PER_AUTHOR = 200;
+/** The JSON text of all values on one artifact, so its list fits in one response. */
+export const ENTRY_VALUES_MAX_BYTES = 1024 * 1024;
+/** Writes one person may make to one artifact's entries per minute. */
+export const ENTRY_WRITES_PER_MINUTE = 60;
+
 /**
  * Anchors arrive as untrusted JSON (an HTTP body or an MCP tool argument), so
  * this checks the shape as well as the limits. A comment with no anchor at
@@ -159,6 +178,12 @@ export type ArtifactService = {
     },
   ) => Comment;
   deleteComment: (id: string, commentId: string, actorId: string) => void;
+  /** Every person's entries, and the schema the current version declares. */
+  entries: (id: string) => { entries: Entry[]; schema: unknown };
+  /** Sets the author's value for a key, replacing any value they had. */
+  setEntry: (id: string, input: { authorId: string; key: string; value: unknown }) => Entry;
+  /** Removes the author's value for a key. Removing a key they never set is not an error. */
+  clearEntry: (id: string, input: { authorId: string; key: string }) => void;
   maxUploadBytes: number;
 };
 
@@ -200,13 +225,14 @@ export function createArtifactService(options: {
   store: ArtifactStore;
   markdownStore: MarkdownStore;
   commentStore: CommentStore;
+  entryStore: EntryStore;
   maxUploadBytes?: number;
   /** Where a committed change is announced. Absent in tests that ignore it. */
   events?: EventBus;
   /** Adds shared folder and tag metadata without giving this service write access to it. */
   organization?: { assignments: (artifactIds: string[]) => Map<string, ArtifactOrganization> };
 }): ArtifactService {
-  const { store, markdownStore, commentStore } = options;
+  const { store, markdownStore, commentStore, entryStore } = options;
   const assignments =
     options.organization?.assignments ?? (() => new Map<string, ArtifactOrganization>());
   const summary = (artifact: Artifact) =>
@@ -214,6 +240,39 @@ export function createArtifactService(options: {
   const maxUploadBytes = options.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   // Published after the write returns, so a failed write announces nothing.
   const publish = options.events?.publish ?? (() => {});
+  const entryWrites = createWriteLimiter(ENTRY_WRITES_PER_MINUTE, 60_000);
+  // A version's schema never changes, so each one is parsed once.
+  const entrySchemas = new Map<string, EntrySchema | null>();
+  const entrySchema = (versionId: string): EntrySchema | null => {
+    let schema = entrySchemas.get(versionId);
+    if (schema === undefined) {
+      const text = entryStore.schema(versionId);
+      schema = text === null ? null : parseEntrySchema(text);
+      entrySchemas.set(versionId, schema);
+    }
+    return schema;
+  };
+
+  const writableKey = (id: string, key: string) => {
+    const artifact = store.get(id);
+    if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+    if (!isEntryKey(key)) {
+      throw new ServiceError(
+        "INVALID_INPUT",
+        `A key is 1 to ${ENTRY_KEY_MAX_LENGTH} printable characters with no spaces.`,
+      );
+    }
+    return artifact;
+  };
+
+  const limitWrites = (id: string, authorId: string) => {
+    if (!entryWrites.allow(`${id} ${authorId}`)) {
+      throw new ServiceError(
+        "RATE_LIMITED",
+        `At most ${ENTRY_WRITES_PER_MINUTE} entry changes a minute. Try again shortly.`,
+      );
+    }
+  };
 
   return {
     maxUploadBytes,
@@ -289,6 +348,7 @@ export function createArtifactService(options: {
           `The rendered HTML is larger than the ${maxUploadBytes} byte limit.`,
         );
       }
+      const entrySchema = isMarkdown ? null : readEntrySchema(text);
       const originalFilename = safeFilename(
         isMarkdown
           ? `${input.filename?.replace(/\.[^.]*$/, "") || "artifact"}.html`
@@ -305,6 +365,7 @@ export function createArtifactService(options: {
           originalFilename,
           content,
           ...(providedMarkdown === null ? {} : { providedMarkdown }),
+          entrySchema,
           createdBy: input.createdBy,
         });
         if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
@@ -318,6 +379,7 @@ export function createArtifactService(options: {
         originalFilename,
         content,
         ...(providedMarkdown === null ? {} : { providedMarkdown }),
+        entrySchema,
         createdBy: input.createdBy,
       });
       publish({ type: "artifact.created", id: artifact.id });
@@ -409,6 +471,63 @@ export function createArtifactService(options: {
         throw new ServiceError("NOT_FOUND", "No such comment.");
       }
       publish({ type: "comment.changed", artifactId: id });
+    },
+
+    entries(id) {
+      const artifact = store.get(id);
+      if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+      const schema = entryStore.schema(artifact.currentVersionId);
+      return { entries: entryStore.list(id), schema: schema === null ? null : JSON.parse(schema) };
+    },
+
+    setEntry(id, input) {
+      const artifact = writableKey(id, input.key);
+      if (input.value === undefined) throw new ServiceError("INVALID_INPUT", "Give a value.");
+      const value = JSON.stringify(input.value);
+      if (Buffer.byteLength(value) > ENTRY_VALUE_MAX_BYTES) {
+        throw new ServiceError(
+          "INVALID_INPUT",
+          `A value is at most ${ENTRY_VALUE_MAX_BYTES} bytes of JSON.`,
+        );
+      }
+      // Entries belong to the artifact, so the current version's schema is the
+      // one they have to fit, whichever version the writer is looking at.
+      const schema = entrySchema(artifact.currentVersionId);
+      if (schema !== null) {
+        const problem = checkEntry(schema, input.key, input.value);
+        if (problem) throw new ServiceError("INVALID_INPUT", problem);
+      }
+      const existing = entryStore.get(id, input.authorId, input.key);
+      if (!existing && entryStore.count(id, input.authorId) >= ENTRIES_PER_AUTHOR) {
+        throw new ServiceError(
+          "INVALID_INPUT",
+          `One person can hold at most ${ENTRIES_PER_AUTHOR} entries on an artifact.`,
+        );
+      }
+      const otherBytes = entryStore.valueBytes(id, { authorId: input.authorId, key: input.key });
+      if (otherBytes + Buffer.byteLength(value) > ENTRY_VALUES_MAX_BYTES) {
+        throw new ServiceError(
+          "INVALID_INPUT",
+          `An artifact's entry values are at most ${ENTRY_VALUES_MAX_BYTES} bytes of JSON together.`,
+        );
+      }
+      limitWrites(id, input.authorId);
+      const entry = entryStore.set({
+        artifactId: id,
+        authorId: input.authorId,
+        key: input.key,
+        value,
+      });
+      publish({ type: "entry.changed", artifactId: id });
+      return entry;
+    },
+
+    clearEntry(id, input) {
+      writableKey(id, input.key);
+      limitWrites(id, input.authorId);
+      if (entryStore.remove(id, input.authorId, input.key)) {
+        publish({ type: "entry.changed", artifactId: id });
+      }
     },
 
     async markdown(id, versionId) {
@@ -512,4 +631,44 @@ function readDescription(given: string | null | undefined): string | null {
     );
   }
   return description;
+}
+
+/** The checked schema text a page declares, or null. A broken schema refuses the upload. */
+function readEntrySchema(html: string): string | null {
+  try {
+    const text = extractEntrySchema(html);
+    if (text !== null) parseEntrySchema(text);
+    return text;
+  } catch (cause) {
+    if (cause instanceof EntrySchemaError) {
+      throw new ServiceError("INVALID_INPUT", `The portego-entries schema: ${cause.message}`);
+    }
+    throw cause;
+  }
+}
+
+/**
+ * Counts writes per key in a sliding window. In memory, like the event bus:
+ * one process serves every client.
+ */
+function createWriteLimiter(limit: number, windowMs: number) {
+  const recent = new Map<string, number[]>();
+  return {
+    allow(key: string): boolean {
+      const now = Date.now();
+      if (recent.size > 10_000) {
+        for (const [other, times] of recent) {
+          if (times.every((time) => now - time >= windowMs)) recent.delete(other);
+        }
+      }
+      const times = (recent.get(key) ?? []).filter((time) => now - time < windowMs);
+      if (times.length >= limit) {
+        recent.set(key, times);
+        return false;
+      }
+      times.push(now);
+      recent.set(key, times);
+      return true;
+    },
+  };
 }

@@ -11,6 +11,7 @@ import { createOrganizationService } from "./organization/service.ts";
 import { excerpt } from "./social.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
+import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 import { createTestServer, htmlFile, TEST_CONTENT_ORIGIN } from "./testing.ts";
 
@@ -39,6 +40,7 @@ async function createTestApp(options?: { serveClient: boolean; clientDist: strin
       store: artifactStore,
       markdownStore: createMarkdownStore({ database }),
       commentStore: createCommentStore({ database }),
+      entryStore: createEntryStore({ database }),
       organization,
     }),
     organization,
@@ -250,6 +252,16 @@ describe("GET * (social tags)", () => {
       const res = await server.app.request("/a/does-not-exist");
       expect(res.headers.get("cache-control")).toBe("private, no-cache");
       expect(res.headers.get("vary")).toBe("Cookie");
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("lets frames load previews only, so an artifact cannot navigate its frame to another site", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const res = await server.app.request("/a/does-not-exist");
+      expect(res.headers.get("content-security-policy")).toBe(`frame-src ${TEST_CONTENT_ORIGIN}`);
     } finally {
       server.cleanup();
     }

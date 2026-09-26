@@ -136,9 +136,12 @@ uploaded twice before versions existed, can be folded together:
 bun run merge-artifacts <into-id> <from-id>
 ```
 
-Every version and comment of `from` moves under `into`, versions are
-renumbered by upload time so the most recent upload becomes the current one,
-and the `from` row is removed. The surviving artifact keeps its id, title, and
+Every version, comment, and entry of `from` moves under `into`. Where both
+artifacts hold an entry from the same person for the same key, the newer value
+stays. The merged entries can go past the entry limits, and writes that need
+room are then refused until entries are cleared. Versions are renumbered by
+upload time so the most recent upload becomes the current one, and the `from`
+row is removed. The surviving artifact keeps its id, title, and
 status, keeps its description unless it had none, and takes the earlier
 creation time. Links to `from` stop working. Run it with the same environment
 the service uses, and stop the service first so no upload lands in between.

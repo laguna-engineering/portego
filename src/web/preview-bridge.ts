@@ -14,13 +14,16 @@ export type BridgeMessage =
   | { type: "ready" }
   | { type: "selection"; anchor: CommentAnchor | null; rect: SelectionRect | null }
   | { type: "focus"; id: string }
-  | { type: "open"; url: string };
+  | { type: "open"; url: string }
+  | { type: "set"; key: string; value: unknown }
+  | { type: "clear"; key: string };
 
 export type BridgeCommand =
   | { type: "mode"; enabled: boolean }
   | { type: "highlights"; anchors: (CommentAnchor & { id: string })[] }
   | { type: "reveal"; id: string }
-  | { type: "comments"; comments: PageComment[] };
+  | { type: "comments"; comments: PageComment[] }
+  | { type: "entries"; entries: PageEntry[] };
 
 /**
  * A comment as the artifact sees it. The author's email is left out: the page
@@ -36,10 +39,25 @@ export type PageComment = {
   versionNumber: number;
 };
 
+/**
+ * An entry as the artifact sees it. The author's email stays out: the page is
+ * untrusted and has no use for it. The id tells apart two people with one name.
+ */
+export type PageEntry = {
+  key: string;
+  value: unknown;
+  authorId: string;
+  author: string;
+  updatedAt: string;
+};
+
 const QUOTE_LIMIT = 500;
 const CONTEXT_LIMIT = 100;
 const ID_LIMIT = 100;
 const URL_LIMIT = 2048;
+const KEY_LIMIT = 200;
+/** The server's limit on a value's JSON text. */
+const VALUE_LIMIT = 4000;
 
 function text(value: unknown, limit: number): string | null {
   return typeof value === "string" ? value.slice(0, limit) : null;
@@ -73,6 +91,25 @@ function readUrl(value: unknown): string | null {
   return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
 }
 
+/**
+ * A value that survives JSON, so the server stores what the page sent. A long
+ * key or value is refused whole, never cut to fit.
+ */
+function readValue(value: unknown): { value: unknown } | null {
+  let json: string | undefined;
+  try {
+    json = JSON.stringify(value);
+  } catch {
+    return null;
+  }
+  if (json === undefined || new TextEncoder().encode(json).byteLength > VALUE_LIMIT) return null;
+  return { value: JSON.parse(json) };
+}
+
+function readKey(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 && value.length <= KEY_LIMIT ? value : null;
+}
+
 /** Reads one message from a preview. Anything unexpected is null. */
 export function readBridgeMessage(data: unknown): BridgeMessage | null {
   if (typeof data !== "object" || data === null) return null;
@@ -86,6 +123,15 @@ export function readBridgeMessage(data: unknown): BridgeMessage | null {
   if (message.type === "open") {
     const url = readUrl(message.url);
     return url ? { type: "open", url } : null;
+  }
+  if (message.type === "set") {
+    const key = readKey(message.key);
+    const read = readValue(message.value);
+    return key && read ? { type: "set", key, value: read.value } : null;
+  }
+  if (message.type === "clear") {
+    const key = readKey(message.key);
+    return key ? { type: "clear", key } : null;
   }
   if (message.type === "selection") {
     if (message.anchor === null) return { type: "selection", anchor: null, rect: null };
@@ -104,7 +150,7 @@ export function readBridgeMessage(data: unknown): BridgeMessage | null {
 export function sendToPreview(frame: HTMLIFrameElement | null, command: BridgeCommand): void {
   // The frame's origin is opaque and cannot be named, so the target is "*".
   // Nothing sent this way is secret: a mode flag, quotes the reader already
-  // sees, and the comments with author names.
+  // sees, and the comments and entries with author names.
   frame?.contentWindow?.postMessage({ portego: 1, ...command }, "*");
 }
 
@@ -117,6 +163,16 @@ export function sendToPreview(frame: HTMLIFrameElement | null, command: BridgeCo
 export function openFromPreview(url: string): void {
   if (navigator.userActivation && !navigator.userActivation.isActive) return;
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/**
+ * Whether the reader clicked recently, in the frame or on this page: the
+ * browser does not say which. A document writing entries with no click at all
+ * gets nothing. A browser without the API is refused: a write is not worth
+ * the guess.
+ */
+export function readerIsActing(): boolean {
+  return navigator.userActivation?.isActive === true;
 }
 
 /** Listens for messages from one frame only. Other windows are ignored. */

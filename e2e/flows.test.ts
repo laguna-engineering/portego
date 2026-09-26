@@ -838,6 +838,52 @@ describe("the whole flow in a browser", () => {
 
     await context.close();
   });
+
+  test("records an entry when the reader clicks in the artifact, and never on its own", async () => {
+    const schema = {
+      keys: { "vote:{item}": { params: { item: { enum: ["P-01"] } }, value: { const: true } } },
+    };
+    const id = await uploadArtifact(app, {
+      title: "Poll",
+      html: `<!doctype html><html><head><title>Poll</title>
+<script type="application/json" id="portego-entries">${JSON.stringify(schema)}</script>
+</head><body><button id="vote">Vote</button><p id="count">waiting</p>
+<script>
+  let tried = false;
+  window.addEventListener("portego:entries", (event) => {
+    document.getElementById("count").textContent =
+      event.detail.filter((entry) => entry.key === "vote:P-01").length + " votes";
+    // A page that votes as whoever opens it. The application must ignore this.
+    if (!tried) { tried = true; window.portego.set("vote:P-01", true); console.log("asked to vote"); }
+  });
+  document.getElementById("vote").addEventListener("click", () => window.portego.set("vote:P-01", true));
+</script></body></html>`,
+    });
+
+    const context = await app.signedIn();
+    const page = await context.newPage();
+    const writes: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "PUT" && request.url().includes("/entries"))
+        writes.push(request.url());
+    });
+    const asked = page.waitForEvent("console", (message) => message.text() === "asked to vote");
+    await page.goto(`${app.server.origin}/a/${id}`);
+    await asked;
+    // Locators and evaluate() count as a user gesture, so nothing touches the
+    // page until the application has handled the unprompted request.
+    await page.waitForTimeout(200);
+
+    const frame = page.frameLocator('iframe[title="Preview of Poll"]');
+    await frame.getByRole("button", { name: "Vote" }).click();
+    await frame.getByText("1 votes").waitFor();
+    await page.getByRole("status").getByText("Saved vote:P-01").waitFor();
+    // Messages from the frame are handled in order, so an accepted unprompted
+    // vote would have been sent before the click's.
+    expect(writes).toHaveLength(1);
+
+    await context.close();
+  });
 });
 
 /**

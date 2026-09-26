@@ -9,7 +9,7 @@ import { ServiceError } from "./errors.ts";
 import type { ArtifactService, UploadResult } from "./service.ts";
 import { verifyUploadTicket } from "./tickets.ts";
 
-const STATUS: Record<ErrorCode, 400 | 401 | 403 | 404 | 413 | 500> = {
+const STATUS: Record<ErrorCode, 400 | 401 | 403 | 404 | 413 | 429 | 500> = {
   UNAUTHENTICATED: 401,
   NOT_FOUND: 404,
   FORBIDDEN: 403,
@@ -18,6 +18,7 @@ const STATUS: Record<ErrorCode, 400 | 401 | 403 | 404 | 413 | 500> = {
   FILE_TOO_LARGE: 413,
   UNSUPPORTED_CONTENT: 400,
   INVALID_CURSOR: 400,
+  RATE_LIMITED: 429,
   CONTENT_MISSING: 500,
   INTERNAL: 500,
 };
@@ -188,6 +189,29 @@ export function artifactRoutes(
 
   routes.delete("/:id/comments/:commentId", (c) => {
     service.deleteComment(c.req.param("id"), c.req.param("commentId"), currentUser(c).id);
+    return c.body(null, 204);
+  });
+
+  routes.get("/:id/entries", (c) => c.json(service.entries(c.req.param("id"))));
+
+  routes.put("/:id/entries", async (c) => {
+    const body = await readJson(c);
+    if (typeof body.key !== "string") {
+      throw new ServiceError("INVALID_INPUT", "Send the entry's `key` as a string.");
+    }
+    const entry = service.setEntry(c.req.param("id"), {
+      authorId: currentUser(c).id,
+      key: body.key,
+      value: body.value,
+    });
+    return c.json({ entry });
+  });
+
+  // The key goes in the query: keys hold characters such as `:` and `/`.
+  routes.delete("/:id/entries", (c) => {
+    const key = c.req.query("key");
+    if (key === undefined) throw new ServiceError("INVALID_INPUT", "Name the entry with ?key=.");
+    service.clearEntry(c.req.param("id"), { authorId: currentUser(c).id, key });
     return c.body(null, 204);
   });
 

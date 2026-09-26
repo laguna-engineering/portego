@@ -90,14 +90,22 @@ bridge. That grants it nothing:
   (`src/web/preview-bridge.ts`). A message is a suggestion for a passage, never
   an action: a comment exists only when the person writes and posts it.
 - What the application sends the frame is a mode flag, the quotes of comments
-  the reader can already see, and comment ids. No token, session, or account
-  detail crosses.
+  the reader can already see, comment ids, and the artifact's entries with
+  their authors' names and opaque ids. No token, session, or email crosses.
 - Links are passed up the same way. A link click inside the frame would load
   the other site into the frame, and most sites refuse to be framed, so the
   bridge cancels the click and sends the URL. The page accepts only an absolute
   `http:` or `https:` URL, opens it only while the reader's click is still
   active, and opens it with `noopener,noreferrer`. The new tab gets no handle
   on the page and no referrer, and the frame never gets a window of its own.
+- A document can ask to set or clear the reader's entries
+  ([entries.md](entries.md)). The application makes the write only while the
+  reader's click is still active, and a browser that cannot report that gets
+  no writes, so a document cannot record anything as whoever opens it without
+  a click. The
+  reader sees what was saved and can remove it in the comments panel. The
+  document receives every entry with its author's name and an opaque id, never
+  an email.
 - The bridge does not change what the document can reach. The headers above
   still apply to it, and the frame still has no origin, storage, or network.
 
@@ -111,7 +119,9 @@ bridge. That grants it nothing:
 | Submit a form | `form-action 'none'` and no `allow-forms` |
 | Open a window | No `allow-popups` |
 | Navigate the top page | No `allow-top-navigation` |
+| Navigate its own frame to another site | `frame-src` on the application page names only the content origin |
 | Get a tab opened without a click | The page opens a link only during the reader's click |
+| Record entries as the reader without a click | The page writes an entry only during the reader's click |
 | Register a service worker | `worker-src 'none'`, and an opaque origin cannot register one |
 | Load a remote script, image, or font | `default-src 'none'` with only inline and `data:`/`blob:` allowed |
 | Frame another page | `frame-src 'none'` and `child-src 'none'` |
@@ -155,6 +165,17 @@ restriction: the document is no longer the top-level context, and the tab stays
 where the user put it. The browser tests in `e2e/sandbox.test.ts` run the
 hostile documents through this route as well as through the preview URL.
 
+A framed document can still navigate its own frame; the sandbox allows that.
+A navigation to another site would carry whatever the document knows in the
+URL. Every page the application serves therefore sends
+`Content-Security-Policy: frame-src <content origin>`, and the browser applies
+the framing page's `frame-src` to each navigation of the frame. The document
+can load another preview and nothing else. The Vite dev server sends the same
+header. That other preview then runs in this artifact's frame: it receives
+this artifact's entries and can ask to write them after a click. It has no
+way to send them anywhere else, and any admitted person could put the same
+code in a version of this artifact.
+
 The wrapper page carries the masthead and nothing else of the application. The
 reader's own email is on it, and the opaque origin the frame runs in is what
 keeps the frame from reading it. `frame-ancestors` already names the application
@@ -180,6 +201,25 @@ title is visible only to someone who was given the link.
   minutes. The application never produces such a link itself.
 - A reader's click anywhere in an artifact lets it ask for one `http:` or
   `https:` page in a new tab, as a link on any web page can.
+- A reader's click lets an artifact set or clear that reader's entries on that
+  artifact for a few seconds, within the rate limit. The browser reports that
+  the page was clicked, not where, so a click on Portego itself counts too,
+  including the gallery click that opens the artifact. A stricter rule would
+  gain little: an artifact decides what its own controls do, so any click
+  inside it can already be turned into a write. The saved notice and the
+  entries list are where the reader sees what was recorded.
+
+  In practice an artifact can record a vote as whoever opens it from the
+  gallery. This is accepted: everyone who can upload is admitted, and the
+  damage is limited to entries on the artifact the hostile page is on, which
+  is one its author uploaded or added a version to (any admitted person can
+  add a version to any artifact). It cannot read more than it already gets,
+  comment, reach other artifacts, or act on the account. Entries are therefore
+  not proof of what a reader chose, and nothing that needs that proof, such as
+  an approval, should be built on them. A per-artifact consent prompt in
+  Portego's own interface would be the step that changes that.
+- A document can put what it knows, including the entries, into the URL of
+  a link the reader clicks. That needs the click and opens a visible tab.
 - An artifact can still consume CPU and memory in the tab that renders it. The
   sandbox limits what it can reach, not what it can spend.
 - The protections are browser-enforced. A client that ignores CSP, or an

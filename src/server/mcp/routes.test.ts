@@ -182,6 +182,9 @@ describe("tools", () => {
       "set_artifact_status",
       "list_artifact_comments",
       "add_artifact_comment",
+      "list_artifact_entries",
+      "set_artifact_entry",
+      "clear_artifact_entry",
       "list_folders",
       "create_folder",
       "update_folder",
@@ -308,6 +311,45 @@ describe("tools", () => {
     expect(comments.comments[0]?.body).toBe("From a client");
     expect(comments.comments[0]?.author.email).toBe("person@acme.example");
     expect(comments.comments[0]?.anchor).toBeNull();
+  });
+
+  test("records entries as the caller, checks them against the page's schema, and clears them", async () => {
+    const schema = {
+      keys: { "vote:{item}": { params: { item: { enum: ["P-01"] } }, value: { const: true } } },
+    };
+    const created = await upload(
+      "Entries through MCP",
+      `<!doctype html><html><head><title>t</title><script type="application/json" id="portego-entries">${JSON.stringify(schema)}</script></head><body>hi</body></html>`,
+    );
+
+    const set = await callTool(client, "set_artifact_entry", {
+      id: created.id,
+      key: "vote:P-01",
+      value: true,
+    });
+    expect(set.result?.structuredContent).toMatchObject({
+      key: "vote:P-01",
+      value: true,
+      author: { email: "person@acme.example" },
+    });
+
+    const refused = await callTool(client, "set_artifact_entry", {
+      id: created.id,
+      key: "vote:P-02",
+      value: true,
+    });
+    expect(refused.result?.isError).toBe(true);
+    expect(JSON.stringify(refused.result?.content)).toContain("INVALID_INPUT");
+
+    const listed = (await callTool(client, "list_artifact_entries", { id: created.id })).result
+      ?.structuredContent as { entries: { key: string }[]; schema: unknown };
+    expect(listed.entries.map((entry) => entry.key)).toEqual(["vote:P-01"]);
+    expect(listed.schema).toEqual(schema);
+
+    await callTool(client, "clear_artifact_entry", { id: created.id, key: "vote:P-01" });
+    const cleared = (await callTool(client, "list_artifact_entries", { id: created.id })).result
+      ?.structuredContent as { entries: unknown[] };
+    expect(cleared.entries).toEqual([]);
   });
 
   test("anchors a comment to a passage of text and reads it back", async () => {
@@ -569,8 +611,20 @@ describe("scopes", () => {
       expect(own.artifacts.list().items).toHaveLength(0);
 
       // The same rule covers every write tool, not only uploads.
-      for (const tool of ["set_artifact_status", "add_artifact_comment", "create_upload_ticket"]) {
-        const refused = await callTool(readOnly, tool, { id: "any", body: "x", status: "solved" });
+      for (const tool of [
+        "set_artifact_status",
+        "add_artifact_comment",
+        "create_upload_ticket",
+        "set_artifact_entry",
+        "clear_artifact_entry",
+      ]) {
+        const refused = await callTool(readOnly, tool, {
+          id: "any",
+          body: "x",
+          status: "solved",
+          key: "x",
+          value: 1,
+        });
         expect(JSON.stringify(refused.result?.content), tool).toContain("insufficient_scope");
       }
     } finally {

@@ -758,6 +758,32 @@ label {
   overflow-wrap: anywhere;
 }
 
+.entries {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.75rem;
+}
+
+.entries summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+.entries ul {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.entry-data {
+  margin: 0;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
 .comments form {
   display: grid;
   gap: 0.4rem;
@@ -1477,4 +1503,18 @@ button.link {
 .selection-overlay:hover {
   border-color: var(--accent);
   filter: brightness(1.1);
+}
+
+.recorded-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.85rem;
+  z-index: 5;
 }
