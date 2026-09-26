@@ -27,7 +27,7 @@ Portego gives the page `window.portego`:
 - A `portego:entries` event on `window`, with the list in `event.detail`, fired after load and after every change. Render from this event; the list is empty until it first fires.
 - `window.portego.set(key, value)` and `window.portego.clear(key)`, which change the reader's own entry. Portego makes the change only while the reader's click is active, so call them from a click handler, never on load or on a timer.
 
-Keys are 1 to 200 printable characters with no spaces, such as `vote:P-01`. A value is at most 4000 bytes of JSON.
+Keys are 1 to 200 printable characters with no spaces, such as `vote:P-01`. A value is at most 4000 bytes of JSON. Entries suit votes, polls, and proposals. They do not prove what a reader decided, because any recent click in Portego lets the page write, so never use them for approvals or sign-offs.
 
 Declare the keys the page uses, so agents can read what they mean and a mistyped key is refused:
 

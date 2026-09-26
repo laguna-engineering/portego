@@ -204,8 +204,16 @@ title is visible only to someone who was given the link.
   including the gallery click that opens the artifact. A stricter rule would
   gain little: an artifact decides what its own controls do, so any click
   inside it can already be turned into a write. The saved notice and the
-  entries list are where the reader sees what was recorded. Entries are
-  therefore not proof of what a reader chose; a per-artifact consent prompt in
+  entries list are where the reader sees what was recorded.
+
+  In practice an artifact can record a vote as whoever opens it from the
+  gallery. This is accepted: everyone who can upload is admitted, and the
+  damage is limited to entries on the artifact the hostile page is on, which
+  is one its author uploaded or added a version to (any admitted person can
+  add a version to any artifact). It cannot read more than it already gets,
+  comment, reach other artifacts, or act on the account. Entries are therefore
+  not proof of what a reader chose, and nothing that needs that proof, such as
+  an approval, should be built on them. A per-artifact consent prompt in
   Portego's own interface would be the step that changes that.
 - A document can put what it knows, including the entries, into the URL of
   a link the reader clicks. That needs the click and opens a visible tab.

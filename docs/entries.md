@@ -63,6 +63,17 @@ A small poll:
 </script>
 ```
 
+## What an entry proves
+
+An entry records that the page asked for it while the reader had just
+clicked, somewhere in Portego. It does not prove the reader meant it: a page
+decides what its own buttons do, and the click that opens an artifact from the
+gallery counts too, so a page can record a vote as whoever opens it. That is
+acceptable for votes, polls, and proposals among admitted colleagues, and the
+reader sees each saved entry and can remove it. Do not use entries where the
+record has to show what a person decided, such as an approval. See
+[security.md](security.md).
+
 ## The schema
 
 A page may declare the keys it accepts. The schema is optional; without one,
