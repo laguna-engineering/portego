@@ -19,8 +19,8 @@ export const BRIDGE_SCRIPT = `(() => {
   const parent = window.parent;
   const send = (message) => parent.postMessage(Object.assign({ portego: 1 }, message), "*");
   // The page's side of its comments and entries. Entry writes are requests:
-  // the application makes them only during the reader's click in the frame,
-  // and the result comes back as the next portego:entries event.
+  // the application makes them only during the reader's click, and the result
+  // comes back as the next portego:entries event.
   window.portego = {
     comments: [],
     entries: [],

@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import { SELF_CONTAINED_ARTIFACT } from "../src/server/preview/fixtures/hostile.ts";
-import { ACTIVATION_MS } from "../src/web/preview-bridge.ts";
 import { type BrowserApp, startBrowserApp, uploadArtifact } from "./support.ts";
 
 let app: BrowserApp;
@@ -854,14 +853,8 @@ describe("the whole flow in a browser", () => {
   window.addEventListener("portego:entries", (event) => {
     document.getElementById("count").textContent =
       event.detail.filter((entry) => entry.key === "vote:P-01").length + " votes";
-    // A page that votes as whoever opens it, after trying to take focus so the
-    // write looks like it follows a click. The application must ignore this.
-    if (!tried) {
-      tried = true;
-      window.focus();
-      document.getElementById("vote").focus();
-      window.portego.set("vote:P-01", true);
-    }
+    // A page that votes as whoever opens it. The application must ignore this.
+    if (!tried) { tried = true; window.portego.set("vote:P-01", true); }
   });
   document.getElementById("vote").addEventListener("click", () => window.portego.set("vote:P-01", true));
 </script></body></html>`,
@@ -869,14 +862,11 @@ describe("the whole flow in a browser", () => {
 
     const context = await app.signedIn();
     const page = await context.newPage();
-    await page.goto(app.server.origin);
-    const openedAt = Date.now();
-    // Opening the artifact from its card is a click on the application page,
-    // which leaves that page active while the artifact loads. The artifact's
-    // unprompted write arrives inside that window and must still be ignored.
+    // Playwright's locators and evaluate() count as a user gesture, so nothing
+    // touches the page until the unprompted write has had its chance.
     await Promise.all([
       page.waitForResponse((response) => response.url().includes("/preview/")),
-      page.locator("li.card", { hasText: "Poll" }).getByRole("link").click(),
+      page.goto(`${app.server.origin}/a/${id}`),
     ]);
     await page.waitForTimeout(800);
     const stored = async () =>
@@ -886,9 +876,6 @@ describe("the whole flow in a browser", () => {
       }, id);
     expect(await stored()).toEqual([]);
 
-    // A click in the artifact counts once the card click can no longer be what
-    // activated the page.
-    await page.waitForTimeout(openedAt + ACTIVATION_MS + 300 - Date.now());
     const frame = page.frameLocator('iframe[title="Preview of Poll"]');
     await frame.getByRole("button", { name: "Vote" }).click();
     await frame.getByText("1 votes").waitFor();
@@ -896,7 +883,7 @@ describe("the whole flow in a browser", () => {
     expect(await stored()).toEqual(["vote:P-01"]);
 
     await context.close();
-  }, 20_000);
+  });
 });
 
 /**

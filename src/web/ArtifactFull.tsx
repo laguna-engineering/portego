@@ -36,10 +36,9 @@ import { Masthead } from "./Masthead.tsx";
 import { FolderPicker, TagPicker } from "./Organize.tsx";
 import {
   type BridgeMessage,
-  lastPageInput,
   openFromPreview,
   type PageEntry,
-  readerClickState,
+  readerIsActing,
   type SelectionRect,
   sendToPreview,
   usePreviewBridge,
@@ -190,8 +189,8 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   );
 
   // The artifact asks to change the reader's own entries. Only a request made
-  // during the reader's click inside the frame goes through, so a page cannot
-  // write as whoever opens it; the change comes back as the next entries update.
+  // during the reader's click goes through, so a page cannot write as whoever
+  // opens it; the change comes back to the page as the next entries update.
   const changeEntry = useCallback(
     async (key: string, change: { value: unknown } | null) => {
       if (!artifact) return;
@@ -228,13 +227,8 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       } else if (message.type === "open") {
         openFromPreview(message.url);
       } else if (message.type === "set" || message.type === "clear") {
-        const state = readerClickState(lastPageInput());
-        if (state === "clicked") {
-          void changeEntry(message.key, message.type === "set" ? { value: message.value } : null);
-        } else if (state === "too-soon" && document.activeElement === frameRef.current) {
-          // Probably a real click, too soon after one on this page to tell apart.
-          setRecorded("Not saved. Click again in a moment.");
-        }
+        if (!readerIsActing()) return;
+        void changeEntry(message.key, message.type === "set" ? { value: message.value } : null);
       } else {
         setFocusedId(message.id);
         setPanelOpen(true);

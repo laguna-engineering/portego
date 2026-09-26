@@ -100,12 +100,9 @@ bridge. That grants it nothing:
   on the page and no referrer, and the frame never gets a window of its own.
 - A document can ask to set or clear the reader's entries
   ([entries.md](entries.md)). The application makes the write only while the
-  page is active and has had no click or key press of its own for 5 seconds.
-  Input inside the frame never reaches the page, so that activation came from
-  the frame. Focus is no signal: a document can move focus into its own frame.
-  A browser that cannot report activation gets no writes. So a document cannot
-  record anything as whoever opens it, including right after the gallery click
-  that opened it. The
+  reader's click is still active, and a browser that cannot report that gets
+  no writes, so a document cannot record anything as whoever opens it without
+  a click. The
   reader sees what was saved and can remove it in the comments panel. The
   document receives every entry with its author's name and an opaque id, never
   an email.
@@ -124,7 +121,7 @@ bridge. That grants it nothing:
 | Navigate the top page | No `allow-top-navigation` |
 | Navigate its own frame to another site | `frame-src` on the application page names only the content origin |
 | Get a tab opened without a click | The page opens a link only during the reader's click |
-| Record entries as the reader without a click | The page writes an entry only while active from a click in the frame, not on the page |
+| Record entries as the reader without a click | The page writes an entry only during the reader's click |
 | Register a service worker | `worker-src 'none'`, and an opaque origin cannot register one |
 | Load a remote script, image, or font | `default-src 'none'` with only inline and `data:`/`blob:` allowed |
 | Frame another page | `frame-src 'none'` and `child-src 'none'` |
@@ -201,10 +198,15 @@ title is visible only to someone who was given the link.
   minutes. The application never produces such a link itself.
 - A reader's click anywhere in an artifact lets it ask for one `http:` or
   `https:` page in a new tab, as a link on any web page can.
-- A reader's click anywhere in an artifact also lets it set or clear that
-  reader's entries on that artifact, within the rate limit. The click need not
-  be on a control that says so; the saved notice and the entries list are
-  where the reader sees it.
+- A reader's click lets an artifact set or clear that reader's entries on that
+  artifact for a few seconds, within the rate limit. The browser reports that
+  the page was clicked, not where, so a click on Portego itself counts too,
+  including the gallery click that opens the artifact. A stricter rule would
+  gain little: an artifact decides what its own controls do, so any click
+  inside it can already be turned into a write. The saved notice and the
+  entries list are where the reader sees what was recorded. Entries are
+  therefore not proof of what a reader chose; a per-artifact consent prompt in
+  Portego's own interface would be the step that changes that.
 - A document can put what it knows, including the entries, into the URL of
   a link the reader clicks. That needs the click and opens a visible tab.
 - An artifact can still consume CPU and memory in the tab that renders it. The

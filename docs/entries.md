@@ -37,16 +37,11 @@ The bridge script is added before `</head>`, so a script in `<body>` can use
 the `portego:entries` event.
 
 `set` and `clear` are requests. The application makes one only while the
-reader's click inside the artifact is still active, and ignores it otherwise,
-so a page cannot record anything as whoever opens it. It then shows the reader
-what was saved. The result reaches the page as the next `portego:entries`
-event; a refused write produces no event and shows the reader an error.
-
-A click on the Portego page itself, such as the one that opens the artifact
-from the gallery, activates the page for about 5 seconds, and the application
-cannot tell it from a click inside the frame. So for 5 seconds after any
-click or key press on the Portego page, writes are ignored. A reader who
-clicks in the artifact during that time is asked to click again.
+reader's click is still active, and ignores it otherwise, so a page cannot
+record anything as whoever opens it without a click. It then shows the reader
+what was saved.
+The result reaches the page as the next `portego:entries` event; a refused
+write produces no event and shows the reader an error.
 
 A small poll:
 

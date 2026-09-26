@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { ACTIVATION_MS, readBridgeMessage, readerClickState } from "./preview-bridge.ts";
+import { describe, expect, test } from "bun:test";
+import { readBridgeMessage, readerIsActing } from "./preview-bridge.ts";
 
 function selectionMessage(overrides: Record<string, unknown> = {}) {
   return {
@@ -112,33 +112,15 @@ describe("readBridgeMessage", () => {
   });
 });
 
-describe("readerClickState", () => {
-  function activation(value: unknown) {
-    Object.defineProperty(navigator, "userActivation", { value, configurable: true });
-  }
-
-  afterEach(() => {
-    delete (navigator as { userActivation?: unknown }).userActivation;
-  });
-
-  test("accepts an active page that had no input of its own, so the click was in the frame", () => {
-    activation({ isActive: true });
-    expect(readerClickState(Number.NEGATIVE_INFINITY, 1000)).toBe("clicked");
-    expect(readerClickState(0, ACTIVATION_MS)).toBe("clicked");
-  });
-
-  test("refuses while input on this page, such as the click that opened the artifact, may be what activated it", () => {
-    activation({ isActive: true });
-    expect(readerClickState(1000, 1000 + ACTIVATION_MS - 1)).toBe("too-soon");
-  });
-
-  test("refuses when nobody clicked", () => {
-    activation({ isActive: false });
-    expect(readerClickState(Number.NEGATIVE_INFINITY)).toBe("no-click");
-  });
-
+describe("readerIsActing", () => {
   test("refuses when the browser cannot tell whether the reader clicked", () => {
-    activation(undefined);
-    expect(readerClickState(Number.NEGATIVE_INFINITY)).toBe("no-click");
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "userActivation");
+    Object.defineProperty(navigator, "userActivation", { value: undefined, configurable: true });
+    try {
+      expect(readerIsActing()).toBe(false);
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, "userActivation", descriptor);
+      else delete (navigator as { userActivation?: unknown }).userActivation;
+    }
   });
 });

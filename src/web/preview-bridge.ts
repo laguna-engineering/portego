@@ -165,50 +165,14 @@ export function openFromPreview(url: string): void {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
-/** How long a click or key press leaves a page active, in current browsers. */
-export const ACTIVATION_MS = 5000;
-
 /**
- * Input on this page itself. It activates the page just as a click in the
- * frame does, and an artifact that writes during that window, such as right
- * after the click that opened it, would pass for the reader.
+ * Whether the reader clicked recently, in the frame or on this page: the
+ * browser does not say which. A document writing entries with no click at all
+ * gets nothing. A browser without the API is refused: a write is not worth
+ * the guess.
  */
-const PAGE_INPUT = ["keydown", "mousedown", "pointerdown", "pointerup", "touchend"] as const;
-
-let lastPageInputAt = Number.NEGATIVE_INFINITY;
-
-// Registered when the application loads, not when the artifact page mounts:
-// the click that opens an artifact comes before its page exists.
-if (typeof window !== "undefined") {
-  for (const type of PAGE_INPUT) {
-    window.addEventListener(
-      type,
-      () => {
-        lastPageInputAt = performance.now();
-      },
-      true,
-    );
-  }
-}
-
-/** When this page last had input of its own, in `performance.now()` time. */
-export function lastPageInput(): number {
-  return lastPageInputAt;
-}
-
-/**
- * Whether a write the artifact asks for follows the reader's click inside it.
- * Input inside the frame never reaches this page, so when the page is active
- * and had no input of its own during the activation window, the activation
- * came from the frame. A browser without the activation API is refused: a
- * write is not worth the guess.
- */
-export function readerClickState(
-  lastPageInput: number,
-  now = performance.now(),
-): "clicked" | "no-click" | "too-soon" {
-  if (navigator.userActivation?.isActive !== true) return "no-click";
-  return now - lastPageInput < ACTIVATION_MS ? "too-soon" : "clicked";
+export function readerIsActing(): boolean {
+  return navigator.userActivation?.isActive === true;
 }
 
 /** Listens for messages from one frame only. Other windows are ignored. */
