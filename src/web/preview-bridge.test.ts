@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readBridgeMessage } from "./preview-bridge.ts";
+import { readBridgeMessage, readerIsActing } from "./preview-bridge.ts";
 
 function selectionMessage(overrides: Record<string, unknown> = {}) {
   return {
@@ -86,5 +86,41 @@ describe("readBridgeMessage", () => {
 
   test("ignores a message of a type the bridge does not know", () => {
     expect(readBridgeMessage({ portego: 1, type: "eval" })).toBeNull();
+  });
+
+  test("accepts an entry write with a JSON value", () => {
+    expect(
+      readBridgeMessage({ portego: 1, type: "set", key: "vote:P-01", value: { up: true } }),
+    ).toEqual({ type: "set", key: "vote:P-01", value: { up: true } });
+    expect(readBridgeMessage({ portego: 1, type: "clear", key: "vote:P-01" })).toEqual({
+      type: "clear",
+      key: "vote:P-01",
+    });
+  });
+
+  test("refuses an entry write the server would refuse, instead of cutting it to fit", () => {
+    expect(readBridgeMessage({ portego: 1, type: "set", key: "", value: 1 })).toBeNull();
+    expect(
+      readBridgeMessage({ portego: 1, type: "set", key: "x".repeat(201), value: 1 }),
+    ).toBeNull();
+    expect(
+      readBridgeMessage({ portego: 1, type: "set", key: "note", value: "x".repeat(4000) }),
+    ).toBeNull();
+    // A value JSON cannot hold would not be stored as sent.
+    expect(readBridgeMessage({ portego: 1, type: "set", key: "note" })).toBeNull();
+    expect(readBridgeMessage({ portego: 1, type: "set", key: "note", value: 10n })).toBeNull();
+  });
+});
+
+describe("readerIsActing", () => {
+  test("refuses when the browser cannot tell whether the reader clicked", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, "userActivation");
+    Object.defineProperty(navigator, "userActivation", { value: undefined, configurable: true });
+    try {
+      expect(readerIsActing()).toBe(false);
+    } finally {
+      if (descriptor) Object.defineProperty(navigator, "userActivation", descriptor);
+      else delete (navigator as { userActivation?: unknown }).userActivation;
+    }
   });
 });

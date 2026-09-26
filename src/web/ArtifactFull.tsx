@@ -7,10 +7,13 @@ import {
   type ArtifactVersion,
   type Comment,
   type CommentAnchor,
+  clearEntry,
+  type Entry,
   fetchArtifact,
   fetchVersions,
   setArtifactArchived,
   setArtifactStatus,
+  setEntry,
   sourceUrl,
 } from "./api.ts";
 import { CommentsPanel } from "./CommentsPanel.tsx";
@@ -34,6 +37,8 @@ import { FolderPicker, TagPicker } from "./Organize.tsx";
 import {
   type BridgeMessage,
   openFromPreview,
+  type PageEntry,
+  readerIsActing,
   type SelectionRect,
   sendToPreview,
   usePreviewBridge,
@@ -124,6 +129,9 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   const [live, setLive] = useState<{ anchor: CommentAnchor; rect: SelectionRect } | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  /** The entry the artifact just recorded for the reader, shown for a moment. */
+  const [recorded, setRecorded] = useState<string | null>(null);
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   /** The version being viewed. Null means the current version. */
   const [viewedVersionId, setViewedVersionId] = useState<string | null>(null);
@@ -168,6 +176,41 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
     [comments],
   );
 
+  const pageEntries = useMemo(
+    (): PageEntry[] =>
+      entries.map((entry) => ({
+        key: entry.key,
+        value: entry.value,
+        authorId: entry.author.id,
+        author: entry.author.name,
+        updatedAt: entry.updatedAt,
+      })),
+    [entries],
+  );
+
+  // The artifact asks to change the reader's own entries. Only a request made
+  // during the reader's click goes through, so a page cannot write as whoever
+  // opens it; the change comes back to the page as the next entries update.
+  const changeEntry = useCallback(
+    async (key: string, change: { value: unknown } | null) => {
+      if (!artifact) return;
+      try {
+        if (change) await setEntry(artifact.id, key, change.value);
+        else await clearEntry(artifact.id, key);
+        setRecorded(change ? `Saved ${key}` : `Removed ${key}`);
+      } catch (error) {
+        setProblem(error instanceof ApiError ? error.message : "Could not save that entry.");
+      }
+    },
+    [artifact],
+  );
+
+  useEffect(() => {
+    if (!recorded) return;
+    const timer = window.setTimeout(() => setRecorded(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [recorded]);
+
   const handleBridgeMessage = useCallback(
     (message: BridgeMessage) => {
       if (message.type === "ready") {
@@ -175,6 +218,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
         sendToPreview(frameRef.current, { type: "mode", enabled: panelOpen });
         sendToPreview(frameRef.current, { type: "highlights", anchors: highlights });
         sendToPreview(frameRef.current, { type: "comments", comments: pageComments });
+        sendToPreview(frameRef.current, { type: "entries", entries: pageEntries });
       } else if (message.type === "selection") {
         setLive(
           message.anchor && message.rect ? { anchor: message.anchor, rect: message.rect } : null,
@@ -182,12 +226,15 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
         if (panelOpen) setSelection(message.anchor);
       } else if (message.type === "open") {
         openFromPreview(message.url);
+      } else if (message.type === "set" || message.type === "clear") {
+        if (!readerIsActing()) return;
+        void changeEntry(message.key, message.type === "set" ? { value: message.value } : null);
       } else {
         setFocusedId(message.id);
         setPanelOpen(true);
       }
     },
-    [panelOpen, highlights, pageComments],
+    [panelOpen, highlights, pageComments, pageEntries, changeEntry],
   );
 
   usePreviewBridge(frameRef, handleBridgeMessage);
@@ -204,6 +251,10 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   useEffect(() => {
     sendToPreview(frameRef.current, { type: "comments", comments: pageComments });
   }, [pageComments]);
+
+  useEffect(() => {
+    sendToPreview(frameRef.current, { type: "entries", entries: pageEntries });
+  }, [pageEntries]);
 
   // Takes the selection into the composer, like the comment control in the
   // margin of a document. The panel opens if it was closed.
@@ -497,6 +548,11 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       <div className="full-body">
         {body}
         {overlay}
+        {recorded ? (
+          <p className="recorded-notice" role="status">
+            {recorded}
+          </p>
+        ) : null}
         {artifact ? (
           <CommentsPanel
             open={panelOpen}
@@ -510,6 +566,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
             onClearAnchor={() => setSelection(null)}
             onClose={() => setPanelOpen(false)}
             onComments={setComments}
+            onEntries={setEntries}
             onFocusComment={revealComment}
             focusedId={focusedId}
           />

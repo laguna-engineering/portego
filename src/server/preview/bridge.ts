@@ -18,7 +18,15 @@ export const BRIDGE_SCRIPT = `(() => {
   if (window.parent === window) return;
   const parent = window.parent;
   const send = (message) => parent.postMessage(Object.assign({ portego: 1 }, message), "*");
-  window.portego = { comments: [] };
+  // The page's side of its comments and entries. Entry writes are requests:
+  // the application makes them only during the reader's click, and the result
+  // comes back as the next portego:entries event.
+  window.portego = {
+    comments: [],
+    entries: [],
+    set: (key, value) => send({ type: "set", key, value }),
+    clear: (key) => send({ type: "clear", key }),
+  };
   const CONTEXT = 32;
   let mode = false;
   let anchors = [];
@@ -188,6 +196,10 @@ export const BRIDGE_SCRIPT = `(() => {
       const comments = Array.isArray(message.comments) ? message.comments : [];
       window.portego.comments = comments;
       window.dispatchEvent(new CustomEvent("portego:comments", { detail: comments }));
+    } else if (message.type === "entries") {
+      const entries = Array.isArray(message.entries) ? message.entries : [];
+      window.portego.entries = entries;
+      window.dispatchEvent(new CustomEvent("portego:entries", { detail: entries }));
     } else if (message.type === "reveal") {
       paint(message.id);
       const range = ranges.get(message.id);

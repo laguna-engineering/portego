@@ -141,8 +141,8 @@ export function Library({ folderId, tagIds, onFilter }: LibraryProps) {
   }, [refresh]);
 
   useLiveEvents((event) => {
-    // Comments change no name or count shown here.
-    if (event.type === "comment.changed") return;
+    // Comments and entries change no name or count shown here.
+    if (event.type === "comment.changed" || event.type === "entry.changed") return;
     void refresh(true);
   });
 
