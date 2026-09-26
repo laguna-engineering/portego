@@ -66,9 +66,15 @@ when the document loads and whenever the list changes. Each carries `id`,
 event on `window`. Anyone who can open the artifact can already read these
 comments, and the document still cannot send anything out.
 
+## Entries
+
+Data a page or an agent records, such as votes and poll answers, goes in
+entries rather than comments: one JSON value per person per key, which the
+person can replace or remove. See [entries.md](entries.md).
+
 ## Everyone sees a change as it happens
 
-A status change, an archive, an upload, a comment, and organization changes
+A status change, an archive, an upload, a comment, an entry, and organization changes
 announce themselves on `GET /api/events`, so a page that is already open shows
 them without a reload. See [api.md](api.md) for the stream itself.
 

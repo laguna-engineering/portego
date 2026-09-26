@@ -90,14 +90,21 @@ bridge. That grants it nothing:
   (`src/web/preview-bridge.ts`). A message is a suggestion for a passage, never
   an action: a comment exists only when the person writes and posts it.
 - What the application sends the frame is a mode flag, the quotes of comments
-  the reader can already see, and comment ids. No token, session, or account
-  detail crosses.
+  the reader can already see, comment ids, and the artifact's entries with
+  their authors' names and opaque ids. No token, session, or email crosses.
 - Links are passed up the same way. A link click inside the frame would load
   the other site into the frame, and most sites refuse to be framed, so the
   bridge cancels the click and sends the URL. The page accepts only an absolute
   `http:` or `https:` URL, opens it only while the reader's click is still
   active, and opens it with `noopener,noreferrer`. The new tab gets no handle
   on the page and no referrer, and the frame never gets a window of its own.
+- A document can ask to set or clear the reader's entries
+  ([entries.md](entries.md)). The application makes the write only while the
+  reader's click is still active, and a browser that cannot report that gets
+  no writes, so a document cannot record anything as whoever opens it. The
+  reader sees what was saved and can remove it in the comments panel. The
+  document receives every entry with its author's name and an opaque id, never
+  an email.
 - The bridge does not change what the document can reach. The headers above
   still apply to it, and the frame still has no origin, storage, or network.
 
@@ -113,6 +120,7 @@ bridge. That grants it nothing:
 | Navigate the top page | No `allow-top-navigation` |
 | Navigate its own frame to another site | `frame-src` on the application page names only the content origin |
 | Get a tab opened without a click | The page opens a link only during the reader's click |
+| Record entries as the reader without a click | The page writes an entry only during the reader's click |
 | Register a service worker | `worker-src 'none'`, and an opaque origin cannot register one |
 | Load a remote script, image, or font | `default-src 'none'` with only inline and `data:`/`blob:` allowed |
 | Frame another page | `frame-src 'none'` and `child-src 'none'` |
@@ -189,6 +197,12 @@ title is visible only to someone who was given the link.
   minutes. The application never produces such a link itself.
 - A reader's click anywhere in an artifact lets it ask for one `http:` or
   `https:` page in a new tab, as a link on any web page can.
+- A reader's click anywhere in an artifact also lets it set or clear that
+  reader's entries on that artifact, within the rate limit. The click need not
+  be on a control that says so; the saved notice and the entries list are
+  where the reader sees it.
+- A document can put what it knows, including the entries, into the URL of
+  a link the reader clicks. That needs the click and opens a visible tab.
 - An artifact can still consume CPU and memory in the tab that renders it. The
   sandbox limits what it can reach, not what it can spend.
 - The protections are browser-enforced. A client that ignores CSP, or an

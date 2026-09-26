@@ -17,4 +17,31 @@ Portego holds two kinds of document. People read a styled HTML page, so an artif
 8. If the upload tool says the user is not signed in, call `sign_in`, tell the user to approve the browser request, and repeat the upload. If no deployment is set, give the user the command from the tool. Do not guess the address.
 9. Reply with the returned `url`.
 
+## Collecting input from readers
+
+When the artifact lets readers vote, answer a poll, tick a checklist, or propose items, store that input as entries, never as comments. An entry is one person's JSON value for one key on the artifact; setting the key again replaces that person's value, so counting votes needs no de-duplication.
+
+Portego gives the page `window.portego`:
+
+- `window.portego.entries`: every entry, as `{ key, value, authorId, author, updatedAt }`. `author` is a name; use `authorId` to tell people apart.
+- A `portego:entries` event on `window`, with the list in `event.detail`, fired after load and after every change. Render from this event; the list is empty until it first fires.
+- `window.portego.set(key, value)` and `window.portego.clear(key)`, which change the reader's own entry. Portego makes the change only while the reader's click is active, so call them from a click handler, never on load or on a timer.
+
+Keys are 1 to 200 printable characters with no spaces, such as `vote:P-01`. A value is at most 4000 bytes of JSON.
+
+Declare the keys the page uses, so agents can read what they mean and a mistyped key is refused:
+
+```html
+<script type="application/json" id="portego-entries">
+{ "keys": { "vote:{item}": {
+  "description": "One vote per person for an item. Count distinct authors.",
+  "params": { "item": { "enum": ["P-01", "P-02"] } },
+  "value": { "const": true } } } }
+</script>
+```
+
+A template has up to three `{name}` placeholders, each matching text without `:`, with literal text between them. Rules support `description`, `type`, `enum`, `const`, `minLength`, `maxLength`, `minimum`, `maximum`, `properties`, `required`, `additionalProperties` (boolean), `items`, `minItems`, and `maxItems`. `pattern` and any other keyword make the upload fail; use `enum` or length limits. When the page is re-uploaded as a new version, update the schema with it, for example the `enum` of item ids.
+
+Agents read and change entries with `list_artifact_entries`, `set_artifact_entry`, and `clear_artifact_entry`.
+
 The finalized artifact must render with no network access. Do not add remote scripts, styles, fonts, images, frames, or media. Do not read the finalized file after fonts and assets are embedded unless debugging requires it; the tools process it by path so those bytes do not enter the conversation.

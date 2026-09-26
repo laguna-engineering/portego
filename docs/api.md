@@ -36,6 +36,9 @@ check an upload before sending it.
 | `GET` | `/api/artifacts/:id/comments` | The comment thread, across every version |
 | `POST` | `/api/artifacts/:id/comments` | Add a comment, optionally anchored to a passage of text, on a version, or replying to a root comment |
 | `DELETE` | `/api/artifacts/:id/comments/:commentId` | Remove your own comment |
+| `GET` | `/api/artifacts/:id/entries` | Every entry on the artifact, and the current version's entry schema |
+| `PUT` | `/api/artifacts/:id/entries` | Set your value for one key |
+| `DELETE` | `/api/artifacts/:id/entries?key=…` | Remove your value for one key |
 | `GET` | `/api/artifacts/:id/markdown` | The static content as Markdown, for one version |
 | `GET` | `/api/artifacts/:id/source` | Download the stored bytes of one version |
 | `POST` | `/api/artifacts/:id/preview` | Mint a short-lived preview URL for one version |
@@ -81,9 +84,9 @@ data: {"type":"artifact.created","id":"01J…"}
 : keep-alive
 ```
 
-Five event types are sent: `artifact.created`, `artifact.changed`,
-`folder.changed`, and `tag.changed` carry `id`; `comment.changed` carries
-`artifactId`.
+Six event types are sent: `artifact.created`, `artifact.changed`,
+`folder.changed`, and `tag.changed` carry `id`; `comment.changed` and
+`entry.changed` carry `artifactId`.
 
 An event names what changed and carries nothing else. A client reads the new
 state through the ordinary endpoints above, so every answer stays subject to
@@ -206,6 +209,13 @@ does not belong to the artifact is refused with `NOT_FOUND`. A reply
 reply is ignored. `GET /api/artifacts/:id/comments` returns every comment
 across every version, each carrying `versionId` and `versionNumber`.
 
+### Entries
+
+See [entries.md](entries.md) for the contract, the page API, and the entry
+schema. A write that does not fit the current version's schema is refused
+with `INVALID_INPUT` and a message naming the problem. An upload whose
+`portego-entries` schema is broken is refused the same way.
+
 ### Source download
 
 The response carries the stored bytes with:
@@ -239,6 +249,7 @@ Every failure has the same shape:
 | `UNSUPPORTED_CONTENT` | 400 | Not valid UTF-8, or not an HTML document. |
 | `FILE_TOO_LARGE` | 413 | Over `ARTIFACT_MAX_BYTES`. |
 | `INVALID_CURSOR` | 400 | The pagination cursor is not one we issued. |
+| `RATE_LIMITED` | 429 | Too many entry changes in the last minute. |
 | `CONTENT_MISSING` | 500 | The metadata exists but its bytes do not. |
 | `INTERNAL` | 500 | An unexpected failure. Nothing the caller can fix. |
 

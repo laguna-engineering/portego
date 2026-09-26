@@ -137,6 +137,9 @@ of it has to pass the browser's `Host` through unchanged.
 | `set_artifact_organization` | Set an artifact's one folder and complete tag set. |
 | `list_artifact_comments` | The comments on one artifact, oldest first, with their authors and the version each was written on. |
 | `add_artifact_comment` | Adds a comment as the caller, on the current version by default or the one named by an optional `versionId`, optionally as a reply to a root comment via `parentId`. Comments cannot be edited. |
+| `list_artifact_entries` | Every person's entries on one artifact, with the schema the current version declares. See [entries.md](entries.md). |
+| `set_artifact_entry` | Sets the caller's value for one key, checked against the artifact's schema. |
+| `clear_artifact_entry` | Removes the caller's value for one key. |
 | `get_artifact_markdown` | The artifact's static content as Markdown, current version by default or the one named by an optional `versionId`. Its `source` says whether the version supplied Markdown or the server generated it from HTML. `empty` says so when a page renders everything from JavaScript. |
 | `list_artifact_versions` | An artifact's versions, highest number first. |
 
