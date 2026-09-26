@@ -111,6 +111,25 @@ describe("hostile artifacts", () => {
     expect(page.url()).not.toContain("attacker.example");
   });
 
+  test("cannot navigate their own frame to another site", async () => {
+    // The sandbox allows this navigation. The application page's frame-src
+    // refuses it before a request is made, so nothing reaches the site.
+    const id = await uploadArtifact(app, {
+      title: "frame navigation",
+      html: HOSTILE_ARTIFACTS["navigates its own frame"] ?? "",
+    });
+    const context = await app.signedIn();
+    const requests = recordRequests(context);
+    const page = await context.newPage();
+
+    await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/preview/")),
+      page.goto(`${app.server.origin}/a/${id}`),
+    ]);
+    await page.waitForTimeout(500);
+    expect(requests.attempted.some((url) => url.includes("attacker.example"))).toBe(false);
+  });
+
   test("cannot get a tab opened without the reader clicking", async () => {
     const title = "open request";
     const id = await uploadArtifact(app, {

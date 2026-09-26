@@ -255,6 +255,16 @@ describe("GET * (social tags)", () => {
     }
   });
 
+  test("lets frames load previews only, so an artifact cannot navigate its frame to another site", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const res = await server.app.request("/a/does-not-exist");
+      expect(res.headers.get("content-security-policy")).toBe(`frame-src ${TEST_CONTENT_ORIGIN}`);
+    } finally {
+      server.cleanup();
+    }
+  });
+
   test("falls back to the generic tags for an unknown artifact id", async () => {
     const server = await createTestServer({ serveClient: true });
     try {

@@ -38,6 +38,11 @@ export type AppOptions = {
   events: EventBus;
 };
 
+/** The application page's policy: frames may show previews and nothing else. */
+export function frameSourcePolicy(contentOrigin: string): string {
+  return `frame-src ${new URL(contentOrigin).origin}`;
+}
+
 export function createApp(options: AppOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const appOrigin = new URL(options.authConfig.baseURL).origin;
@@ -151,6 +156,9 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
       // A signed-in request gets a description an anonymous one does not.
       c.header("Cache-Control", "private, no-cache");
       c.header("Vary", "Cookie");
+      // The sandbox leaves an artifact free to navigate its own frame, which
+      // would carry whatever the page knows to another site in the URL.
+      c.header("Content-Security-Policy", frameSourcePolicy(options.contentOrigin));
       return c.html(withSocialTags(await file.text(), meta, { appOrigin, path: c.req.path }));
     });
   }

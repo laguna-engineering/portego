@@ -3,6 +3,7 @@ import { type Connect, defineConfig } from "vite";
 
 const apiTarget = `http://${process.env.HOST ?? "127.0.0.1"}:${process.env.PORT ?? "3000"}`;
 const appUrl = (process.env.APP_URL ?? "http://localhost:5173").replace(/\/$/, "");
+const contentOrigin = new URL(process.env.CONTENT_URL ?? "http://127.0.0.1:5173").origin;
 
 /**
  * The application lives on localhost and previews on 127.0.0.1, which is the
@@ -22,6 +23,9 @@ const applicationHost = {
         res.end();
         return;
       }
+      // Same policy as the server sends with the application page.
+      if (!path.startsWith("/preview/"))
+        res.setHeader("content-security-policy", `frame-src ${contentOrigin}`);
       next();
     });
   },

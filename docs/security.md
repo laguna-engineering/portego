@@ -111,6 +111,7 @@ bridge. That grants it nothing:
 | Submit a form | `form-action 'none'` and no `allow-forms` |
 | Open a window | No `allow-popups` |
 | Navigate the top page | No `allow-top-navigation` |
+| Navigate its own frame to another site | `frame-src` on the application page names only the content origin |
 | Get a tab opened without a click | The page opens a link only during the reader's click |
 | Register a service worker | `worker-src 'none'`, and an opaque origin cannot register one |
 | Load a remote script, image, or font | `default-src 'none'` with only inline and `data:`/`blob:` allowed |
@@ -154,6 +155,14 @@ Framing the artifact inside a page on the application origin keeps the
 restriction: the document is no longer the top-level context, and the tab stays
 where the user put it. The browser tests in `e2e/sandbox.test.ts` run the
 hostile documents through this route as well as through the preview URL.
+
+A framed document can still navigate its own frame; the sandbox allows that.
+A navigation to another site would carry whatever the document knows in the
+URL. Every page the application serves therefore sends
+`Content-Security-Policy: frame-src <content origin>`, and the browser applies
+the framing page's `frame-src` to each navigation of the frame. The document
+can load another preview and nothing else. The Vite dev server sends the same
+header.
 
 The wrapper page carries the masthead and nothing else of the application. The
 reader's own email is on it, and the opaque origin the frame runs in is what
