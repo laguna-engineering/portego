@@ -2,6 +2,7 @@ import type { EventBus } from "../events/bus.ts";
 import { CONVERTER_VERSION, htmlToMarkdown } from "../markdown/convert.ts";
 import { markdownToHtml } from "../markdown/render.ts";
 import type { CachedMarkdown, MarkdownStore } from "../markdown/store.ts";
+import type { OrganizationService } from "../organization/service.ts";
 import type {
   Artifact,
   ArtifactStatus,
@@ -74,11 +75,15 @@ export type UploadInput = {
   title?: string | null;
   description?: string | null;
   /**
-   * The artifact this upload is a new version of. Without it, an upload whose
-   * title matches an existing artifact's title becomes a new version of that
-   * artifact.
+   * The artifact this upload is a new version of. Without it, the upload
+   * creates an artifact, and a title that an existing artifact already has is
+   * refused unless allowDuplicateTitle is set.
    */
   artifactId?: string | null;
+  allowDuplicateTitle?: boolean;
+  /** Filed as with setArtifactOrganization. Omitted keeps a new version's folder and tags. */
+  folderId?: unknown;
+  tagIds?: unknown;
   /** Files the HTML loads as images/<name>. Only with an HTML upload. */
   images?: UploadedImage[];
   /** Taken from the session, never from the request body. */
@@ -247,12 +252,14 @@ export function createArtifactService(options: {
   maxImageBytesTotal?: number;
   /** Where a committed change is announced. Absent in tests that ignore it. */
   events?: EventBus;
-  /** Adds shared folder and tag metadata without giving this service write access to it. */
-  organization?: { assignments: (artifactIds: string[]) => Map<string, ArtifactOrganization> };
+  /** Adds shared folder and tag metadata, and files an upload that asks for it. */
+  organization?: Pick<
+    OrganizationService,
+    "assignments" | "checkAssignment" | "setArtifactOrganization"
+  >;
 }): ArtifactService {
-  const { store, markdownStore, commentStore, entryStore } = options;
-  const assignments =
-    options.organization?.assignments ?? (() => new Map<string, ArtifactOrganization>());
+  const { store, markdownStore, commentStore, entryStore, organization } = options;
+  const assignments = organization?.assignments ?? (() => new Map<string, ArtifactOrganization>());
   const summary = (artifact: Artifact) =>
     toSummary(artifact, assignments([artifact.id]).get(artifact.id));
   const maxUploadBytes = options.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
@@ -386,7 +393,40 @@ export function createArtifactService(options: {
           : input.filename,
       );
 
-      if (!target) target = store.findByTitle(title);
+      // A shared title alone never selects the artifact to version: that
+      // takes an explicit artifactId, and a duplicate takes an explicit flag.
+      if (!target && !input.allowDuplicateTitle) {
+        const existing = store.findByTitle(title);
+        if (existing) {
+          throw new ServiceError(
+            "TITLE_EXISTS",
+            `An artifact titled "${title}" already exists (id ${existing.id}). To add a new ` +
+              `version to it, upload again with artifactId ${existing.id}. To create a separate ` +
+              "artifact, choose another title or set allowDuplicateTitle.",
+            existing.id,
+          );
+        }
+      }
+
+      const filing = {
+        ...(input.folderId === undefined ? {} : { folderId: input.folderId }),
+        ...(input.tagIds === undefined ? {} : { tagIds: input.tagIds }),
+      };
+      const files = Object.keys(filing).length > 0;
+      if (files) {
+        if (!organization) {
+          throw new ServiceError("INVALID_INPUT", "This server cannot file uploads.");
+        }
+        organization.checkAssignment(filing);
+      }
+      const file = (artifactId: string) => {
+        if (files) {
+          organization?.setArtifactOrganization(artifactId, {
+            ...filing,
+            actorId: input.createdBy,
+          });
+        }
+      };
 
       if (target) {
         const artifact = await store.addVersion({
@@ -401,6 +441,7 @@ export function createArtifactService(options: {
           createdBy: input.createdBy,
         });
         if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+        file(artifact.id);
         publish({ type: "artifact.changed", id: artifact.id });
         return { artifact: summary(artifact), newArtifact: false };
       }
@@ -415,6 +456,7 @@ export function createArtifactService(options: {
         images,
         createdBy: input.createdBy,
       });
+      file(artifact.id);
       publish({ type: "artifact.created", id: artifact.id });
       return { artifact: summary(artifact), newArtifact: true };
     },

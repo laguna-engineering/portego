@@ -75,13 +75,15 @@ export type Page = { items: Artifact[]; nextCursor: string | null };
 export type Preview = { url: string; expiresAt: string };
 
 /** The shape every failing API response carries. */
-export type ApiErrorBody = { error: { code: string; message: string } };
+export type ApiErrorBody = { error: { code: string; message: string; artifactId?: string } };
 
 export class ApiError extends Error {
   constructor(
     readonly code: string,
     message: string,
     readonly status: number,
+    /** With TITLE_EXISTS: the artifact that already has the title. */
+    readonly artifactId?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -101,6 +103,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body?.error.code ?? "UNKNOWN",
       body?.error.message ?? "Something went wrong.",
       res.status,
+      body?.error.artifactId,
     );
   }
   return (await res.json()) as T;
@@ -154,18 +157,24 @@ export function fetchArtifact(id: string): Promise<Artifact> {
 /**
  * `artifactId` turns the upload into a new version of an existing artifact
  * instead of creating one. `newArtifact` in the response is false in that case.
+ * Without it, a title another artifact has is refused with TITLE_EXISTS unless
+ * `allowDuplicateTitle` is set.
  */
 export function uploadArtifact(input: {
   file: File;
   title: string;
   description: string;
   artifactId?: string;
+  allowDuplicateTitle?: boolean;
+  folderId?: string;
 }): Promise<{ artifact: Artifact; newArtifact: boolean }> {
   const form = new FormData();
   form.set("file", input.file);
   form.set("title", input.title);
   form.set("description", input.description);
   if (input.artifactId) form.set("artifactId", input.artifactId);
+  if (input.allowDuplicateTitle) form.set("allowDuplicateTitle", "true");
+  if (input.folderId) form.set("folderId", input.folderId);
   return request<{ artifact: Artifact; newArtifact: boolean }>("/api/artifacts", {
     method: "POST",
     body: form,

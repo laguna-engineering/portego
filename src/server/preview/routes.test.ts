@@ -23,6 +23,7 @@ async function store(html: string): Promise<string> {
     bytes: new TextEncoder().encode(html),
     filename: "artifact.html",
     title: "An artifact",
+    allowDuplicateTitle: true,
     createdBy:
       (await server.auth.api.getSession({ headers: new Headers({ cookie }) }))?.user.id ?? "",
   });

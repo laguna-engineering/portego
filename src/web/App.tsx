@@ -209,6 +209,7 @@ export function App() {
       {uploading ? (
         <UploadDialog
           maxUploadBytes={session.limits.maxUploadBytes}
+          initialFolderId={route.name === "gallery" ? route.folderId : null}
           onClose={() => setUploading(false)}
           onUploaded={(artifact) => {
             setUploading(false);

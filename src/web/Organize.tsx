@@ -18,7 +18,7 @@ import {
   setArtifactOrganization,
   type Tag,
 } from "./api.ts";
-import { folderPath, folderRows } from "./folders.ts";
+import { folderPath, folderRows, sameName } from "./folders.ts";
 import { TickIcon } from "./Icons.tsx";
 
 type PickerProps = {
@@ -26,10 +26,6 @@ type PickerProps = {
   onChanged: (artifact: Artifact) => void;
   onClose: () => void;
 };
-
-function sameName(a: string, b: string): boolean {
-  return a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
-}
 
 function useAction() {
   const [busy, setBusy] = useState(false);

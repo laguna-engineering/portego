@@ -8,6 +8,8 @@ export type ErrorCode =
   | "FORBIDDEN"
   | "INVALID_INPUT"
   | "TITLE_REQUIRED"
+  /** A new artifact would share its title with an existing one. */
+  | "TITLE_EXISTS"
   | "FILE_TOO_LARGE"
   | "UNSUPPORTED_CONTENT"
   | "INVALID_CURSOR"
@@ -20,6 +22,8 @@ export class ServiceError extends Error {
   constructor(
     readonly code: ErrorCode,
     message: string,
+    /** Sent with TITLE_EXISTS: the artifact that already has the title. */
+    readonly artifactId?: string,
   ) {
     super(message);
     this.name = "ServiceError";

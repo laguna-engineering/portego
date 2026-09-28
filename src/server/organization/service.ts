@@ -27,6 +27,8 @@ export type OrganizationService = {
     artifactId: string,
     input: { folderId?: unknown; tagIds?: unknown; actorId: string },
   ) => void;
+  /** Refuses what setArtifactOrganization would refuse, without an artifact to change. */
+  checkAssignment: (input: { folderId?: unknown; tagIds?: unknown }) => void;
   validateListFilters: (input: { folderId?: string | null; tagIds?: string[] }) => void;
 };
 
@@ -44,10 +46,10 @@ function name(value: unknown, field = "name"): string {
   return normalized;
 }
 
-function parentId(value: unknown): string | null {
+function parentId(value: unknown, field = "parentId"): string | null {
   if (value === null) return null;
   if (typeof value !== "string" || value === "") {
-    throw new ServiceError("INVALID_INPUT", "parentId must be a folder id or null.");
+    throw new ServiceError("INVALID_INPUT", `${field} must be a folder id or null.`);
   }
   return value;
 }
@@ -99,6 +101,16 @@ export function createOrganizationService(options: {
       parentId = requireFolder(parentId).parentId;
     }
     return false;
+  };
+
+  const checkAssignment = (input: { folderId?: unknown; tagIds?: unknown }) => {
+    const normalizedFolderId =
+      input.folderId === undefined ? undefined : parentId(input.folderId, "folderId");
+    const normalizedTagIds = input.tagIds === undefined ? undefined : tagIds(input.tagIds);
+    if (normalizedFolderId !== undefined && normalizedFolderId !== null)
+      requireFolder(normalizedFolderId);
+    if (normalizedTagIds !== undefined) requireTags(normalizedTagIds);
+    return { normalizedFolderId, normalizedTagIds };
   };
 
   return {
@@ -212,12 +224,7 @@ export function createOrganizationService(options: {
       if (input.folderId === undefined && input.tagIds === undefined) {
         throw new ServiceError("INVALID_INPUT", "Send folderId, tagIds, or both.");
       }
-      const normalizedFolderId =
-        input.folderId === undefined ? undefined : parentId(input.folderId);
-      const normalizedTagIds = input.tagIds === undefined ? undefined : tagIds(input.tagIds);
-      if (normalizedFolderId !== undefined && normalizedFolderId !== null)
-        requireFolder(normalizedFolderId);
-      if (normalizedTagIds !== undefined) requireTags(normalizedTagIds);
+      const { normalizedFolderId, normalizedTagIds } = checkAssignment(input);
       if (
         store.setArtifactOrganization({
           artifactId,
@@ -228,6 +235,10 @@ export function createOrganizationService(options: {
       ) {
         publish({ type: "artifact.changed", id: artifactId });
       }
+    },
+
+    checkAssignment(input) {
+      checkAssignment(input);
     },
 
     validateListFilters(input) {

@@ -476,11 +476,21 @@ describe("upload by ticket", () => {
 });
 
 describe("versions", () => {
-  async function uploadVersion(fields: { title?: string; artifactId?: string; html?: string }) {
+  async function uploadVersion(fields: {
+    title?: string;
+    artifactId?: string;
+    html?: string;
+    allowDuplicateTitle?: boolean;
+    folderId?: string;
+    tagIds?: string[];
+  }) {
     const form = new FormData();
     form.set("file", htmlFile(fields.html ?? "<h1>Revised</h1>", "revised.html"));
     if (fields.title !== undefined) form.set("title", fields.title);
     if (fields.artifactId !== undefined) form.set("artifactId", fields.artifactId);
+    if (fields.allowDuplicateTitle) form.set("allowDuplicateTitle", "true");
+    if (fields.folderId !== undefined) form.set("folderId", fields.folderId);
+    for (const tagId of fields.tagIds ?? []) form.append("tagId", tagId);
     const res = await server.app.request("/api/artifacts", {
       method: "POST",
       headers: { cookie, origin: TEST_BASE_URL },
@@ -489,10 +499,33 @@ describe("versions", () => {
     return {
       status: res.status,
       body: (await res.json()) as {
-        artifact: { id: string; versionCount: number; currentVersionId: string; sha256: string };
+        artifact: {
+          id: string;
+          versionCount: number;
+          currentVersionId: string;
+          sha256: string;
+          folder: { id: string } | null;
+          tags: { id: string }[];
+        };
         newArtifact: boolean;
+        error?: { code: string; artifactId?: string };
       },
     };
+  }
+
+  async function created(path: "folders" | "tags", name: string): Promise<string> {
+    const res = await server.app.request(`/api/${path}`, {
+      method: "POST",
+      headers: { cookie, origin: TEST_BASE_URL, "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const body = (await res.json()) as { folder?: { id: string }; tag?: { id: string } };
+    return (body.folder ?? body.tag)?.id ?? "";
+  }
+
+  async function artifactCount(): Promise<number> {
+    const list = await server.app.request("/api/artifacts", { headers: { cookie } });
+    return ((await list.json()) as { items: unknown[] }).items.length;
   }
 
   async function versionsOf(id: string) {
@@ -500,18 +533,59 @@ describe("versions", () => {
     return ((await res.json()) as { versions: { id: string; number: number }[] }).versions;
   }
 
-  test("makes an upload with an existing title a new version, not a second artifact", async () => {
+  // A shared link must never start showing someone else's document because
+  // two uploads happened to share a title.
+  test("refuses an existing title without artifactId instead of adding a version", async () => {
     const id = await uploadedId("Quarterly report");
     const again = await uploadVersion({ title: "Quarterly report" });
 
-    expect(again.status).toBe(201);
-    expect(again.body.newArtifact).toBe(false);
-    expect(again.body.artifact.id).toBe(id);
-    expect(again.body.artifact.versionCount).toBe(2);
+    expect(again.status).toBe(409);
+    expect(again.body.error).toEqual(
+      expect.objectContaining({ code: "TITLE_EXISTS", artifactId: id }),
+    );
+    expect(await artifactCount()).toBe(1);
+    expect((await versionsOf(id)).map((version) => version.number)).toEqual([1]);
+  });
 
-    const list = await server.app.request("/api/artifacts", { headers: { cookie } });
-    expect(((await list.json()) as { items: unknown[] }).items).toHaveLength(1);
-    expect((await versionsOf(id)).map((version) => version.number)).toEqual([2, 1]);
+  test("creates a separate artifact with an existing title when asked to", async () => {
+    const id = await uploadedId("Quarterly report");
+    const again = await uploadVersion({ title: "Quarterly report", allowDuplicateTitle: true });
+
+    expect(again.status).toBe(201);
+    expect(again.body.newArtifact).toBe(true);
+    expect(again.body.artifact.id).not.toBe(id);
+    expect(await artifactCount()).toBe(2);
+    expect((await versionsOf(id)).map((version) => version.number)).toEqual([1]);
+  });
+
+  test("files a new artifact in the folder and tags the upload names", async () => {
+    const folderId = await created("folders", "Reports");
+    const tagId = await created("tags", "finance");
+    const result = await uploadVersion({ title: "Filed", folderId, tagIds: [tagId] });
+
+    expect(result.status).toBe(201);
+    expect(result.body.artifact.folder?.id).toBe(folderId);
+    expect(result.body.artifact.tags.map((tag) => tag.id)).toEqual([tagId]);
+  });
+
+  test("refuses an unknown folder before storing anything", async () => {
+    const result = await uploadVersion({ title: "Lost", folderId: "no-such-folder" });
+    expect(result.status).toBe(404);
+    expect(await artifactCount()).toBe(0);
+  });
+
+  test("a new version keeps the folder unless the upload names another", async () => {
+    const reports = await created("folders", "Reports");
+    const archive = await created("folders", "Archive");
+    const first = await uploadVersion({ title: "Moving", folderId: reports });
+    const id = first.body.artifact.id;
+
+    const kept = await uploadVersion({ artifactId: id });
+    expect(kept.body.artifact.folder?.id).toBe(reports);
+
+    const moved = await uploadVersion({ artifactId: id, folderId: archive });
+    expect(moved.body.artifact.folder?.id).toBe(archive);
+    expect(moved.body.artifact.versionCount).toBe(3);
   });
 
   test("adds a version to the artifact named by artifactId whatever the title", async () => {
@@ -535,7 +609,7 @@ describe("versions", () => {
 
   test("serves any version's bytes and markdown, and the current one by default", async () => {
     const id = await uploadedId("Evolving");
-    await uploadVersion({ title: "Evolving", html: "<h1>Second</h1>" });
+    await uploadVersion({ artifactId: id, html: "<h1>Second</h1>" });
     const [, first] = await versionsOf(id);
     if (!first) throw new Error("expected version 1");
 
@@ -575,7 +649,7 @@ describe("versions", () => {
 
   test("records the version a comment was written on, and a reply follows its thread", async () => {
     const id = await uploadedId("Discussed");
-    await uploadVersion({ title: "Discussed" });
+    await uploadVersion({ artifactId: id });
     const [latest, first] = await versionsOf(id);
     if (!latest || !first) throw new Error("expected two versions");
 

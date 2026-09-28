@@ -75,6 +75,9 @@ describe("a first run with no deployment set", () => {
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       "finalize_artifact",
       "get_artifact_style",
+      "list_artifacts",
+      "list_folders",
+      "list_tags",
       "prepare_artifact_draft",
       "sign_in",
       "upload_artifact_from_path",

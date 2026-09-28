@@ -9,12 +9,13 @@ import { ServiceError } from "./errors.ts";
 import type { ArtifactService, UploadResult } from "./service.ts";
 import { verifyUploadTicket } from "./tickets.ts";
 
-const STATUS: Record<ErrorCode, 400 | 401 | 403 | 404 | 413 | 429 | 500> = {
+const STATUS: Record<ErrorCode, 400 | 401 | 403 | 404 | 409 | 413 | 429 | 500> = {
   UNAUTHENTICATED: 401,
   NOT_FOUND: 404,
   FORBIDDEN: 403,
   INVALID_INPUT: 400,
   TITLE_REQUIRED: 400,
+  TITLE_EXISTS: 409,
   FILE_TOO_LARGE: 413,
   UNSUPPORTED_CONTENT: 400,
   INVALID_CURSOR: 400,
@@ -51,7 +52,16 @@ function contentDisposition(filename: string): string {
  */
 export function handleServiceError(error: Error, c: Context<AppEnv>): Response {
   if (error instanceof ServiceError) {
-    return c.json({ error: { code: error.code, message: error.message } }, STATUS[error.code]);
+    return c.json(
+      {
+        error: {
+          code: error.code,
+          message: error.message,
+          ...(error.artifactId === undefined ? {} : { artifactId: error.artifactId }),
+        },
+      },
+      STATUS[error.code],
+    );
   }
   console.error(error);
   return c.json({ error: { code: "INTERNAL", message: "Something went wrong." } }, STATUS.INTERNAL);
@@ -338,6 +348,9 @@ async function uploadFromForm(
     title: readField(form, "title"),
     description: readField(form, "description"),
     artifactId: readField(form, "artifactId"),
+    allowDuplicateTitle: readField(form, "allowDuplicateTitle") === "true",
+    ...(form.has("folderId") ? { folderId: form.get("folderId") } : {}),
+    ...(form.has("tagId") ? { tagIds: form.getAll("tagId") } : {}),
     images,
     createdBy,
   });

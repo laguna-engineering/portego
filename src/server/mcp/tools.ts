@@ -341,10 +341,17 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         "matter; send Markdown when the content already is Markdown or should stay text. HTML may " +
         "carry markdown as well: the concise text agents get when they read the artifact back, " +
         "in place of Markdown converted from the HTML. The creator is the " +
-        "authenticated user. Uploading with the title of an existing artifact, or with its id as artifactId, adds a " +
-        "new version to that artifact instead of creating another one; its url stays the same. " +
-        "A description given with a new version replaces the artifact's description. To send " +
-        "images as separate files instead of data URIs, use create_upload_ticket.",
+        "authenticated user. Uploading with an artifact's id as artifactId adds a new version " +
+        "to that artifact; its url stays the same. Without artifactId the upload creates an " +
+        "artifact. A title that a non-archived artifact already has is refused with " +
+        "TITLE_EXISTS and that artifact's id: ask the user whether they meant a new version of " +
+        "it or a separate artifact, then upload again with artifactId or with " +
+        "allowDuplicateTitle. When the user refers to an existing document, find its id with " +
+        "list_artifacts. A description given with a new version replaces the artifact's " +
+        "description. folderId and tagIds file the artifact as set_artifact_organization does; " +
+        "find ids with list_folders and list_tags, and omit both unless the user names a folder " +
+        "or tags. To send images as separate files instead of data URIs, use " +
+        "create_upload_ticket.",
       inputSchema: {
         title: z.string().min(1).max(200).describe("Shown in the gallery."),
         description: z.string().max(2000).optional(),
@@ -362,6 +369,22 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
           .string()
           .optional()
           .describe("Upload as a new version of this artifact, whatever the title."),
+        allowDuplicateTitle: z
+          .boolean()
+          .optional()
+          .describe(
+            "Create a new artifact even when another one has the same title. Set it only " +
+              "after the user confirms they want a separate artifact.",
+          ),
+        folderId: z
+          .string()
+          .optional()
+          .describe("The folder to file the artifact in. Omitted keeps a new version's folder."),
+        tagIds: z
+          .array(z.string())
+          .max(20)
+          .optional()
+          .describe("Replaces the artifact's tags. Omitted keeps a new version's tags."),
       },
       outputSchema: {
         id: z.string(),
@@ -372,7 +395,17 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         newArtifact: z.boolean(),
       },
     },
-    async ({ title, description, html, markdown, filename, artifactId }) => {
+    async ({
+      title,
+      description,
+      html,
+      markdown,
+      filename,
+      artifactId,
+      allowDuplicateTitle,
+      folderId,
+      tagIds,
+    }) => {
       requireWriteScope(context, "not create them");
       try {
         if (html === undefined && markdown === undefined) {
@@ -387,6 +420,9 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
           description: description ?? null,
           filename: filename ?? (isMarkdown ? "artifact.md" : "artifact.html"),
           artifactId: artifactId ?? null,
+          allowDuplicateTitle: allowDuplicateTitle ?? false,
+          ...(folderId === undefined ? {} : { folderId }),
+          ...(tagIds === undefined ? {} : { tagIds }),
           createdBy: context.userId,
         });
         return asJson({
@@ -411,8 +447,9 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         "Get a short-lived URL and ticket for sending an HTML file directly. Prefer this over " +
         "upload_artifact whenever the document is already a file on the machine running this " +
         "client, and whenever it is large: the bytes never enter the conversation. Send a " +
-        "multipart form with the file in the `file` field, and optionally `title` and " +
-        "`description`, which follow the same rules as upload_artifact. For example: " +
+        "multipart form with the file in the `file` field, and optionally `title`, " +
+        "`description`, `artifactId`, `allowDuplicateTitle` (the text true), `folderId`, and " +
+        "one `tagId` field per tag, which follow the same rules as upload_artifact. For example: " +
         'curl -H "Authorization: Bearer <ticket>" -F file=@page.html -F title="A chart" <url>. ' +
         "An HTML upload may also carry images the page loads as images/<name>: send each as an " +
         "`image` field whose filename is that name, for example -F image=@images/chart.png. Each " +

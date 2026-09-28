@@ -220,11 +220,25 @@ describe("tools", () => {
     }
   });
 
-  test("uploads with a known title as a new version and lists the versions", async () => {
+  test("refuses a known title without artifactId and names the artifact that has it", async () => {
+    const created = await upload("Titled through MCP");
+    const refused = await callTool(client, "upload_artifact", {
+      title: "Titled through MCP",
+      html: "<!doctype html><html><title>t</title>revised</html>",
+    });
+    expect(refused.result?.isError).toBe(true);
+    const text = JSON.stringify(refused.result?.content);
+    expect(text).toContain("TITLE_EXISTS");
+    // The agent needs the id to offer the user a new version of that artifact.
+    expect(text).toContain(created.id);
+  });
+
+  test("uploads with artifactId as a new version and lists the versions", async () => {
     const created = await upload("Versioned through MCP");
     const again = (
       await callTool(client, "upload_artifact", {
         title: "Versioned through MCP",
+        artifactId: created.id,
         html: "<!doctype html><html><title>t</title>revised</html>",
       })
     ).result?.structuredContent as { id: string; versionNumber: number; newArtifact: boolean };
@@ -298,6 +312,26 @@ describe("tools", () => {
     const global = (await callTool(client, "list_artifacts", { query: "Organized through MCP" }))
       .result?.structuredContent as { items: { id: string }[] };
     expect(global.items.map((item) => item.id)).toContain(created.id);
+  });
+
+  test("files an upload in the folder and tags it names", async () => {
+    const folder = (await callTool(client, "create_folder", { name: "Filed at upload" })).result
+      ?.structuredContent as { id: string };
+    const tag = (await callTool(client, "create_tag", { name: "Filed" })).result
+      ?.structuredContent as { id: string };
+    const uploaded = (
+      await callTool(client, "upload_artifact", {
+        title: "Filed through MCP",
+        html: "<!doctype html><html><title>t</title>hi</html>",
+        folderId: folder.id,
+        tagIds: [tag.id],
+      })
+    ).result?.structuredContent as { id: string };
+
+    const metadata = (await callTool(client, "get_artifact_metadata", { id: uploaded.id })).result
+      ?.structuredContent as { folder: { id: string } | null; tags: { id: string }[] };
+    expect(metadata.folder?.id).toBe(folder.id);
+    expect(metadata.tags.map((entry) => entry.id)).toEqual([tag.id]);
   });
 
   test("adds and reads comments, recording the caller as the author", async () => {
@@ -481,7 +515,7 @@ describe("tools", () => {
 
   test("renders Markdown and returns the supplied source", async () => {
     const result = await callTool(client, "upload_artifact", {
-      title: "Markdown check",
+      title: "Markdown render check",
       markdown: "# Heading\n\nA **fact**.",
     });
     const created = result.result?.structuredContent as { id: string };

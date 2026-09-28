@@ -34,10 +34,11 @@ function page(schema?: unknown): string {
   return `<!doctype html><html><head><title>Backlog</title>${block}</head><body><p>x</p></body></html>`;
 }
 
-async function upload(html: string, title = "Backlog") {
+async function upload(html: string, title = "Backlog", artifactId?: string) {
   const form = new FormData();
   form.set("file", htmlFile(html));
   form.set("title", title);
+  if (artifactId) form.set("artifactId", artifactId);
   return server.app.request("/api/artifacts", {
     method: "POST",
     headers: { cookie, origin: TEST_BASE_URL },
@@ -227,7 +228,7 @@ describe("an artifact's entry schema", () => {
 
   test("comes from the current version, and a version without one accepts any key", async () => {
     const id = await uploaded(page(SCHEMA));
-    await uploaded(page());
+    expect((await upload(page(), "Backlog", id)).status).toBe(201);
     expect((await listEntries(id)).schema).toBeNull();
     expect((await setEntry(id, "poll", "A")).status).toBe(200);
   });

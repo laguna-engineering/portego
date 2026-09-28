@@ -19,6 +19,11 @@ export function folderRows(folders: Folder[]): { folder: Folder; depth: number }
   return rows;
 }
 
+/** Folder and tag names are unique regardless of case. */
+export function sameName(a: string, b: string): boolean {
+  return a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
+}
+
 /** A folder's name after its ancestors', e.g. "Lampo › Launch". */
 export function folderPath(folder: Folder, folders: Folder[]): string {
   const byId = new Map(folders.map((other) => [other.id, other]));

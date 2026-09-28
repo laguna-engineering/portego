@@ -127,7 +127,7 @@ of it has to pass the browser's `Host` through unchanged.
 | `list_artifacts` | Cursor, limit, optional query and sort. Returns compact metadata and web URLs. |
 | `get_artifact_metadata` | One metadata record. |
 | `get_artifact_source` | The stored HTML of one version, up to 1 MiB, current by default or the one named by an optional `versionId`. Larger artifacts are refused with their size and a link, rather than truncated. |
-| `upload_artifact` | Title, optional description, optional `artifactId` to add a version to an existing artifact, and either self-contained HTML or Markdown, or both. Markdown alone becomes a static HTML page in the Portego style; with HTML, it is the text agents read back. Returns the id, digest, version number, whether the upload created the artifact, and the web URL. |
+| `upload_artifact` | Title, optional description, optional `artifactId` to add a version to an existing artifact, optional `allowDuplicateTitle`, optional `folderId` and `tagIds` to file the artifact, and either self-contained HTML or Markdown, or both. Markdown alone becomes a static HTML page in the Portego style; with HTML, it is the text agents read back. Returns the id, digest, version number, whether the upload created the artifact, and the web URL. |
 | `create_upload_ticket` | A short-lived URL and ticket for sending an HTML file directly, without putting it in a tool argument. |
 | `set_artifact_status` | Mark an artifact solved or open again, archive it, or both. Records the caller as the actor. |
 | `list_folders` | List the shared folder tree. |
@@ -154,12 +154,20 @@ prompt should treat it the way it treats any other fetched document.
 
 An artifact can carry more than one version, and the artifact keeps one id
 and one url across all of them: a link shared once keeps pointing at the
-same place after a later version replaces what it shows. Uploading a
-document with the same title as an existing, non-archived artifact adds a
-new version to it instead of creating a second artifact. Pass `artifactId`
-to target a specific artifact instead of matching by title. A description on
-the upload replaces the artifact's description; the title never changes
-after the first version.
+same place after a later version replaces what it shows. Only `artifactId`
+adds a version to an existing artifact. Without it, an upload creates an
+artifact, and a title that a non-archived artifact already has is refused
+with `TITLE_EXISTS` and that artifact's id. The client then asks the user
+which one they meant: a new version (upload again with `artifactId`) or a
+separate artifact (upload again with `allowDuplicateTitle`). A matching
+title alone never replaces what a shared link shows. A description on the
+upload replaces the artifact's description; the title never changes after
+the first version.
+
+`folderId` and `tagIds` on an upload file the artifact as
+`set_artifact_organization` does. On a new version, a given field replaces
+the artifact's folder or tags, and an omitted one keeps them. An unknown
+folder or tag id refuses the upload before anything is stored.
 
 `upload_artifact` reports which version an upload became: `versionNumber` is
 the version's number, and `newArtifact` says whether the upload created the
@@ -195,10 +203,11 @@ curl -H "Authorization: Bearer <ticket>" \
 
 `file` is required. `contentType` is `html` by default or `markdown`. An HTML
 file may come with a `markdown` text field, the text agents read back. `title`,
-`description`, and `artifactId` are optional and follow the same rules as
-`upload_artifact`: a title matching an existing, non-archived artifact's title
-adds a version instead of creating one, and `artifactId` targets an artifact
-explicitly. Markdown is rendered in the Portego style with raw HTML and images disabled. An HTML
+`description`, `artifactId`, `allowDuplicateTitle` (the text `true`),
+`folderId`, and one `tagId` field per tag are optional and follow the same
+rules as `upload_artifact`: only `artifactId` adds a version, and a title that
+a non-archived artifact already has is refused with `TITLE_EXISTS` unless
+`allowDuplicateTitle` is set. Markdown is rendered in the Portego style with raw HTML and images disabled. An HTML
 file may also carry `image` parts: each is a file the page loads as
 `images/<name>`, named by the part's filename, and the rules are in
 [docs/api.md](api.md#upload). This keeps images out of the document as base64
@@ -328,12 +337,20 @@ and the flow works only for a person at a terminal.
 
 `tools/portego-upload` closes that gap. It is a stdio MCP server that runs on the
 same machine as the agent, holds its own token, reads the file itself, and mints
-the ticket itself. Its upload and sign-in tools are:
+the ticket itself. Its deployment tools are:
 
 ```
-upload_artifact_from_path({ path, contentType?, markdownPath?, title?, description?, artifactId? })
+upload_artifact_from_path({ path, contentType?, markdownPath?, title?, description?,
+                            artifactId?, allowDuplicateTitle?, folderId?, tagIds? })
+list_artifacts({ query?, folderId?, cursor? })
+list_folders()
+list_tags()
 sign_in()
 ```
+
+The three listings call the deployment's tools of the same names, so an agent
+with only this server can find the `artifactId`, `folderId`, and `tagIds` for
+an upload.
 
 It also exposes local tools that need no deployment or sign-in:
 
@@ -443,6 +460,9 @@ npx -y portego-upload finalize report.html
 npx -y portego-upload validate report.portego.html
 npx -y portego-upload upload report.portego.html --title "Weekly report" --markdown-file report.md
 ```
+
+`upload` also takes `--artifact-id` to add a version, `--allow-duplicate-title`
+to create an artifact whose title another one already has, and `--folder-id`.
 
 From a clone, `bun run tools/portego-upload/index.ts` takes the same commands.
 `bun run build:upload-tool` builds the file the package ships. A tag named

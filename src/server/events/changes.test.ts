@@ -28,6 +28,7 @@ async function announced(run: () => Promise<Response> | Response): Promise<Chang
 function upload() {
   const form = new FormData();
   form.set("file", htmlFile("<h1>A chart</h1>", "chart.html"));
+  form.set("allowDuplicateTitle", "true");
   return server.app.request("/api/artifacts", {
     method: "POST",
     headers: { cookie, origin: TEST_BASE_URL },

@@ -108,7 +108,8 @@ user or 200 in total.
 ### Upload
 
 `multipart/form-data` with a `file` part and optional `title`,
-`description`, `artifactId`, and `image` parts.
+`description`, `artifactId`, `allowDuplicateTitle`, `folderId`, `tagId`, and
+`image` parts.
 
 - The creator is taken from the session and reported as
   `creator: { id, name, email }`. A `createdBy` field in the form is ignored.
@@ -126,11 +127,19 @@ user or 200 in total.
 - The filename is reduced to its last segment and recorded for the download.
   No part of any stored path comes from it.
 - `artifactId` names an existing artifact to add this upload to as a new
-  version, instead of creating one. Without it, a title matching a
-  non-archived artifact's title (after trimming) does the same, choosing the
-  most recently updated match. An `artifactId` naming no artifact is refused
-  with `NOT_FOUND`. A version upload replaces the artifact's description
-  when one is given and keeps it otherwise; the title never changes.
+  version, instead of creating one. An `artifactId` naming no artifact is
+  refused with `NOT_FOUND`. A version upload replaces the artifact's
+  description when one is given and keeps it otherwise; the title never
+  changes.
+- Without `artifactId`, the upload creates an artifact. A title that a
+  non-archived artifact already has (after trimming) is refused with
+  `TITLE_EXISTS`, and the error carries that artifact's id as `artifactId`.
+  `allowDuplicateTitle` set to `true` creates the artifact anyway. A matching
+  title never adds a version by itself.
+- `folderId` files the artifact in a folder, and one `tagId` part per tag
+  replaces its tags, with the rules of `PATCH /api/artifacts/:id/organization`.
+  On a new version, an omitted field keeps the artifact's folder or tags. An
+  unknown folder or tag refuses the upload before anything is stored.
 - Each `image` part is a file the page loads as `images/<name>`, where the
   part's filename is the name. Names are 1 to 100 letters, digits, `.`, `-`,
   or `_`, starting with a letter or digit, and unique in the upload. Each
@@ -257,6 +266,7 @@ Every failure has the same shape:
 | `FORBIDDEN` | 403 | The action is not this caller's to take. |
 | `INVALID_INPUT` | 400 | A field is missing, malformed, or too long. |
 | `TITLE_REQUIRED` | 400 | No title given and none in the document. |
+| `TITLE_EXISTS` | 409 | A new artifact would take the title of an existing one. The error carries its `artifactId`. |
 | `UNSUPPORTED_CONTENT` | 400 | Not valid UTF-8, not an HTML document, or an image that is not PNG, JPEG, GIF, WebP, or AVIF. |
 | `FILE_TOO_LARGE` | 413 | Over `ARTIFACT_MAX_BYTES`, an image over 10 MiB, or images over `ARTIFACT_IMAGES_MAX_BYTES`. |
 | `INVALID_CURSOR` | 400 | The pagination cursor is not one we issued. |
