@@ -526,10 +526,15 @@ describe("tools", () => {
       ticket: string;
       method: string;
       maxBytes: number;
+      maxImages: number;
+      maxImageBytesTotal: number;
     };
     expect(issued.url).toBe(`${server.origin}/api/uploads`);
     expect(issued.method).toBe("POST");
     expect(issued.maxBytes).toBe(server.artifacts.maxUploadBytes);
+    // The local tool checks images against these before it sends any bytes.
+    expect(issued.maxImages).toBe(server.artifacts.maxImages);
+    expect(issued.maxImageBytesTotal).toBe(server.artifacts.maxImageBytesTotal);
 
     const form = new FormData();
     form.set(

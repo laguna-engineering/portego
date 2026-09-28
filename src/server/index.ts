@@ -1,5 +1,5 @@
 import { createApp } from "./app.ts";
-import { MULTIPART_OVERHEAD_BYTES } from "./artifacts/routes.ts";
+import { maxUploadRequestBytes } from "./artifacts/routes.ts";
 import { createArtifactService } from "./artifacts/service.ts";
 import { createAuth } from "./auth/auth.ts";
 import { parseAuthConfig } from "./auth/config.ts";
@@ -31,6 +31,8 @@ const artifacts = createArtifactService({
   entryStore: createEntryStore({ database }),
   organization,
   maxUploadBytes: env.ARTIFACT_MAX_BYTES,
+  maxImages: env.ARTIFACT_MAX_IMAGES,
+  maxImageBytesTotal: env.ARTIFACT_IMAGES_MAX_BYTES,
   events,
 });
 
@@ -51,7 +53,7 @@ const server = Bun.serve({
   port: env.PORT,
   // Refuse an oversize body before it is read, rather than buffering it and
   // rejecting it afterwards.
-  maxRequestBodySize: env.ARTIFACT_MAX_BYTES + MULTIPART_OVERHEAD_BYTES,
+  maxRequestBodySize: maxUploadRequestBytes(artifacts),
   fetch: app.fetch,
 });
 

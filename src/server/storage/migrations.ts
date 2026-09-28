@@ -173,6 +173,22 @@ export const migrations: readonly Migration[] = [
       alter table artifactVersions add column entrySchema text;
     `,
   },
+  {
+    // The images a version's HTML loads as images/<name>. The set is fixed when
+    // the version is uploaded, so an older version keeps its own images.
+    id: "009-artifact-images",
+    sql: `
+      create table artifactImages (
+        versionId text not null references artifactVersions (id) on delete cascade,
+        name text not null,
+        storageKey text not null,
+        sha256 text not null,
+        contentType text not null,
+        byteSize integer not null,
+        primary key (versionId, name)
+      );
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

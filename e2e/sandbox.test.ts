@@ -3,6 +3,7 @@ import {
   HOSTILE_ARTIFACTS,
   SELF_CONTAINED_ARTIFACT,
 } from "../src/server/preview/fixtures/hostile.ts";
+import { pngBytes } from "../src/server/storage/testing.ts";
 import { type BrowserApp, recordRequests, startBrowserApp, uploadArtifact } from "./support.ts";
 
 let app: BrowserApp;
@@ -46,6 +47,39 @@ async function preview(title: string, html: string) {
     reachedAttacker: reached("attacker.example"),
   };
 }
+
+describe("an artifact with uploaded images", () => {
+  test("loads them from its sandbox, and the page can still reach nothing else", async () => {
+    const html = `<!doctype html><title>Images</title>
+      <img id="chart" src="images/chart.png" alt="A chart">
+      <script>
+        const image = document.getElementById("chart");
+        const report = (text) => {
+          const outcome = document.createElement("p");
+          outcome.id = "outcome";
+          outcome.textContent = text;
+          document.body.append(outcome);
+        };
+        image.addEventListener("load", () => report("loaded " + image.naturalWidth));
+        image.addEventListener("error", () => report("failed"));
+      </script>`;
+    const id = await uploadArtifact(app, {
+      title: "Images",
+      html,
+      images: [{ name: "chart.png", bytes: pngBytes() }],
+    });
+    const context = await app.signedIn();
+    const requests = recordRequests(context);
+    const page = await context.newPage();
+
+    await page.goto(`${app.server.origin}/a/${id}`);
+    const frame = page.frameLocator('iframe[title="Preview of Images"]');
+    await frame.locator("#outcome").waitFor();
+
+    expect(await frame.locator("#outcome").textContent()).toBe("loaded 1");
+    expect(requests.answered.some((url) => url.endsWith("/images/chart.png"))).toBe(true);
+  });
+});
 
 describe("a self-contained artifact", () => {
   test("runs its own script and renders", async () => {

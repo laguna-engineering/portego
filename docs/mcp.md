@@ -180,14 +180,16 @@ an argument. The client spends context on it, and JSON escaping inflates the
 request past a size the service itself would accept. `create_upload_ticket`
 moves the bytes off the tool call.
 
-The tool returns a URL, a ticket, and the size limit. The client sends the file
-as a multipart form:
+The tool returns a URL, a ticket, and the size limits: `maxBytes` for the
+document, and `maxImages` and `maxImageBytesTotal` for its images. The client
+sends the file as a multipart form:
 
 ```sh
 curl -H "Authorization: Bearer <ticket>" \
      -F file=@page.html \
      -F contentType=html \
      -F title="A chart" \
+     -F image=@images/chart.png \
      https://share.acme.example/api/uploads
 ```
 
@@ -196,7 +198,11 @@ file may come with a `markdown` text field, the text agents read back. `title`,
 `description`, and `artifactId` are optional and follow the same rules as
 `upload_artifact`: a title matching an existing, non-archived artifact's title
 adds a version instead of creating one, and `artifactId` targets an artifact
-explicitly. Markdown is rendered in the Portego style with raw HTML and images disabled. The response is
+explicitly. Markdown is rendered in the Portego style with raw HTML and images disabled. An HTML
+file may also carry `image` parts: each is a file the page loads as
+`images/<name>`, named by the part's filename, and the rules are in
+[docs/api.md](api.md#upload). This keeps images out of the document as base64
+and out of the tool call. The response is
 `{ artifact, newArtifact }`, where `artifact` is the record the web upload
 returns and `newArtifact` says whether the upload created it.
 
@@ -338,8 +344,18 @@ finalize_artifact({ path, outputPath?, stylePath?, maxBytes? })
 validate_artifact({ path, maxBytes? })
 ```
 
-The agent passes paths and receives metadata. Document and embedded font bytes
-do not cross the tool boundary. The upload result includes the artifact record
+The agent passes paths and receives metadata. Document, image, and embedded
+font bytes do not cross the tool boundary.
+
+An HTML document loads its images as `images/<name>` from an `images/` folder
+next to it. `finalize_artifact` and `upload_artifact_from_path` embed images
+of 16 KiB or less, and every SVG file, as data URIs. Larger PNG, JPEG, GIF,
+WebP, and AVIF files of up to 10 MiB are sent as `image` parts with the page.
+`finalize_artifact` and `validate_artifact` list them in `imageFiles`. The
+tool refuses a name that is not one plain path segment, a symlink, and a file
+whose bytes are not an image, so a document cannot make it upload another
+file from the machine. It also refuses to upload images to a server that does
+not report image limits, since that server would drop them. The upload result includes the artifact record
 and `newArtifact`, which says whether the upload created the artifact or added
 a version to one that already existed.
 

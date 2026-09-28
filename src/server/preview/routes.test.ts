@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { TEST_BASE_URL } from "../auth/testing.ts";
+import { pngBytes } from "../storage/testing.ts";
 import { createTestServer, TEST_CONTENT_ORIGIN, type TestServer } from "../testing.ts";
 import { withBridge } from "./bridge.ts";
 import { HOSTILE_ARTIFACTS, SELF_CONTAINED_ARTIFACT } from "./fixtures/hostile.ts";
@@ -250,5 +251,116 @@ describe("host separation", () => {
       const res = await onContentHost(`${TEST_CONTENT_ORIGIN}${path}`);
       expect(res.status, path).toBeGreaterThanOrEqual(400);
     }
+  });
+});
+
+describe("serving a preview's images", () => {
+  const IMAGE_PAGE =
+    '<!doctype html><title>Chart</title><img src="images/chart.png" alt="A chart">';
+
+  async function storeWithImages(
+    images: { name: string; seed?: string }[],
+    artifactId?: string,
+  ): Promise<string> {
+    const { artifact } = await server.artifacts.upload({
+      bytes: new TextEncoder().encode(IMAGE_PAGE),
+      filename: "artifact.html",
+      title: "Chart",
+      images: images.map((image) => ({ name: image.name, bytes: pngBytes(image.seed) })),
+      ...(artifactId ? { artifactId } : {}),
+      createdBy:
+        (await server.auth.api.getSession({ headers: new Headers({ cookie }) }))?.user.id ?? "",
+    });
+    return artifact.id;
+  }
+
+  test("serves an image at the path the document's relative src resolves to", async () => {
+    const url = await previewUrl(await storeWithImages([{ name: "chart.png" }]));
+
+    const res = await onContentHost(new URL("images/chart.png", url).href);
+    expect(res.status).toBe(200);
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(pngBytes());
+  });
+
+  test("lets the document load images from its own token's path and from nowhere else", async () => {
+    const url = await previewUrl(await storeWithImages([{ name: "chart.png" }]));
+    const csp = (await onContentHost(url)).headers.get("content-security-policy") ?? "";
+
+    const imgSrc = csp.split("; ").find((directive) => directive.startsWith("img-src"));
+    expect(imgSrc).toBe(`img-src data: blob: ${new URL("images/", url).href}`);
+    expect(csp).toContain("connect-src 'none'");
+  });
+
+  test("serves each image with the type detected at upload, unsniffable and inert", async () => {
+    const url = await previewUrl(await storeWithImages([{ name: "chart.png" }]));
+    const res = await onContentHost(new URL("images/chart.png", url).href);
+
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox");
+    expect(res.headers.get("cache-control")).toBe("private, no-store");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+  });
+
+  test("allows the sandboxed document to embed its images despite its opaque origin", async () => {
+    const url = await previewUrl(await storeWithImages([{ name: "chart.png" }]));
+    const res = await onContentHost(new URL("images/chart.png", url).href);
+    expect(res.headers.get("cross-origin-resource-policy")).toBe("cross-origin");
+  });
+
+  test("shows each version the images it was uploaded with", async () => {
+    const id = await storeWithImages([{ name: "chart.png", seed: "v1" }]);
+    const oldUrl = await previewUrl(id);
+    await storeWithImages([{ name: "chart.png", seed: "v2" }], id);
+    const newUrl = await previewUrl(id);
+
+    const old = await onContentHost(new URL("images/chart.png", oldUrl).href);
+    const current = await onContentHost(new URL("images/chart.png", newUrl).href);
+    expect(new Uint8Array(await old.arrayBuffer())).toEqual(pngBytes("v1"));
+    expect(new Uint8Array(await current.arrayBuffer())).toEqual(pngBytes("v2"));
+  });
+
+  test("serves no image of another artifact, whatever name is asked for", async () => {
+    await storeWithImages([{ name: "secret.png" }]);
+    const url = await previewUrl(await store(SELF_CONTAINED_ARTIFACT));
+
+    const res = await onContentHost(new URL("images/secret.png", url).href);
+    expect(res.status).toBe(404);
+  });
+
+  test("refuses an image request without a valid token", async () => {
+    const url = await previewUrl(await storeWithImages([{ name: "chart.png" }]));
+    const token = new URL(url).pathname.split("/")[2] ?? "";
+    const tampered = new URL(`images/chart.png`, url.replace(token, `${token}x`)).href;
+    expect((await onContentHost(tampered)).status).toBe(403);
+  });
+
+  test("refuses an expired token for an image as it does for the page", async () => {
+    const id = await storeWithImages([{ name: "chart.png" }]);
+    const { token } = mintPreviewToken(
+      server.signingSecret,
+      { artifactId: id, versionId: id },
+      new Date(Date.now() - 3_600_000),
+    );
+    const res = await onContentHost(`${TEST_CONTENT_ORIGIN}/preview/${token}/images/chart.png`);
+    expect(res.status).toBe(403);
+  });
+
+  test("answers a path-like name with not found and never reads outside the store", async () => {
+    const url = await previewUrl(await storeWithImages([{ name: "chart.png" }]));
+    const base = url.replace(/\/$/, "");
+    for (const name of ["..%2F..%2Fapp.db", "..%5Capp.db", ".chart.png"]) {
+      const res = await onContentHost(`${base}/images/${name}`);
+      expect(res.status, name).toBe(404);
+    }
+  });
+
+  test("serves images on the content host only", async () => {
+    const url = await previewUrl(await storeWithImages([{ name: "chart.png" }]));
+    const onAppHost = new URL("images/chart.png", url).href.replace(
+      TEST_CONTENT_ORIGIN,
+      TEST_BASE_URL,
+    );
+    expect((await server.app.request(onAppHost)).status).toBe(404);
   });
 });

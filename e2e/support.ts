@@ -102,7 +102,13 @@ export function recordRequests(context: BrowserContext): Traffic {
 
 export async function uploadArtifact(
   app: BrowserApp,
-  input: { title: string; html: string; description?: string; artifactId?: string },
+  input: {
+    title: string;
+    html: string;
+    description?: string;
+    artifactId?: string;
+    images?: { name: string; bytes: Uint8Array }[];
+  },
 ): Promise<string> {
   const session = await app.server.auth.api.getSession({
     headers: new Headers({ cookie: await app.server.signIn() }),
@@ -114,6 +120,7 @@ export async function uploadArtifact(
     description: input.description ?? null,
     createdBy: session?.user.id ?? "",
     artifactId: input.artifactId,
+    images: input.images ?? [],
   });
   return artifact.id;
 }

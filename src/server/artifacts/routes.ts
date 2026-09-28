@@ -24,7 +24,15 @@ const STATUS: Record<ErrorCode, 400 | 401 | 403 | 404 | 413 | 429 | 500> = {
 };
 
 /** Room for the multipart headers around a file of the maximum size. */
-export const MULTIPART_OVERHEAD_BYTES = 16 * 1024;
+const MULTIPART_OVERHEAD_BYTES = 16 * 1024;
+
+/** The largest request body an upload can need: the document plus every image. */
+export function maxUploadRequestBytes(limits: {
+  maxUploadBytes: number;
+  maxImageBytesTotal: number;
+}): number {
+  return limits.maxUploadBytes + limits.maxImageBytesTotal + MULTIPART_OVERHEAD_BYTES;
+}
 
 function ascii(filename: string): string {
   // A quote or a backslash would end the quoted string early.
@@ -285,10 +293,10 @@ async function uploadFromForm(
   createdBy: string,
 ): Promise<UploadResult> {
   const declared = Number(c.req.header("content-length") ?? "0");
-  if (declared > service.maxUploadBytes + MULTIPART_OVERHEAD_BYTES) {
+  if (declared > maxUploadRequestBytes(service)) {
     throw new ServiceError(
       "FILE_TOO_LARGE",
-      `The upload is larger than the ${service.maxUploadBytes} byte limit.`,
+      `The upload is larger than the ${service.maxUploadBytes} byte limit for the document plus the ${service.maxImageBytesTotal} byte limit for images.`,
     );
   }
 
@@ -311,6 +319,16 @@ async function uploadFromForm(
     throw new ServiceError("INVALID_INPUT", "contentType must be html or markdown.");
   }
 
+  const images = [];
+  for (const image of form.getAll("image")) {
+    if (!(image instanceof File)) {
+      throw new ServiceError("INVALID_INPUT", "Attach each image as a file in an `image` field.");
+    }
+    // The filename is the name the HTML uses in images/<name>. The service
+    // checks it; it never becomes a path on disk.
+    images.push({ name: image.name, bytes: new Uint8Array(await image.arrayBuffer()) });
+  }
+
   return service.upload({
     bytes: new Uint8Array(await file.arrayBuffer()),
     contentType,
@@ -320,6 +338,7 @@ async function uploadFromForm(
     title: readField(form, "title"),
     description: readField(form, "description"),
     artifactId: readField(form, "artifactId"),
+    images,
     createdBy,
   });
 }

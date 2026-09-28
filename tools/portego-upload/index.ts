@@ -31,6 +31,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 // Only the version, so the bundle does not carry the rest of the manifest.
+import { checkImageLimits, type ImageFile, resolveLocalImages } from "./images.ts";
 import { version } from "./package.json" with { type: "json" };
 import { parseStore, resolveOrigin, type Store, type Token, withToken } from "./store.ts";
 import {
@@ -345,7 +346,14 @@ async function accessToken(): Promise<string> {
 // Upload
 // --------------------------------------------------------------------------
 
-type Ticket = { url: string; ticket: string; maxBytes: number };
+type Ticket = {
+  url: string;
+  ticket: string;
+  maxBytes: number;
+  /** Absent on a server without image support. */
+  maxImages?: number;
+  maxImageBytesTotal?: number;
+};
 
 /** Calls one tool on the deployed MCP server and returns its structured result. */
 async function callRemoteTool(
@@ -412,6 +420,29 @@ async function upload(options: {
     throw new UploadError(`Cannot read ${options.path}: ${(error as Error).message}`);
   }
 
+  const contentType =
+    options.contentType ?? (options.path.toLowerCase().endsWith(".md") ? "markdown" : "html");
+  // Small images are embedded here as well as by finalize_artifact, so an HTML
+  // file shared as it is follows the same rule.
+  let images: ImageFile[] = [];
+  if (contentType === "html") {
+    let text: string;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+    } catch {
+      throw new UploadError(`${options.path} is not valid UTF-8.`);
+    }
+    const resolved = await resolveLocalImages(text, dirname(options.path));
+    const errors = resolved.issues.filter((issue) => issue.level === "error");
+    if (errors.length > 0) {
+      throw new UploadError(
+        `The document's images cannot be uploaded:\n${errors.map((issue) => `- ${issue.message}`).join("\n")}`,
+      );
+    }
+    if (resolved.html !== text) bytes = Buffer.from(resolved.html);
+    images = resolved.files;
+  }
+
   const token = await accessToken();
   const ticket = (await callRemoteTool(token, "create_upload_ticket")) as unknown as Ticket;
 
@@ -422,15 +453,29 @@ async function upload(options: {
       `${options.path} is ${bytes.byteLength} bytes and the limit is ${ticket.maxBytes}.`,
     );
   }
+  // A server without image support leaves maxImages out and ignores image
+  // fields, which would publish the page with its images missing.
+  if (images.length > 0 && ticket.maxImages === undefined) {
+    throw new UploadError(
+      "This Portego deployment does not accept image files. Update the server, or embed the images as data URIs.",
+    );
+  }
+  const limitErrors = checkImageLimits(images, {
+    maxImages: ticket.maxImages ?? 0,
+    maxImageBytesTotal: ticket.maxImageBytesTotal ?? 0,
+  });
+  if (limitErrors.length > 0) {
+    throw new UploadError(limitErrors.map((issue) => issue.message).join("\n"));
+  }
 
   const form = new FormData();
   form.set(
     "file",
     new File([new Uint8Array(bytes)], options.path.split("/").pop() ?? "artifact.html"),
   );
-  const contentType =
-    options.contentType ?? (options.path.toLowerCase().endsWith(".md") ? "markdown" : "html");
   form.set("contentType", contentType);
+  for (const image of images)
+    form.append("image", new File([new Uint8Array(image.bytes)], image.name));
   if (options.markdownPath) {
     try {
       form.set("markdown", await readFile(options.markdownPath, "utf8"));
@@ -482,6 +527,9 @@ async function serve(): Promise<void> {
         "then validate_artifact before upload. Content the user already has as Markdown, or wants " +
         "kept as text, is uploaded as Markdown and the server renders it in the same style. Agents " +
         "read an artifact back as Markdown, so keep its substance in text. " +
+        "Put images in an images/ folder next to the HTML file and load them as " +
+        '<img src="images/<name>">. Images up to 16 KiB are embedded; larger ones are uploaded ' +
+        "as files with the page. " +
         "When a tool says the user is not signed in, call sign_in and tell the user to approve " +
         "the request in the browser that opens, then repeat the call. When a tool says no " +
         "deployment is set, only the user can fix it: give them the command from the message.",
@@ -528,7 +576,10 @@ async function serve(): Promise<void> {
         "becomes a new version of that artifact rather than a new artifact; give artifactId to be " +
         "explicit about which one. The returned url stays the same for every version. Returns the " +
         "artifact record, including the URL to share. The document must be self-contained: it " +
-        "renders with no network access.",
+        "renders with no network access. The one exception is images/<name> in an <img> src or " +
+        "a CSS url(): the file is read from the images/ folder next to the HTML file. Images up " +
+        "to 16 KiB and SVG files are embedded as data URIs; other PNG, JPEG, GIF, WebP, and AVIF " +
+        "files of up to 10 MiB are uploaded with the page.",
       inputSchema: {
         path: z.string().describe("Absolute path to the HTML or Markdown file on this machine."),
         contentType: z
@@ -687,7 +738,10 @@ async function serve(): Promise<void> {
       description:
         "Embed the active style's CSS, fonts, and CSS assets into an editable HTML draft, validate " +
         "the resulting self-contained document, and write the file that is ready to upload. The " +
-        "draft is kept unless outputPath explicitly names the same file.",
+        "draft is kept unless outputPath explicitly names the same file. Images the draft loads " +
+        "as images/<name> are read from the images/ folder next to it: images up to 16 KiB and " +
+        "SVG files are embedded, and the rest are listed in imageFiles to upload with the page, " +
+        "so the output must stay in the draft's folder.",
       inputSchema: {
         path: z.string().describe("Absolute path to the editable HTML draft."),
         outputPath: z
@@ -708,6 +762,7 @@ async function serve(): Promise<void> {
         path: z.string(),
         style: z.string(),
         byteSize: z.number().int(),
+        imageFiles: z.array(z.string()),
         warnings: z.array(validationIssueSchema),
       },
     },
@@ -739,8 +794,11 @@ async function serve(): Promise<void> {
       title: "Validate an artifact file",
       description:
         "Check a local HTML file before upload. Reports external resources, attempted network " +
-        "access, blocked embeds, size, required metadata, and basic accessibility warnings. The " +
-        "file contents do not pass through the conversation.",
+        "access, blocked embeds, size, required metadata, and basic accessibility warnings. " +
+        "Checks each images/<name> the file loads: it must exist in the images/ folder next to " +
+        "the file, be a PNG, JPEG, GIF, WebP, AVIF, or SVG file, and be at most 10 MiB. " +
+        "imageFiles lists the images that will be uploaded as files. The file contents do not " +
+        "pass through the conversation.",
       inputSchema: {
         path: z.string().describe("Absolute path to the HTML file."),
         maxBytes: z.number().int().positive().optional().describe("Upload size limit in bytes."),
@@ -749,6 +807,7 @@ async function serve(): Promise<void> {
         valid: z.boolean(),
         byteSize: z.number().int(),
         issues: z.array(validationIssueSchema),
+        imageFiles: z.array(z.string()),
       },
     },
     async ({ path, maxBytes }) => {

@@ -42,12 +42,19 @@ the artifact. The token in it:
 An invalid, expired, forged, or swapped token gets the same refusal, which says
 nothing about whether the artifact exists.
 
+The URL ends in a slash, `/preview/<token>/`, so a relative `images/<name>` in
+the document resolves to `/preview/<token>/images/<name>`. Each image request
+carries the same token and is checked the same way. It can only name an image
+of the version the token was issued for.
+
 ## Preview response
 
 ```
 Content-Type: text/html; charset=utf-8
 Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:;
-  style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:;
+  style-src 'unsafe-inline';
+  img-src data: blob: https://content.share.acme.example/preview/<token>/images/;
+  font-src data:; media-src data: blob:;
   connect-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none';
   form-action 'none'; base-uri 'none'; object-src 'none';
   frame-ancestors https://share.acme.example; sandbox allow-scripts
@@ -65,13 +72,41 @@ attribute on the iframe, so both the framing page and the response ask for the
 same restriction.
 
 Artifacts are self-contained, so every resource they need is inline or a
-`data:`/`blob:` URL and nothing has to be fetched. `unsafe-eval` is allowed
+`data:`/`blob:` URL. The one exception is the version's own images: `img-src`
+names the `images/` path under this preview's token, so the document can load
+those images and nothing else from the network. `connect-src 'none'` still
+applies, so a script cannot `fetch` them or anything else. `unsafe-eval` is allowed
 because bundlers emit code that needs it; inside an opaque origin with no
 network it gives a document nothing it did not already have over its own bytes.
 
 The document is served as uploaded, plus one inline script at the end of its
 head: the comment bridge described below. Nothing else rewrites or sanitizes
 it. The headers are what make it harmless.
+
+## Preview images
+
+```
+Content-Type: image/png
+Content-Security-Policy: default-src 'none'; sandbox
+Referrer-Policy: no-referrer
+X-Content-Type-Options: nosniff
+Cross-Origin-Resource-Policy: cross-origin
+Cache-Control: private, no-store
+```
+
+- The server detects the type from the image's first bytes when it is
+  uploaded, and accepts only PNG, JPEG, GIF, WebP, and AVIF. The declared MIME
+  type and the file name are ignored, and a name whose extension does not match
+  the bytes is refused. SVG is refused because it is a document that can run
+  script. The upload tool embeds SVG files as data URIs, where an `<img>`
+  renders them without running anything.
+- `nosniff`, the empty policy, and `sandbox` keep a file that is more than an
+  image from running if someone opens its URL directly.
+- `Cross-Origin-Resource-Policy` is `cross-origin` because the preview document
+  has an opaque origin, which is not same-site with anything. Firefox blocks a
+  `same-site` image for it. The token in the URL is what grants access.
+- An image name is one path segment of letters, digits, `.`, `-`, and `_`. It
+  selects a row in the database and never becomes a path on disk.
 
 ## The comment bridge
 
@@ -195,7 +230,10 @@ title is visible only to someone who was given the link.
 ## Known limitations
 
 - A preview URL is a capability. Anyone holding it can read that one artifact
-  for five minutes. It should be treated like any other short-lived link.
+  and its images for five minutes. It should be treated like any other
+  short-lived link.
+- An image the document adds after the token expires fails to load. Images in
+  the page when it loads are not affected.
 - Nothing stops a person from copying a preview URL out of the page and opening
   it directly, which gives up the framing described above for those five
   minutes. The application never produces such a link itself.

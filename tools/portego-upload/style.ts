@@ -6,6 +6,14 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { fileURLToPath } from "node:url";
 import { type DefaultTreeAdapterTypes, parse } from "parse5";
 import { z } from "zod";
+import {
+  checkImageLimits,
+  cssUrls,
+  DEFAULT_IMAGE_LIMITS,
+  type ImageLimits,
+  isImageFileReference,
+  resolveLocalImages,
+} from "./images.ts";
 
 type ChildNode = DefaultTreeAdapterTypes.ChildNode;
 type Element = DefaultTreeAdapterTypes.Element;
@@ -45,6 +53,11 @@ export type ValidationResult = {
   valid: boolean;
   byteSize: number;
   issues: ValidationIssue[];
+};
+
+export type FileValidationResult = ValidationResult & {
+  /** Images the document loads as files, uploaded with it. */
+  imageFiles: string[];
 };
 
 export class ArtifactStyleError extends Error {}
@@ -337,16 +350,6 @@ const mimeTypes: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-function cssUrls(css: string): { whole: string; value: string }[] {
-  const matches: { whole: string; value: string }[] = [];
-  const expression = /url\(\s*(?:(["'])(.*?)\1|([^)]*?))\s*\)/gi;
-  for (const match of css.matchAll(expression)) {
-    const value = (match[2] ?? match[3] ?? "").trim();
-    matches.push({ whole: match[0], value });
-  }
-  return matches;
-}
-
 function bundledFontFallback(file: StyleFile, asset: string): string | null {
   if (resolve(file.root) !== resolve(bundledStyleRoot())) return null;
   const font = bundledFonts[relative(file.root, asset).replaceAll("\\", "/")];
@@ -416,6 +419,7 @@ export async function finalizeArtifact(options: {
   path: string;
   style: string;
   byteSize: number;
+  imageFiles: string[];
   warnings: ValidationIssue[];
 }> {
   if (!isAbsolute(options.path)) {
@@ -449,8 +453,22 @@ export async function finalizeArtifact(options: {
     );
   }
 
-  const validation = validateArtifactHtml(html, options.maxBytes);
-  const errors = validation.issues.filter((issue) => issue.level === "error");
+  const images = await resolveLocalImages(html, dirname(options.path));
+  const validation = validateArtifactHtml(images.html, options.maxBytes);
+  const errors = [
+    ...images.issues,
+    ...checkImageLimits(images.files, DEFAULT_IMAGE_LIMITS),
+    ...validation.issues,
+  ].filter((issue) => issue.level === "error");
+  // The upload reads the image files from images/ next to the file it sends.
+  if (images.files.length > 0 && resolve(dirname(outputPath)) !== resolve(dirname(options.path))) {
+    errors.push({
+      level: "error",
+      code: "image-folder",
+      message:
+        "The document loads image files, so write the finalized file next to the draft's images/ folder.",
+    });
+  }
   if (errors.length > 0) {
     throw new ArtifactStyleError(
       `The finalized artifact is invalid:\n${errors.map((issue) => `- ${issue.message}`).join("\n")}`,
@@ -458,11 +476,12 @@ export async function finalizeArtifact(options: {
   }
 
   await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, html);
+  await writeFile(outputPath, images.html);
   return {
     path: outputPath,
     style: style.name,
     byteSize: validation.byteSize,
+    imageFiles: images.files.map((file) => file.name),
     warnings: validation.issues.filter((issue) => issue.level === "warning"),
   };
 }
@@ -510,7 +529,7 @@ function inspectCss(css: string, add: (issue: ValidationIssue) => void): void {
     add({ level: "error", code: "css-import", message: "CSS @import is not self-contained." });
   }
   for (const { value } of cssUrls(css)) {
-    if (!resourceIsInline(value)) {
+    if (!resourceIsInline(value) && !isImageFileReference(value)) {
       add({
         level: "error",
         code: "css-resource",
@@ -612,7 +631,9 @@ export function validateArtifactHtml(html: string, maxBytes = DEFAULT_MAX_BYTES)
 
     for (const attribute of resourceAttributes[node.tagName] ?? []) {
       const value = attrs[attribute];
-      if (value !== undefined && !resourceIsInline(value)) {
+      const isImageFile =
+        node.tagName === "img" && attribute === "src" && isImageFileReference(value ?? "");
+      if (value !== undefined && !resourceIsInline(value) && !isImageFile) {
         add({
           level: "error",
           code: "external-resource",
@@ -667,10 +688,15 @@ export function validateArtifactHtml(html: string, maxBytes = DEFAULT_MAX_BYTES)
   };
 }
 
+/**
+ * Validates a file as it will be uploaded: small images embedded, the rest
+ * read from images/ next to it and held to the upload limits.
+ */
 export async function validateArtifactFile(
   path: string,
   maxBytes = DEFAULT_MAX_BYTES,
-): Promise<ValidationResult> {
+  limits: ImageLimits = DEFAULT_IMAGE_LIMITS,
+): Promise<FileValidationResult> {
   let bytes: Buffer;
   try {
     bytes = await readFile(path);
@@ -683,5 +709,17 @@ export async function validateArtifactFile(
   } catch {
     throw new ArtifactStyleError(`${path} is not valid UTF-8.`);
   }
-  return validateArtifactHtml(html, maxBytes);
+  const images = await resolveLocalImages(html, dirname(path));
+  const validation = validateArtifactHtml(images.html, maxBytes);
+  const issues = [
+    ...images.issues,
+    ...checkImageLimits(images.files, limits),
+    ...validation.issues,
+  ];
+  return {
+    valid: !issues.some((issue) => issue.level === "error"),
+    byteSize: validation.byteSize,
+    issues,
+    imageFiles: images.files.map((file) => file.name),
+  };
 }

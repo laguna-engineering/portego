@@ -11,7 +11,7 @@ Portego holds two kinds of document. People read a styled HTML page, so an artif
 2. Choose the closest available template. Use `report` when none is more appropriate.
 3. Choose an absolute draft path. Use a temporary directory unless the user asked to keep the source in a project. Call `prepare_artifact_draft` with the title, path, and template.
 4. Read the small draft and replace its example content with the user's content. Preserve the `data-portego-style` element and the document metadata. Use semantic HTML and the classes supplied by the template. Add inline JavaScript only when the requested artifact needs interaction.
-5. Call `finalize_artifact`. It embeds the selected CSS, fonts, and CSS assets, validates the result, and returns a separate self-contained file. Fix all errors. Fix warnings when possible.
+5. Call `finalize_artifact`. It embeds the selected CSS, fonts, and CSS assets, validates the result, and returns a separate self-contained file. Keep the default output path, so the file stays next to the draft's `images/` folder. Fix all errors. Fix warnings when possible.
 6. Write a Markdown file next to the draft with the page's substance as concise text: headings, findings, numbers, decisions. Leave out anything about layout or presentation. Agents that read the artifact get this text instead of Markdown converted from the HTML.
 7. Call `upload_artifact_from_path` with the finalized path and the Markdown file as `markdownPath`. Pass `artifactId` when the user wants a new version of a known artifact. Pass `title` or `description` only when the user supplied or approved them.
 8. If the upload tool says the user is not signed in, call `sign_in`, tell the user to approve the browser request, and repeat the upload. If no deployment is set, give the user the command from the tool. Do not guess the address.
@@ -43,5 +43,17 @@ Declare the keys the page uses, so agents can read what they mean and a mistyped
 A template has up to three `{name}` placeholders, each matching text without `:`, with literal text between them. Rules support `description`, `type`, `enum`, `const`, `minLength`, `maxLength`, `minimum`, `maximum`, `properties`, `required`, `additionalProperties` (boolean), `items`, `minItems`, and `maxItems`. `pattern` and any other keyword make the upload fail; use `enum` or length limits. When the page is re-uploaded as a new version, update the schema with it, for example the `enum` of item ids.
 
 Agents read and change entries with `list_artifact_entries`, `set_artifact_entry`, and `clear_artifact_entry`.
+
+## Images
+
+Put each image file, such as a chart, screenshot, or photo, in an `images/` folder next to the draft. Load it as `<img src="images/<name>" alt="...">` or as `url(images/<name>)` in CSS. Never write base64 data URIs yourself, and never read image bytes into the conversation.
+
+- Names are 1 to 100 letters, digits, dots, dashes, or underscores, starting with a letter or digit, with an extension that matches the file type.
+- PNG, JPEG, GIF, WebP, AVIF, and SVG files are accepted. Each file is at most 10 MiB.
+- `finalize_artifact` and the upload embed images of 16 KiB or less, and every SVG file, as data URIs. Larger raster images are uploaded as separate files with the page. `imageFiles` in the result lists them.
+- One upload carries at most 20 image files, 50 MiB in total, unless the deployment sets other limits.
+- An image loaded any other way (a remote URL, `srcset`, `<source>`, or `poster`) is refused.
+
+Only the images present at upload are part of that version. A new version must have all its images in `images/` again.
 
 The finalized artifact must render with no network access. Do not add remote scripts, styles, fonts, images, frames, or media. Do not read the finalized file after fonts and assets are embedded unless debugging requires it; the tools process it by path so those bytes do not enter the conversation.
