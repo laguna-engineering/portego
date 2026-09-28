@@ -1,12 +1,13 @@
 # Storage
 
-Artifact metadata lives in SQLite. The uploaded HTML lives on disk. Both are
-under `DATA_DIR`, which production sets to `/var/lib/portego`.
+Artifact metadata lives in SQLite. The uploaded HTML and images live on disk.
+All of it is under `DATA_DIR`, which production sets to `/var/lib/portego`.
 
 ```
-<DATA_DIR>/app.db              SQLite database, WAL mode
-<DATA_DIR>/artifacts/ab/cd/... uploaded HTML
-<DATA_DIR>/tmp/                partial uploads, removed as soon as they land
+<DATA_DIR>/app.db                          SQLite database, WAL mode
+<DATA_DIR>/artifacts/ab/cd/...             uploaded HTML
+<DATA_DIR>/images/<artifact-id>/<sha256>.* uploaded images, one folder per artifact
+<DATA_DIR>/tmp/                            partial uploads, removed as soon as they land
 ```
 
 Nothing under `DATA_DIR` is inside the static web root, and no static-file
@@ -57,6 +58,30 @@ The Markdown cache is keyed by version id rather than artifact id, so an
 older version's converted Markdown survives a later upload. Comments carry
 the id of the version they were written on.
 
+## Images
+
+An HTML upload can carry images that the page loads as `images/<name>`. Each
+version has its own set in the `artifactImages` table, fixed when the version
+is uploaded, so an older version keeps showing the images it had.
+
+| Column | Notes |
+| --- | --- |
+| `versionId` | References `artifactVersions(id)`. Primary key together with `name`. |
+| `name` | The name the HTML uses. 1 to 100 letters, digits, `.`, `-`, or `_`, starting with a letter or digit. Never used as a path. |
+| `storageKey` | `<artifact-id>/<sha256>.<ext>`, relative to `images/`. |
+| `sha256`, `byteSize` | Of the stored bytes. |
+| `contentType` | Detected from the bytes at upload: PNG, JPEG, GIF, WebP, or AVIF. |
+
+The file name is the hash of the bytes, so versions of one artifact that share
+an image share one file, and an existing file is never written again. The
+folder is named after the artifact the image was uploaded to. A merge moves
+version rows and leaves image files where they are, because each row keeps its
+`storageKey`.
+
+Each image is at most 10 MiB. `ARTIFACT_MAX_IMAGES` (default 20) and
+`ARTIFACT_IMAGES_MAX_BYTES` (default 50 MiB) limit one upload. One image that
+fails a check refuses the whole upload.
+
 ## Folders and tags
 
 `folders` stores the shared nested tree. `parentId` references another folder
@@ -92,6 +117,13 @@ The storage key comes from the artifact id: `<id[0:2]>/<id[2:4]>/<id>.html`. No
 part of it comes from the uploaded filename, so an upload cannot choose where
 its bytes land. Reading also refuses any key that does not have that exact
 shape, so a tampered database row cannot reach a file elsewhere on the host.
+
+Images are written the same way, before the metadata row, and their keys are
+checked the same way. The final link of an image that is already stored fails
+with the same bytes in place, which counts as success. When the row for a new
+artifact cannot be written, its image folder is removed. When the row for a
+new version cannot be written, its images stay, because another version may
+share them. The reconciliation report lists any such file.
 
 ## Listing
 
@@ -155,6 +187,9 @@ of mismatch, checking every version's file, not just the current one:
   artifact itself when it is the current one, cannot be served.
 - **orphaned file**: a file no row points at. It wastes space and serves
   nobody.
+
+It makes the same two checks for image files, reported as **missing image**
+and **orphaned image**.
 
 The command deletes nothing and exits non-zero when it finds a mismatch, so a
 deployment check can notice. Deciding what to do needs a person who knows

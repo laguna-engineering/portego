@@ -343,7 +343,8 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         "in place of Markdown converted from the HTML. The creator is the " +
         "authenticated user. Uploading with the title of an existing artifact, or with its id as artifactId, adds a " +
         "new version to that artifact instead of creating another one; its url stays the same. " +
-        "A description given with a new version replaces the artifact's description.",
+        "A description given with a new version replaces the artifact's description. To send " +
+        "images as separate files instead of data URIs, use create_upload_ticket.",
       inputSchema: {
         title: z.string().min(1).max(200).describe("Shown in the gallery."),
         description: z.string().max(2000).optional(),
@@ -413,6 +414,10 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         "multipart form with the file in the `file` field, and optionally `title` and " +
         "`description`, which follow the same rules as upload_artifact. For example: " +
         'curl -H "Authorization: Bearer <ticket>" -F file=@page.html -F title="A chart" <url>. ' +
+        "An HTML upload may also carry images the page loads as images/<name>: send each as an " +
+        "`image` field whose filename is that name, for example -F image=@images/chart.png. Each " +
+        "image is a PNG, JPEG, GIF, WebP, or AVIF file of at most 10 MiB; maxImages and " +
+        "maxImageBytesTotal give this deployment's limits for one upload. SVG stays inline. " +
         "The response is the same artifact record upload_artifact returns. A ticket uploads as " +
         `the authenticated user until it expires. ${UNTRUSTED}`,
       inputSchema: {},
@@ -422,6 +427,8 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         method: z.string(),
         expiresAt: z.string(),
         maxBytes: z.number().int(),
+        maxImages: z.number().int(),
+        maxImageBytesTotal: z.number().int(),
       },
     },
     async () => {
@@ -433,6 +440,8 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         method: "POST",
         expiresAt: issued.expiresAt.toISOString(),
         maxBytes: context.service.maxUploadBytes,
+        maxImages: context.service.maxImages,
+        maxImageBytesTotal: context.service.maxImageBytesTotal,
       });
     },
   );

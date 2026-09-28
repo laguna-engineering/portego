@@ -160,6 +160,8 @@ systemd units, certificates, and the deploy and rollback commands.
 | `CONTENT_URL`    | `http://127.0.0.1:5173` | Origin serving artifact previews. Must be a different host from `APP_URL`. Required when `NODE_ENV=production`. |
 | `DATA_DIR`       | `data`         | SQLite and artifact files. Production uses `/var/lib/portego`. |
 | `ARTIFACT_MAX_BYTES` | `5242880`  | Largest upload accepted, in bytes (5 MiB).  |
+| `ARTIFACT_MAX_IMAGES` | `20`      | Image files one upload may carry. Each image is at most 10 MiB. |
+| `ARTIFACT_IMAGES_MAX_BYTES` | `52428800` | Combined size of one upload's images, in bytes (50 MiB). |
 | `AUTH_PROVIDERS` | none           | Enabled provider ids, comma separated. Known ids: `google`, `oidc`. |
 | `AUTH_ALLOWED_EMAIL_DOMAINS` | none | Domains admitted after authentication. |
 | `AUTH_ALLOW_ALL_AUTHENTICATED` | `false` | Admit every authenticated identity. |

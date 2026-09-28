@@ -92,9 +92,19 @@ describe("createPreviewIssuer", () => {
   test("issues a token the content host accepts for that one artifact", () => {
     const issue = createPreviewIssuer({ secret: SECRET, contentOrigin: "https://content.test" });
     const url = issue(SUBJECT).url;
-    expect(verifyPreviewToken(SECRET, url.split("/preview/")[1] ?? "")).toEqual({
+    const token = url.split("/preview/")[1]?.replace(/\/$/, "") ?? "";
+    expect(verifyPreviewToken(SECRET, token)).toEqual({
       valid: true,
       ...SUBJECT,
     });
+  });
+
+  test("ends the URL with a slash, so images/<name> in the document resolves under the token", () => {
+    const issue = createPreviewIssuer({ secret: SECRET, contentOrigin: "https://content.test" });
+    const url = issue(SUBJECT).url;
+    const token = url.split("/preview/")[1]?.replace(/\/$/, "");
+    expect(new URL("images/chart.png", url).href).toBe(
+      `https://content.test/preview/${token}/images/chart.png`,
+    );
   });
 });

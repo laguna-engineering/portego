@@ -90,7 +90,8 @@ export type PreviewIssuer = (subject: PreviewSubject) => { url: string; expiresA
 
 /**
  * Builds the URL the browser loads in the preview iframe. It points at the
- * content host, which serves nothing else.
+ * content host, which serves nothing else. The trailing slash makes a relative
+ * `images/<name>` in the document resolve under the same token.
  */
 export function createPreviewIssuer(options: {
   secret: string;
@@ -98,6 +99,6 @@ export function createPreviewIssuer(options: {
 }): PreviewIssuer {
   return (subject) => {
     const { token, expiresAt } = mintPreviewToken(options.secret, subject);
-    return { url: `${options.contentOrigin}/preview/${token}`, expiresAt };
+    return { url: `${options.contentOrigin}/preview/${token}/`, expiresAt };
   };
 }

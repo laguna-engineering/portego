@@ -33,6 +33,15 @@ const schema = z
       .min(1024)
       .max(64 * 1024 * 1024)
       .default(5 * 1024 * 1024),
+    // Images one upload may carry, and their combined size. Each image is at
+    // most 10 MiB whatever these say.
+    ARTIFACT_MAX_IMAGES: z.coerce.number().int().min(0).max(100).default(20),
+    ARTIFACT_IMAGES_MAX_BYTES: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(256 * 1024 * 1024)
+      .default(50 * 1024 * 1024),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== "production") return;

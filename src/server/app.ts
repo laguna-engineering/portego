@@ -63,7 +63,12 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
 
   app.route(
     "/preview",
-    previewRoutes({ service: options.artifacts, secret: options.signingSecret, appOrigin }),
+    previewRoutes({
+      service: options.artifacts,
+      secret: options.signingSecret,
+      appOrigin,
+      contentOrigin: new URL(options.contentOrigin).origin,
+    }),
   );
 
   app.get("/healthz", (c) => c.json({ status: "ok", uptime: Math.round(process.uptime()) }));

@@ -3,9 +3,9 @@ import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { ContentMissingError, InvalidCursorError, type ListSort } from "./artifacts.ts";
 import { createCommentStore } from "./comments.ts";
-import { artifactsDir, contentPath } from "./content.ts";
+import { artifactsDir, contentPath, imagePath, imagesDir } from "./content.ts";
 import { createEntryStore } from "./entries.ts";
-import { createTestStorage, htmlBytes, type TestStorage } from "./testing.ts";
+import { createTestStorage, htmlBytes, pngImage, type TestStorage } from "./testing.ts";
 
 let storage: TestStorage;
 
@@ -404,5 +404,91 @@ describe("mergeInto", () => {
     expect(storage.store.mergeInto(artifact.id, artifact.id)).toBeNull();
     expect(storage.store.mergeInto(artifact.id, "missing")).toBeNull();
     expect(storage.store.get(artifact.id)?.versionCount).toBe(1);
+  });
+});
+
+describe("images", () => {
+  async function versionIds(artifactId: string) {
+    return storage.store
+      .versions(artifactId)
+      .map((version) => version.id)
+      .reverse();
+  }
+
+  test("stores each image under the artifact's id and its hash, never under its name", async () => {
+    const artifact = await storage.store.create(input({ images: [pngImage("../../chart.png")] }));
+
+    const [key] = storage.store.imageStorageKeys();
+    expect(key).toMatch(new RegExp(`^${artifact.id}/[0-9a-f]{64}\\.png$`));
+    expect(existsSync(join(imagesDir(storage.dataDir), key ?? ""))).toBe(true);
+    const read = await storage.store.readVersionImage(artifact.currentVersionId, "../../chart.png");
+    expect(read?.image.contentType).toBe("image/png");
+    expect(read?.content).toEqual(pngImage("chart.png").bytes);
+  });
+
+  test("keeps an older version's image when a newer version replaces it", async () => {
+    const artifact = await storage.store.create(input({ images: [pngImage("chart.png", "v1")] }));
+    await storage.store.addVersion({
+      artifactId: artifact.id,
+      originalFilename: "chart.html",
+      content: htmlBytes("<p>v2</p>"),
+      images: [pngImage("chart.png", "v2")],
+      createdBy: storage.userId,
+    });
+
+    const [first, second] = await versionIds(artifact.id);
+    const old = await storage.store.readVersionImage(first ?? "", "chart.png");
+    const current = await storage.store.readVersionImage(second ?? "", "chart.png");
+    expect(old?.content).toEqual(pngImage("chart.png", "v1").bytes);
+    expect(current?.content).toEqual(pngImage("chart.png", "v2").bytes);
+  });
+
+  test("stores the same bytes once when versions share an image", async () => {
+    const artifact = await storage.store.create(input({ images: [pngImage("logo.png")] }));
+    await storage.store.addVersion({
+      artifactId: artifact.id,
+      originalFilename: "chart.html",
+      content: htmlBytes("<p>v2</p>"),
+      images: [pngImage("renamed-logo.png")],
+      createdBy: storage.userId,
+    });
+
+    expect(readdirSync(join(imagesDir(storage.dataDir), artifact.id))).toHaveLength(1);
+    const [, second] = await versionIds(artifact.id);
+    expect(await storage.store.readVersionImage(second ?? "", "renamed-logo.png")).not.toBeNull();
+    expect(await storage.store.readVersionImage(second ?? "", "logo.png")).toBeNull();
+  });
+
+  test("keeps a merged version's images readable, since the files stay where they are", async () => {
+    const older = await storage.store.create(input({ title: "Targets" }));
+    const newer = await storage.store.create(
+      input({ title: "Targets", images: [pngImage("chart.png")] }),
+    );
+
+    storage.store.mergeInto(older.id, newer.id);
+
+    const read = await storage.store.readVersionImage(newer.currentVersionId, "chart.png");
+    expect(read?.content).toEqual(pngImage("chart.png").bytes);
+  });
+
+  test("removes a new artifact's images when its metadata cannot be written", async () => {
+    await expect(
+      storage.store.create(input({ createdBy: "nobody", images: [pngImage("chart.png")] })),
+    ).rejects.toThrow();
+
+    const stored = existsSync(imagesDir(storage.dataDir))
+      ? (readdirSync(imagesDir(storage.dataDir), { recursive: true }) as string[])
+      : [];
+    expect(stored).toEqual([]);
+  });
+
+  test("reports an image whose file disappeared instead of returning empty content", async () => {
+    const artifact = await storage.store.create(input({ images: [pngImage("chart.png")] }));
+    const [key] = storage.store.imageStorageKeys();
+    await Bun.file(imagePath(storage.dataDir, key ?? "")).delete();
+
+    await expect(
+      storage.store.readVersionImage(artifact.currentVersionId, "chart.png"),
+    ).rejects.toBeInstanceOf(ContentMissingError);
   });
 });

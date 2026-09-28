@@ -55,25 +55,19 @@ async function syncDirectory(path: string): Promise<void> {
   }
 }
 
-/**
- * Writes one artifact's bytes. The bytes go to a temporary file first and only
- * become visible under their final name once they are on disk in full, so a
- * failed or partial write leaves no artifact behind.
- *
- * The final link fails when the name is taken, so two uploads can never
- * overwrite each other even if they somehow produced the same id.
- */
-export async function writeContent(
-  dataDir: string,
-  id: string,
-  bytes: Uint8Array,
-): Promise<StoredContent> {
+function sha256Hex(bytes: Uint8Array): string {
   const hasher = new Bun.CryptoHasher("sha256");
   hasher.update(bytes);
-  const sha256 = hasher.digest("hex");
+  return hasher.digest("hex");
+}
 
-  const storageKey = storageKeyFor(id);
-  const target = contentPath(dataDir, storageKey);
+/**
+ * The bytes go to a temporary file first and only become visible under their
+ * final name once they are on disk in full, so a failed or partial write leaves
+ * nothing behind. The final link fails with EEXIST when the name is taken, so
+ * no write ever replaces an existing file.
+ */
+async function writeNewFile(dataDir: string, target: string, bytes: Uint8Array): Promise<void> {
   const temp = join(tempDir(dataDir), `${crypto.randomUUID()}.part`);
 
   await mkdir(dirname(target), { recursive: true });
@@ -89,17 +83,33 @@ export async function writeContent(
 
   try {
     await link(temp, target);
-  } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "EEXIST") {
-      throw new Error(`An artifact is already stored at ${storageKey}`);
-    }
-    throw cause;
   } finally {
     await unlink(temp).catch(() => {});
   }
   await syncDirectory(dirname(target));
+}
 
-  return { storageKey, sha256, byteSize: bytes.byteLength };
+function isFileExists(cause: unknown): boolean {
+  return (cause as NodeJS.ErrnoException).code === "EEXIST";
+}
+
+/**
+ * Writes one artifact's bytes. Two uploads can never overwrite each other,
+ * even if they somehow produced the same id.
+ */
+export async function writeContent(
+  dataDir: string,
+  id: string,
+  bytes: Uint8Array,
+): Promise<StoredContent> {
+  const storageKey = storageKeyFor(id);
+  try {
+    await writeNewFile(dataDir, contentPath(dataDir, storageKey), bytes);
+  } catch (cause) {
+    if (isFileExists(cause)) throw new Error(`An artifact is already stored at ${storageKey}`);
+    throw cause;
+  }
+  return { storageKey, sha256: sha256Hex(bytes), byteSize: bytes.byteLength };
 }
 
 export async function readContent(dataDir: string, storageKey: string): Promise<Uint8Array | null> {
@@ -125,5 +135,83 @@ export async function listStoredKeys(dataDir: string): Promise<string[]> {
   return entries
     .map((entry) => entry.split(sep).join("/"))
     .filter((entry) => entry.endsWith(".html"))
+    .sort();
+}
+
+/** Images live apart from the HTML, one directory per artifact. */
+export function imagesDir(dataDir: string): string {
+  return join(dataDir, "images");
+}
+
+/**
+ * The key comes from the artifact id and the image's hash, never from the
+ * name the uploader gave it. Equal bytes in one artifact share one file.
+ */
+export function imageStorageKeyFor(artifactId: string, sha256: string, extension: string): string {
+  return `${artifactId}/${sha256}.${extension}`;
+}
+
+const IMAGE_KEY_PATTERN = /^[0-9a-f-]{36}\/[0-9a-f]{64}\.(png|jpg|gif|webp|avif)$/;
+
+/** Refuses a key this module did not write, as contentPath does. */
+export function imagePath(dataDir: string, storageKey: string): string {
+  if (!IMAGE_KEY_PATTERN.test(storageKey)) {
+    throw new Error(`Refusing to use image storage key ${JSON.stringify(storageKey)}`);
+  }
+  const root = resolve(imagesDir(dataDir));
+  const path = resolve(root, storageKey);
+  const inside = relative(root, path);
+  if (inside.startsWith("..") || inside.startsWith(sep)) {
+    throw new Error(`Refusing to use image storage key ${JSON.stringify(storageKey)}`);
+  }
+  return path;
+}
+
+/**
+ * Stores an image under its hash. When the file is already there it holds
+ * these same bytes, so it is reused and never rewritten.
+ */
+export async function writeImage(
+  dataDir: string,
+  artifactId: string,
+  bytes: Uint8Array,
+  extension: string,
+): Promise<StoredContent> {
+  const sha256 = sha256Hex(bytes);
+  const storageKey = imageStorageKeyFor(artifactId, sha256, extension);
+  try {
+    await writeNewFile(dataDir, imagePath(dataDir, storageKey), bytes);
+  } catch (cause) {
+    if (!isFileExists(cause)) throw cause;
+  }
+  return { storageKey, sha256, byteSize: bytes.byteLength };
+}
+
+export async function readImage(dataDir: string, storageKey: string): Promise<Uint8Array | null> {
+  const file = Bun.file(imagePath(dataDir, storageKey));
+  if (!(await file.exists())) return null;
+  return await file.bytes();
+}
+
+/** Removes one artifact's whole image directory. Only for an artifact no row points at. */
+export async function removeArtifactImages(dataDir: string, artifactId: string): Promise<void> {
+  if (!/^[0-9a-f-]{36}$/.test(artifactId)) {
+    throw new Error(`Refusing to remove images of ${JSON.stringify(artifactId)}`);
+  }
+  await rm(join(imagesDir(dataDir), artifactId), { recursive: true, force: true });
+}
+
+/** Every stored image key. Used by the reconciliation report. */
+export async function listStoredImageKeys(dataDir: string): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(imagesDir(dataDir), { recursive: true });
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw cause;
+  }
+  return entries
+    .map((entry) => entry.split(sep).join("/"))
+    .filter((entry) => entry.includes("/"))
     .sort();
 }

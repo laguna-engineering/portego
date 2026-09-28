@@ -33,6 +33,12 @@ import {
   TITLE_MAX_LENGTH,
   titleFromHtml,
 } from "./html.ts";
+import {
+  checkImages,
+  DEFAULT_MAX_IMAGE_BYTES_TOTAL,
+  DEFAULT_MAX_IMAGES,
+  type UploadedImage,
+} from "./images.ts";
 
 /** 5 MiB. Documented in the README and in the MCP tool descriptions. */
 export const DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -73,6 +79,8 @@ export type UploadInput = {
    * artifact.
    */
   artifactId?: string | null;
+  /** Files the HTML loads as images/<name>. Only with an HTML upload. */
+  images?: UploadedImage[];
   /** Taken from the session, never from the request body. */
   createdBy: string;
 };
@@ -158,6 +166,12 @@ export type ArtifactService = {
     id: string,
     versionId?: string | null,
   ) => Promise<{ artifact: ArtifactSummary; version: VersionSummary; content: Uint8Array }>;
+  /** One image of a version, by the name its HTML uses. */
+  image: (
+    id: string,
+    versionId: string,
+    name: string,
+  ) => Promise<{ contentType: string; content: Uint8Array }>;
   /** A version's static content as Markdown. Converted once, then reused. */
   markdown: (
     id: string,
@@ -185,6 +199,8 @@ export type ArtifactService = {
   /** Removes the author's value for a key. Removing a key they never set is not an error. */
   clearEntry: (id: string, input: { authorId: string; key: string }) => void;
   maxUploadBytes: number;
+  maxImages: number;
+  maxImageBytesTotal: number;
 };
 
 function toSummary(artifact: Artifact, organization?: ArtifactOrganization): ArtifactSummary {
@@ -227,6 +243,8 @@ export function createArtifactService(options: {
   commentStore: CommentStore;
   entryStore: EntryStore;
   maxUploadBytes?: number;
+  maxImages?: number;
+  maxImageBytesTotal?: number;
   /** Where a committed change is announced. Absent in tests that ignore it. */
   events?: EventBus;
   /** Adds shared folder and tag metadata without giving this service write access to it. */
@@ -238,6 +256,8 @@ export function createArtifactService(options: {
   const summary = (artifact: Artifact) =>
     toSummary(artifact, assignments([artifact.id]).get(artifact.id));
   const maxUploadBytes = options.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
+  const maxImages = options.maxImages ?? DEFAULT_MAX_IMAGES;
+  const maxImageBytesTotal = options.maxImageBytesTotal ?? DEFAULT_MAX_IMAGE_BYTES_TOTAL;
   // Published after the write returns, so a failed write announces nothing.
   const publish = options.events?.publish ?? (() => {});
   const entryWrites = createWriteLimiter(ENTRY_WRITES_PER_MINUTE, 60_000);
@@ -276,6 +296,8 @@ export function createArtifactService(options: {
 
   return {
     maxUploadBytes,
+    maxImages,
+    maxImageBytesTotal,
 
     list(input = {}) {
       try {
@@ -328,6 +350,15 @@ export function createArtifactService(options: {
         );
       }
       const providedMarkdown = isMarkdown ? text : companion;
+      const uploadedImages = input.images ?? [];
+      // Rendered Markdown shows an image's alt text and never loads it.
+      if (isMarkdown && uploadedImages.length > 0) {
+        throw new ServiceError("INVALID_INPUT", "Images can only be sent with an HTML upload.");
+      }
+      const images = checkImages(uploadedImages, {
+        maxImages,
+        maxTotalBytes: maxImageBytesTotal,
+      });
 
       // An explicit target is checked before anything is written, so a wrong
       // id is refused rather than turned into a new artifact.
@@ -366,6 +397,7 @@ export function createArtifactService(options: {
           content,
           ...(providedMarkdown === null ? {} : { providedMarkdown }),
           entrySchema,
+          images,
           createdBy: input.createdBy,
         });
         if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
@@ -380,6 +412,7 @@ export function createArtifactService(options: {
         content,
         ...(providedMarkdown === null ? {} : { providedMarkdown }),
         entrySchema,
+        images,
         createdBy: input.createdBy,
       });
       publish({ type: "artifact.created", id: artifact.id });
@@ -560,6 +593,20 @@ export function createArtifactService(options: {
       const version = requireVersion(store, id, versionId ?? artifact.currentVersionId);
       const content = await readSource(store, version.id);
       return { artifact: summary(artifact), version: toVersionSummary(version), content };
+    },
+
+    async image(id, versionId, name) {
+      requireVersion(store, id, versionId);
+      try {
+        const result = await store.readVersionImage(versionId, name);
+        if (!result) throw new ServiceError("NOT_FOUND", "No such image in this version.");
+        return { contentType: result.image.contentType, content: result.content };
+      } catch (cause) {
+        if (cause instanceof ContentMissingError) {
+          throw new ServiceError("CONTENT_MISSING", "This image is not available.");
+        }
+        throw cause;
+      }
     },
   };
 }

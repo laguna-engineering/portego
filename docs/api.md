@@ -108,7 +108,7 @@ user or 200 in total.
 ### Upload
 
 `multipart/form-data` with a `file` part and optional `title`,
-`description`, and `artifactId` parts.
+`description`, `artifactId`, and `image` parts.
 
 - The creator is taken from the session and reported as
   `creator: { id, name, email }`. A `createdBy` field in the form is ignored.
@@ -129,6 +129,15 @@ user or 200 in total.
   most recently updated match. An `artifactId` naming no artifact is refused
   with `NOT_FOUND`. A version upload replaces the artifact's description
   when one is given and keeps it otherwise; the title never changes.
+- Each `image` part is a file the page loads as `images/<name>`, where the
+  part's filename is the name. Names are 1 to 100 letters, digits, `.`, `-`,
+  or `_`, starting with a letter or digit, and unique in the upload. Each
+  image is a PNG, JPEG, GIF, WebP, or AVIF file of at most 10 MiB, detected
+  from its bytes, and its extension has to match. One upload carries at most
+  `ARTIFACT_MAX_IMAGES` images (20) and `ARTIFACT_IMAGES_MAX_BYTES` in total
+  (50 MiB). Images come only with an HTML upload. One image that fails a check
+  refuses the whole upload. The images belong to the new version only: a later
+  version sends its own.
 
 The response is `201 { artifact, newArtifact }`: `artifact` is the metadata
 and `newArtifact` is `false` when the upload added a version to an existing
@@ -246,8 +255,8 @@ Every failure has the same shape:
 | `FORBIDDEN` | 403 | The action is not this caller's to take. |
 | `INVALID_INPUT` | 400 | A field is missing, malformed, or too long. |
 | `TITLE_REQUIRED` | 400 | No title given and none in the document. |
-| `UNSUPPORTED_CONTENT` | 400 | Not valid UTF-8, or not an HTML document. |
-| `FILE_TOO_LARGE` | 413 | Over `ARTIFACT_MAX_BYTES`. |
+| `UNSUPPORTED_CONTENT` | 400 | Not valid UTF-8, not an HTML document, or an image that is not PNG, JPEG, GIF, WebP, or AVIF. |
+| `FILE_TOO_LARGE` | 413 | Over `ARTIFACT_MAX_BYTES`, an image over 10 MiB, or images over `ARTIFACT_IMAGES_MAX_BYTES`. |
 | `INVALID_CURSOR` | 400 | The pagination cursor is not one we issued. |
 | `RATE_LIMITED` | 429 | Too many entry changes in the last minute. |
 | `CONTENT_MISSING` | 500 | The metadata exists but its bytes do not. |

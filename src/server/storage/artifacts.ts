@@ -1,5 +1,12 @@
 import type { Database } from "bun:sqlite";
-import { readContent, removeContent, writeContent } from "./content.ts";
+import {
+  readContent,
+  readImage,
+  removeArtifactImages,
+  removeContent,
+  writeContent,
+  writeImage,
+} from "./content.ts";
 
 /**
  * Workflow state. `solved` means the question the artifact was shared for has
@@ -51,6 +58,23 @@ export type ArtifactVersion = {
   createdAt: Date;
 };
 
+/** An image already checked by the caller: its type comes from its bytes. */
+export type VersionImageInput = {
+  name: string;
+  bytes: Uint8Array;
+  extension: string;
+  contentType: string;
+};
+
+export type VersionImage = {
+  versionId: string;
+  name: string;
+  storageKey: string;
+  sha256: string;
+  contentType: string;
+  byteSize: number;
+};
+
 export type CreateArtifactInput = {
   title: string;
   description?: string | null;
@@ -60,6 +84,7 @@ export type CreateArtifactInput = {
   providedMarkdown?: string;
   /** The entry schema this version declares, already checked. */
   entrySchema?: string | null;
+  images?: VersionImageInput[];
   /** Taken from the session by the caller. Never from the request body. */
   createdBy: string;
 };
@@ -74,6 +99,7 @@ export type AddVersionInput = {
   providedMarkdown?: string;
   /** The entry schema this version declares, already checked. */
   entrySchema?: string | null;
+  images?: VersionImageInput[];
   createdBy: string;
 };
 
@@ -272,6 +298,13 @@ export type ArtifactStore = {
   ) => Promise<{ version: ArtifactVersion; content: Uint8Array } | null>;
   /** Every storage key the database knows about, in key order. */
   storageKeys: () => string[];
+  /** Null when the version has no image by that name. Throws when its bytes are gone. */
+  readVersionImage: (
+    versionId: string,
+    name: string,
+  ) => Promise<{ image: VersionImage; content: Uint8Array } | null>;
+  /** Every image storage key the database knows about, in key order. */
+  imageStorageKeys: () => string[];
   /**
    * Folds one artifact into another: every version, comment, and entry of
    * `fromId` moves under `intoId`, versions are renumbered by upload time, and the
@@ -307,6 +340,36 @@ export function createArtifactStore(options: {
        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
+  const insertImage = () =>
+    database.query(
+      `insert into artifactImages (versionId, name, storageKey, sha256, contentType, byteSize)
+       values (?, ?, ?, ?, ?, ?)`,
+    );
+
+  // Images are stored under the artifact they were uploaded to. A merge moves
+  // the version rows and leaves the files where they are.
+  const writeImages = async (artifactId: string, images: VersionImageInput[] = []) => {
+    const stored = [];
+    for (const image of images) {
+      const file = await writeImage(dataDir, artifactId, image.bytes, image.extension);
+      stored.push({ ...file, name: image.name, contentType: image.contentType });
+    }
+    return stored;
+  };
+
+  const insertImages = (versionId: string, images: Awaited<ReturnType<typeof writeImages>>) => {
+    for (const image of images) {
+      insertImage().run(
+        versionId,
+        image.name,
+        image.storageKey,
+        image.sha256,
+        image.contentType,
+        image.byteSize,
+      );
+    }
+  };
+
   const insertProvidedMarkdown = () =>
     database.query(
       `insert into artifactMarkdown
@@ -326,6 +389,7 @@ export function createArtifactStore(options: {
       const now = Date.now();
 
       try {
+        const images = await writeImages(id, input.images);
         // Version 1 shares the artifact's id, which is what its storage key
         // was derived from.
         database.transaction(() => {
@@ -360,6 +424,7 @@ export function createArtifactStore(options: {
             now,
             input.entrySchema ?? null,
           );
+          insertImages(id, images);
           if (input.providedMarkdown !== undefined) {
             insertProvidedMarkdown().run(
               id,
@@ -371,9 +436,10 @@ export function createArtifactStore(options: {
           }
         })();
       } catch (cause) {
-        // Nothing references the file yet, so removing it here keeps the
+        // Nothing references the files yet, so removing them here keeps the
         // failure from leaving an orphan behind.
         await removeContent(dataDir, stored.storageKey).catch(() => {});
+        await removeArtifactImages(dataDir, id).catch(() => {});
         throw cause;
       }
 
@@ -388,7 +454,10 @@ export function createArtifactStore(options: {
       const stored = await writeContent(dataDir, id, input.content);
       const now = Date.now();
 
+      // An image file another version shares is never removed on failure, so
+      // one that nothing ends up referencing is left for the reconcile report.
       try {
+        const images = await writeImages(input.artifactId, input.images);
         // The number is read and written in one transaction, so two uploads
         // arriving together cannot both become the same version.
         const changed = database.transaction(() => {
@@ -408,6 +477,7 @@ export function createArtifactStore(options: {
             now,
             input.entrySchema ?? null,
           );
+          insertImages(id, images);
           if (input.providedMarkdown !== undefined) {
             insertProvidedMarkdown().run(
               id,
@@ -654,6 +724,28 @@ export function createArtifactStore(options: {
     storageKeys() {
       const rows = database
         .query("select storageKey from artifactVersions order by storageKey")
+        .all() as { storageKey: string }[];
+      return rows.map((row) => row.storageKey);
+    },
+
+    async readVersionImage(versionId, name) {
+      const row = database
+        .query(
+          `select artifactImages.*, artifactVersions.artifactId from artifactImages
+           join artifactVersions on artifactVersions.id = artifactImages.versionId
+           where artifactImages.versionId = ? and artifactImages.name = ?`,
+        )
+        .get(versionId, name) as (VersionImage & { artifactId: string }) | null;
+      if (!row) return null;
+      const { artifactId, ...image } = row;
+      const content = await readImage(dataDir, image.storageKey);
+      if (!content) throw new ContentMissingError(artifactId);
+      return { image, content };
+    },
+
+    imageStorageKeys() {
+      const rows = database
+        .query("select distinct storageKey from artifactImages order by storageKey")
         .all() as { storageKey: string }[];
       return rows.map((row) => row.storageKey);
     },

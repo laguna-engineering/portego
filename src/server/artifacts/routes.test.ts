@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { TEST_BASE_URL } from "../auth/testing.ts";
+import { pngBytes } from "../storage/testing.ts";
 import { createTestServer, htmlFile, type TestServer } from "../testing.ts";
 import { mintUploadTicket, UPLOAD_TICKET_TTL_SECONDS } from "./tickets.ts";
 
@@ -601,5 +602,90 @@ describe("versions", () => {
 
     const foreign = await post({ body: "nowhere", versionId: "not-a-version" });
     expect(foreign.status).toBe(404);
+  });
+});
+
+describe("images", () => {
+  function pngFile(name: string, seed = ""): File {
+    return new File([pngBytes(seed)], name, { type: "image/png" });
+  }
+
+  function sendWithImages(images: (File | string)[], fields: { contentType?: string } = {}) {
+    const form = new FormData();
+    form.set(
+      "file",
+      htmlFile('<!doctype html><title>Chart</title><img src="images/chart.png">', "chart.html"),
+    );
+    if (fields.contentType !== undefined) form.set("contentType", fields.contentType);
+    for (const image of images) form.append("image", image);
+    return server.app.request("/api/artifacts", {
+      method: "POST",
+      headers: { cookie, origin: TEST_BASE_URL },
+      body: form,
+    });
+  }
+
+  async function previewOf(id: string): Promise<string> {
+    const res = await server.app.request(`/api/artifacts/${id}/preview`, {
+      method: "POST",
+      headers: { cookie, origin: TEST_BASE_URL },
+    });
+    return ((await res.json()) as { url: string }).url;
+  }
+
+  test("stores each image with the version, under the name the HTML uses", async () => {
+    const res = await sendWithImages([pngFile("chart.png", "a"), pngFile("logo.png", "b")]);
+    expect(res.status).toBe(201);
+    const { artifact } = (await res.json()) as { artifact: { id: string } };
+
+    const url = await previewOf(artifact.id);
+    const logo = await server.app.request(new URL("images/logo.png", url).href);
+    expect(new Uint8Array(await logo.arrayBuffer())).toEqual(pngBytes("b"));
+  });
+
+  test("accepts images through an upload ticket, the path the local tool uses", async () => {
+    const session = await server.auth.api.getSession({ headers: new Headers({ cookie }) });
+    const { ticket } = mintUploadTicket(server.signingSecret, session?.user.id ?? "");
+    const form = new FormData();
+    form.set("file", htmlFile("<h1>From a file</h1>", "page.html"));
+    form.append("image", pngFile("chart.png"));
+    const res = await server.app.request("/api/uploads", {
+      method: "POST",
+      headers: { authorization: `Bearer ${ticket}` },
+      body: form,
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("refuses an SVG image and stores nothing, since SVG can carry script", async () => {
+    const svg = new File(['<svg xmlns="http://www.w3.org/2000/svg"/>'], "chart.svg");
+    const res = await sendWithImages([pngFile("logo.png"), svg]);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "UNSUPPORTED_CONTENT" } });
+    expect(server.artifacts.list().items).toEqual([]);
+  });
+
+  test("refuses images with a Markdown upload, whose rendering never loads them", async () => {
+    const form = new FormData();
+    form.set("file", new File(["# Chart"], "chart.md"));
+    form.set("contentType", "markdown");
+    form.append("image", pngFile("chart.png"));
+    const res = await server.app.request("/api/artifacts", {
+      method: "POST",
+      headers: { cookie, origin: TEST_BASE_URL },
+      body: form,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("refuses an image field that is text instead of a file", async () => {
+    const res = await sendWithImages(["not a file"]);
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "INVALID_INPUT" } });
+  });
+
+  test("refuses an image whose name would need a path", async () => {
+    const res = await sendWithImages([pngFile("../chart.png")]);
+    expect(res.status).toBe(400);
   });
 });
