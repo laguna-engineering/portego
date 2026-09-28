@@ -113,7 +113,9 @@ user or 200 in total.
 - The creator is taken from the session and reported as
   `creator: { id, name, email }`. A `createdBy` field in the form is ignored.
 - The MIME type and the filename are hints. The document itself has to be
-  valid UTF-8 and has to look like HTML.
+  valid UTF-8 and has to look like HTML: it contains `<!doctype html>` or an
+  `<html>` tag, or it starts with a tag or a comment. A fragment such as
+  `<title>…</title><style>…</style><main>…</main>` is stored as sent.
 - 5 MiB at most, configurable with `ARTIFACT_MAX_BYTES`. The server also
   refuses a larger request body before reading it.
 - The title comes from the form. Without one, it comes from the document's

@@ -65,9 +65,16 @@ describe("looksLikeHtml", () => {
     expect(looksLikeHtml('<html lang="en"></html>')).toBe(true);
   });
 
+  test("accepts a fragment, which browsers render without the document skeleton", () => {
+    expect(looksLikeHtml("<title>Chart</title>\n<style>p{}</style>\n<p>hi</p>")).toBe(true);
+    expect(looksLikeHtml("﻿\n  <!-- generated -->\n<div>hi</div>")).toBe(true);
+  });
+
   test("refuses text that only claims to be HTML", () => {
     expect(looksLikeHtml("id,name\n1,a")).toBe(false);
     expect(looksLikeHtml("{}")).toBe(false);
+    expect(looksLikeHtml("plain notes, no markup")).toBe(false);
+    expect(looksLikeHtml("<3 notes that mention <b>bold</b> later")).toBe(false);
   });
 });
 

@@ -18,10 +18,11 @@ export function decodeUtf8(bytes: Uint8Array): string {
 
 /**
  * The uploaded MIME type and filename are hints a client chooses, so the
- * document itself has to look like HTML.
+ * document itself has to look like HTML. A fragment that starts with a tag
+ * counts: browsers supply the missing `<html>`, `<head>`, and `<body>`.
  */
 export function looksLikeHtml(text: string): boolean {
-  return /<!doctype\s+html|<html[\s>]/i.test(text);
+  return /<!doctype\s+html|<html[\s>]/i.test(text) || /^﻿?\s*<(!--|[a-z])/i.test(text);
 }
 
 const ENTITIES: Record<string, string> = {
