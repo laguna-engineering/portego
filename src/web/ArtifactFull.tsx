@@ -132,12 +132,16 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   const [entries, setEntries] = useState<Entry[]>([]);
   /** The entry the artifact just recorded for the reader, shown for a moment. */
   const [recorded, setRecorded] = useState<string | null>(null);
-  /** A version or comment someone else just added, shown under the masthead for a moment. */
+  /** A version or comment added from somewhere other than this page, shown for a moment. */
   const [notice, setNotice] = useState<{ message: string; commentId?: string } | null>(null);
   // What the reader has already seen. Null until the first load, which
   // announces nothing.
   const newestVersion = useRef<number | null>(null);
   const knownComments = useRef<Set<string> | null>(null);
+  // Comments posted from this page. While a post is in flight its id is not
+  // known yet, and the stream may bring the comment back before the response.
+  const postedHere = useRef(new Set<string>());
+  const postsInFlight = useRef(0);
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   /** The version being viewed. Null means the current version. */
   const [viewedVersionId, setViewedVersionId] = useState<string | null>(null);
@@ -227,8 +231,13 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       const known = knownComments.current;
       knownComments.current = new Set(list.map((comment) => comment.id));
       if (!known) return;
+      // The reader's agent writes as the reader, so authorship alone cannot
+      // tell a comment made here from one made elsewhere.
       const fresh = list.filter(
-        (comment) => !known.has(comment.id) && comment.author.id !== currentUserId,
+        (comment) =>
+          !known.has(comment.id) &&
+          !postedHere.current.has(comment.id) &&
+          !(postsInFlight.current > 0 && comment.author.id === currentUserId),
       );
       const [first] = fresh;
       if (!first) return;
@@ -240,6 +249,18 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
     },
     [currentUserId],
   );
+
+  const handlePosting = useCallback((posting: Promise<Comment>) => {
+    postsInFlight.current += 1;
+    posting
+      .then(
+        (comment) => postedHere.current.add(comment.id),
+        () => {},
+      )
+      .finally(() => {
+        postsInFlight.current -= 1;
+      });
+  }, []);
 
   const handleBridgeMessage = useCallback(
     (message: BridgeMessage) => {
@@ -332,7 +353,8 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       const newest = found[0];
       if (newest) {
         const seen = newestVersion.current;
-        if (seen !== null && newest.number > seen && newest.creator.id !== currentUserId) {
+        // Nothing on this page uploads, so every new version came from elsewhere.
+        if (seen !== null && newest.number > seen) {
           setNotice({ message: `${newest.creator.name} uploaded version ${newest.number}` });
         }
         newestVersion.current = Math.max(seen ?? 0, newest.number);
@@ -341,7 +363,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       // The version list is supplementary; a failure here leaves the artifact
       // itself, and whatever version was being viewed, on screen.
     }
-  }, [id, currentUserId]);
+  }, [id]);
 
   useEffect(() => {
     void load();
@@ -619,6 +641,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
             onClearAnchor={() => setSelection(null)}
             onClose={() => setPanelOpen(false)}
             onComments={handleComments}
+            onPosting={handlePosting}
             onEntries={setEntries}
             onFocusComment={revealComment}
             focusedId={focusedId}

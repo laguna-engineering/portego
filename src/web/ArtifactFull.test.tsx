@@ -3,7 +3,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ArtifactFull } from "./ArtifactFull.tsx";
 import type { ArtifactVersion, Comment } from "./api.ts";
-import { artifact, restoreFetch, StubEventSource, stubFetch } from "./testing.ts";
+import { artifact, restoreFetch, StubEventSource, stubFetch, stubFetchWith } from "./testing.ts";
 
 afterEach(restoreFetch);
 beforeEach(() => StubEventSource.install());
@@ -780,6 +780,7 @@ describe("live updates", () => {
 
 describe("change notices", () => {
   const someoneElse = { id: "user-2", name: "B Person", email: "b@acme.example" };
+  const me = { id: "user-1", name: "A Person", email: "person@acme.example" };
 
   function comment(overrides: Partial<Comment> = {}): Comment {
     return {
@@ -795,17 +796,50 @@ describe("change notices", () => {
     };
   }
 
-  /** Answers from `lists` at request time, so a test can change them before announcing. */
-  function stubLists(lists: { versions: ArtifactVersion[]; comments: Comment[] }) {
-    stubFetch((path) => {
+  /**
+   * Answers from `lists` at request time, so a test can change them before
+   * announcing. A posted comment joins the list at once; with `holdPosts` its
+   * response waits for `release`.
+   */
+  function stubLists(
+    lists: { versions: ArtifactVersion[]; comments: Comment[] },
+    options: { holdPosts?: boolean } = {},
+  ) {
+    const held: (() => void)[] = [];
+    const json = (body: unknown, status = 200) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
+    stubFetchWith((path, init) => {
       const base = path.split("?")[0] ?? path;
-      if (base.endsWith("/versions")) return { body: { versions: lists.versions } };
-      if (base.endsWith("/comments")) return { body: { comments: lists.comments } };
-      if (base.endsWith("/artifact-1")) {
-        return { body: { artifact: artifact({ currentVersionId: lists.versions[0]?.id }) } };
+      if (base.endsWith("/comments") && init?.method === "POST") {
+        const { body } = JSON.parse(String(init.body)) as { body: string };
+        const created = comment({ id: `posted-${lists.comments.length}`, body, author: me });
+        lists.comments = [...lists.comments, created];
+        if (!options.holdPosts) return Promise.resolve(json({ comment: created }, 201));
+        return new Promise((resolve) => held.push(() => resolve(json({ comment: created }, 201))));
       }
-      return answer(path);
+      if (base.endsWith("/versions")) return Promise.resolve(json({ versions: lists.versions }));
+      if (base.endsWith("/comments")) return Promise.resolve(json({ comments: lists.comments }));
+      if (base.endsWith("/artifact-1")) {
+        return Promise.resolve(
+          json({ artifact: artifact({ currentVersionId: lists.versions[0]?.id }) }),
+        );
+      }
+      return Promise.resolve(json(answer(path).body));
     });
+    return {
+      release: () => {
+        for (const respond of held.splice(0)) respond();
+      },
+    };
+  }
+
+  async function postComment(body: string) {
+    await userEvent.click(await screen.findByRole("button", { name: "Versions & comments" }));
+    await userEvent.type(screen.getByLabelText("Add a comment"), body);
+    await userEvent.click(screen.getByRole("button", { name: "Comment" }));
   }
 
   async function renderWithVersions() {
@@ -826,16 +860,15 @@ describe("change notices", () => {
     expect(await screen.findByText("B Person uploaded version 2")).toBeDefined();
   });
 
-  test("does not tell the reader about a version they uploaded themselves", async () => {
-    const lists = { versions: [version()], comments: [] };
+  test("tells the reader about a version uploaded under their own account, e.g. by their agent", async () => {
+    const lists = { versions: [version({ creator: me })], comments: [] };
     stubLists(lists);
     await renderWithVersions();
 
-    lists.versions = [version({ id: "v2", number: 2 }), ...lists.versions];
+    lists.versions = [version({ id: "v2", number: 2, creator: me }), ...lists.versions];
     await announce({ type: "artifact.changed", id: "artifact-1" });
 
-    await screen.findByRole("button", { name: "Version 2, current" });
-    expect(screen.queryByText(/uploaded version/)).toBeNull();
+    expect(await screen.findByText("A Person uploaded version 2")).toBeDefined();
   });
 
   test("clicking a new version's notice takes a reader on an older version to the new one", async () => {
@@ -877,17 +910,45 @@ describe("change notices", () => {
     expect(await screen.findByText("B Person commented")).toBeDefined();
   });
 
-  test("does not tell the reader about their own comment", async () => {
+  test("tells the reader about a comment made under their own account somewhere else", async () => {
     const lists = { versions: [version()], comments: [comment()] };
     stubLists(lists);
     renderFull();
     await screen.findByText("Looks right");
 
-    const me = { id: "user-1", name: "A Person", email: "person@acme.example" };
     lists.comments = [...lists.comments, comment({ id: "comment-2", body: "Mine", author: me })];
     await announce({ type: "comment.changed", artifactId: "artifact-1" });
 
-    await screen.findByText("Mine");
+    expect(await screen.findByText("A Person commented")).toBeDefined();
+  });
+
+  test("does not tell the reader about a comment they posted on this page", async () => {
+    const lists = { versions: [version()], comments: [comment()] };
+    stubLists(lists);
+    renderFull();
+    await screen.findByText("Looks right");
+
+    await postComment("Posted here");
+    await screen.findByText("Posted here");
+    await announce({ type: "comment.changed", artifactId: "artifact-1" });
+    await act(async () => {});
+
+    expect(screen.queryByText(/commented/)).toBeNull();
+  });
+
+  test("does not tell the reader about their comment when the stream brings it back before the post answers", async () => {
+    const lists = { versions: [version()], comments: [comment()] };
+    const posts = stubLists(lists, { holdPosts: true });
+    renderFull();
+    await screen.findByText("Looks right");
+
+    await postComment("Posted here");
+    await announce({ type: "comment.changed", artifactId: "artifact-1" });
+    // The composer still holds the draft until the post answers.
+    await screen.findByText("Posted here", { selector: ".comment-body" });
+    await act(async () => posts.release());
+    await act(async () => {});
+
     expect(screen.queryByText(/commented/)).toBeNull();
   });
 

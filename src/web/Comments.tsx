@@ -24,6 +24,8 @@ export type CommentsProps = {
   heading?: boolean;
   /** Reports the current list whenever it changes, e.g. to drive highlights. */
   onComments?: (comments: Comment[]) => void;
+  /** Called as the reader posts a comment or a reply, with the request. */
+  onPosting?: (posting: Promise<Comment>) => void;
   /** The version a new root comment is written on. Omitted writes to the current version. */
   versionId?: string | null;
   /** The version being viewed, to badge a comment written on any other version. */
@@ -69,6 +71,7 @@ export function Comments({
   focusedId = null,
   heading = true,
   onComments,
+  onPosting,
   versionId = null,
   viewedVersionNumber = null,
 }: CommentsProps) {
@@ -133,7 +136,9 @@ export function Comments({
     setSending(true);
     setProblem(null);
     try {
-      const created = await addComment(artifactId, draft, { anchor, versionId });
+      const posting = addComment(artifactId, draft, { anchor, versionId });
+      onPosting?.(posting);
+      const created = await posting;
       // The announcement of this comment may have arrived first and brought it
       // back already. Appending it a second time would show it twice.
       setComments((current) => {
@@ -182,7 +187,9 @@ export function Comments({
     setReplySending(true);
     setReplyProblem(null);
     try {
-      const created = await addComment(artifactId, replyDraft, { parentId: rootId });
+      const posting = addComment(artifactId, replyDraft, { parentId: rootId });
+      onPosting?.(posting);
+      const created = await posting;
       // Same dedupe as the main composer: the live reload may already have it.
       setComments((current) => {
         const listed = current ?? [];
