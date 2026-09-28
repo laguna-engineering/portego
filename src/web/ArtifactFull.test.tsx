@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ArtifactFull } from "./ArtifactFull.tsx";
-import type { ArtifactVersion } from "./api.ts";
+import type { ArtifactVersion, Comment } from "./api.ts";
 import { artifact, restoreFetch, StubEventSource, stubFetch } from "./testing.ts";
 
 afterEach(restoreFetch);
@@ -775,6 +775,156 @@ describe("live updates", () => {
     await announce({ type: "artifact.changed", id: "artifact-2" });
 
     await waitFor(() => expect(calls).toBe(before));
+  });
+});
+
+describe("change notices", () => {
+  const someoneElse = { id: "user-2", name: "B Person", email: "b@acme.example" };
+
+  function comment(overrides: Partial<Comment> = {}): Comment {
+    return {
+      id: "comment-1",
+      body: "Looks right",
+      createdAt: new Date().toISOString(),
+      author: someoneElse,
+      anchor: null,
+      parentId: null,
+      versionId: "artifact-1",
+      versionNumber: 1,
+      ...overrides,
+    };
+  }
+
+  /** Answers from `lists` at request time, so a test can change them before announcing. */
+  function stubLists(lists: { versions: ArtifactVersion[]; comments: Comment[] }) {
+    stubFetch((path) => {
+      const base = path.split("?")[0] ?? path;
+      if (base.endsWith("/versions")) return { body: { versions: lists.versions } };
+      if (base.endsWith("/comments")) return { body: { comments: lists.comments } };
+      if (base.endsWith("/artifact-1")) {
+        return { body: { artifact: artifact({ currentVersionId: lists.versions[0]?.id }) } };
+      }
+      return answer(path);
+    });
+  }
+
+  async function renderWithVersions() {
+    renderFull();
+    await userEvent.click(await screen.findByRole("button", { name: "Versions & comments" }));
+    await screen.findByRole("button", { name: "Version 1, current" });
+  }
+
+  test("tells the reader who uploaded a new version, but not about the versions already there", async () => {
+    const lists = { versions: [version({ creator: someoneElse })], comments: [] };
+    stubLists(lists);
+    await renderWithVersions();
+    expect(screen.queryByText(/uploaded version/)).toBeNull();
+
+    lists.versions = [version({ id: "v2", number: 2, creator: someoneElse }), ...lists.versions];
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+
+    expect(await screen.findByText("B Person uploaded version 2")).toBeDefined();
+  });
+
+  test("does not tell the reader about a version they uploaded themselves", async () => {
+    const lists = { versions: [version()], comments: [] };
+    stubLists(lists);
+    await renderWithVersions();
+
+    lists.versions = [version({ id: "v2", number: 2 }), ...lists.versions];
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+
+    await screen.findByRole("button", { name: "Version 2, current" });
+    expect(screen.queryByText(/uploaded version/)).toBeNull();
+  });
+
+  test("clicking a new version's notice takes a reader on an older version to the new one", async () => {
+    const lists = {
+      versions: [version({ id: "v1", number: 1, creator: someoneElse })],
+      comments: [],
+    };
+    stubLists(lists);
+    await renderWithVersions();
+    await userEvent.click(screen.getByRole("button", { name: "Version 1, current" }));
+    await userEvent.click(screen.getByRole("button", { name: "Close comments" }));
+
+    lists.versions = [version({ id: "v2", number: 2, creator: someoneElse }), ...lists.versions];
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+    await userEvent.click(
+      await screen.findByRole("button", { name: "B Person uploaded version 2" }),
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Versions & comments" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    const newest = screen.getByRole("button", { name: "Version 2, current" });
+    expect(newest.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByText("B Person uploaded version 2")).toBeNull();
+  });
+
+  test("tells the reader who commented, but not about the comments already there", async () => {
+    const lists = { versions: [version()], comments: [comment()] };
+    stubLists(lists);
+    renderFull();
+    await screen.findByText("Looks right");
+    // The page hears about the list in an effect after it renders.
+    await act(async () => {});
+    expect(screen.queryByText(/commented/)).toBeNull();
+
+    lists.comments = [...lists.comments, comment({ id: "comment-2", body: "One more thing" })];
+    await announce({ type: "comment.changed", artifactId: "artifact-1" });
+
+    expect(await screen.findByText("B Person commented")).toBeDefined();
+  });
+
+  test("does not tell the reader about their own comment", async () => {
+    const lists = { versions: [version()], comments: [comment()] };
+    stubLists(lists);
+    renderFull();
+    await screen.findByText("Looks right");
+
+    const me = { id: "user-1", name: "A Person", email: "person@acme.example" };
+    lists.comments = [...lists.comments, comment({ id: "comment-2", body: "Mine", author: me })];
+    await announce({ type: "comment.changed", artifactId: "artifact-1" });
+
+    await screen.findByText("Mine");
+    expect(screen.queryByText(/commented/)).toBeNull();
+  });
+
+  test("clicking a comment's notice opens the panel on that comment and reveals it in the artifact", async () => {
+    const lists = { versions: [version()], comments: [comment()] };
+    stubLists(lists);
+    renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+    await screen.findByText("Looks right");
+
+    lists.comments = [...lists.comments, comment({ id: "comment-2", body: "One more thing" })];
+    await announce({ type: "comment.changed", artifactId: "artifact-1" });
+    await userEvent.click(await screen.findByRole("button", { name: "B Person commented" }));
+
+    expect(
+      screen.getByRole("button", { name: "Versions & comments" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(document.getElementById("comment-comment-2")?.className).toContain("focused");
+    expect(sent).toContainEqual({ portego: 1, type: "reveal", id: "comment-2" });
+  });
+
+  test("clicking a notice for several comments goes to the first of them", async () => {
+    const lists = { versions: [version()], comments: [comment()] };
+    stubLists(lists);
+    renderFull();
+    await screen.findByText("Looks right");
+
+    lists.comments = [
+      ...lists.comments,
+      comment({ id: "comment-2", body: "One more thing" }),
+      comment({ id: "comment-3", body: "And another" }),
+    ];
+    await announce({ type: "comment.changed", artifactId: "artifact-1" });
+    await userEvent.click(await screen.findByRole("button", { name: "2 new comments" }));
+
+    expect(document.getElementById("comment-comment-2")?.className).toContain("focused");
   });
 });
 

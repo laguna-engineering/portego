@@ -155,6 +155,7 @@ export function App() {
   if (route.name === "artifact") {
     return (
       <ArtifactFull
+        key={route.id}
         id={route.id}
         email={session.user.email}
         currentUserId={session.user.id}

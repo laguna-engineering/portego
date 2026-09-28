@@ -132,6 +132,12 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   const [entries, setEntries] = useState<Entry[]>([]);
   /** The entry the artifact just recorded for the reader, shown for a moment. */
   const [recorded, setRecorded] = useState<string | null>(null);
+  /** A version or comment someone else just added, shown under the masthead for a moment. */
+  const [notice, setNotice] = useState<{ message: string; commentId?: string } | null>(null);
+  // What the reader has already seen. Null until the first load, which
+  // announces nothing.
+  const newestVersion = useRef<number | null>(null);
+  const knownComments = useRef<Set<string> | null>(null);
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   /** The version being viewed. Null means the current version. */
   const [viewedVersionId, setViewedVersionId] = useState<string | null>(null);
@@ -208,6 +214,32 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
     const timer = window.setTimeout(() => setRecorded(null), 4000);
     return () => window.clearTimeout(timer);
   }, [recorded]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const handleComments = useCallback(
+    (list: Comment[]) => {
+      setComments(list);
+      const known = knownComments.current;
+      knownComments.current = new Set(list.map((comment) => comment.id));
+      if (!known) return;
+      const fresh = list.filter(
+        (comment) => !known.has(comment.id) && comment.author.id !== currentUserId,
+      );
+      const [first] = fresh;
+      if (!first) return;
+      setNotice({
+        message:
+          fresh.length > 1 ? `${fresh.length} new comments` : `${first.author.name} commented`,
+        commentId: first.id,
+      });
+    },
+    [currentUserId],
+  );
 
   const handleBridgeMessage = useCallback(
     (message: BridgeMessage) => {
@@ -296,11 +328,20 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       const found = await fetchVersions(id);
       if (attempt !== versionsRequest.current) return;
       setVersions(found);
+      // The list comes highest first.
+      const newest = found[0];
+      if (newest) {
+        const seen = newestVersion.current;
+        if (seen !== null && newest.number > seen && newest.creator.id !== currentUserId) {
+          setNotice({ message: `${newest.creator.name} uploaded version ${newest.number}` });
+        }
+        newestVersion.current = Math.max(seen ?? 0, newest.number);
+      }
     } catch {
       // The version list is supplementary; a failure here leaves the artifact
       // itself, and whatever version was being viewed, on screen.
     }
-  }, [id]);
+  }, [id, currentUserId]);
 
   useEffect(() => {
     void load();
@@ -540,6 +581,20 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
         onSignOut={onSignOut}
         trailing={commentsToggle}
         menu={menu}
+        notice={
+          notice
+            ? {
+                message: notice.message,
+                onSelect: () => {
+                  setNotice(null);
+                  setPanelOpen(true);
+                  if (notice.commentId) revealComment(notice.commentId);
+                  // A new version is the current one.
+                  else setViewedVersionId(null);
+                },
+              }
+            : null
+        }
       >
         {header}
       </Masthead>
@@ -563,7 +618,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
             anchor={selection}
             onClearAnchor={() => setSelection(null)}
             onClose={() => setPanelOpen(false)}
-            onComments={setComments}
+            onComments={handleComments}
             onEntries={setEntries}
             onFocusComment={revealComment}
             focusedId={focusedId}

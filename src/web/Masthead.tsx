@@ -12,9 +12,19 @@ export type MastheadProps = {
   trailing?: ReactNode;
   /** The page's rows in the phone menu, above the account. A row calls `close` to dismiss the menu. */
   menu?: (close: () => void) => ReactNode;
+  /** A short message shown just below the masthead, e.g. a change someone else made. */
+  notice?: { message: string; onSelect: () => void } | null;
 };
 
-export function Masthead({ email, onHome, onSignOut, children, trailing, menu }: MastheadProps) {
+export function Masthead({
+  email,
+  onHome,
+  onSignOut,
+  children,
+  trailing,
+  menu,
+  notice,
+}: MastheadProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -74,6 +84,13 @@ export function Masthead({ email, onHome, onSignOut, children, trailing, menu }:
           </button>
         </div>
       </div>
+      {notice ? (
+        <div className="masthead-notice" role="status">
+          <button type="button" onClick={notice.onSelect}>
+            {notice.message}
+          </button>
+        </div>
+      ) : null}
     </header>
   );
 }

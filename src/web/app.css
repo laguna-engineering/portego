@@ -1524,3 +1524,17 @@ button.link {
   font-size: 0.85rem;
   z-index: 5;
 }
+
+.masthead-notice {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 2rem);
+}
+
+.masthead-notice button {
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
