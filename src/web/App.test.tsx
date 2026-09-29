@@ -171,6 +171,65 @@ describe("artifact", () => {
     expect(document.title).toBe("Sales chart");
   });
 
+  test("opens the panel on the version a link points at, and drops it from the address", async () => {
+    window.history.replaceState(null, "", "/a/artifact-1?version=v1");
+    stubFetch((path) =>
+      path === "/api/artifacts/artifact-1/versions"
+        ? {
+            body: {
+              versions: [
+                {
+                  id: "v1",
+                  number: 1,
+                  originalFilename: "chart.html",
+                  sha256: "a".repeat(64),
+                  byteSize: 2048,
+                  creator: { id: "user-1", name: "A Person", email: "person@acme.example" },
+                  createdAt: new Date().toISOString(),
+                  inApp: false,
+                },
+              ],
+            },
+          }
+        : signedIn(path),
+    );
+    render(<App />);
+
+    const row = await screen.findByRole("button", { name: /^Version 1/ });
+    expect(row.getAttribute("aria-pressed")).toBe("true");
+    expect(window.location.pathname + window.location.search).toBe("/a/artifact-1");
+  });
+
+  test("opens the panel on the comment a link points at, and drops it from the address", async () => {
+    window.history.replaceState(null, "", "/a/artifact-1?comment=comment-1");
+    stubFetch((path) =>
+      path === "/api/artifacts/artifact-1/comments"
+        ? {
+            body: {
+              comments: [
+                {
+                  id: "comment-1",
+                  body: "See this",
+                  createdAt: new Date().toISOString(),
+                  author: { id: "user-2", name: "Someone", email: "s@x.test" },
+                  anchor: null,
+                  parentId: null,
+                  versionId: "artifact-1",
+                  versionNumber: 1,
+                  inApp: true,
+                },
+              ],
+            },
+          }
+        : signedIn(path),
+    );
+    render(<App />);
+
+    await screen.findByText("See this");
+    expect(document.getElementById("comment-comment-1")?.className).toContain("focused");
+    expect(window.location.pathname + window.location.search).toBe("/a/artifact-1");
+  });
+
   test("says so when the artifact cannot be loaded", async () => {
     window.history.replaceState(null, "", "/a/artifact-1");
     stubFetch((path) =>

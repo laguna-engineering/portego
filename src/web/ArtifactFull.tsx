@@ -44,7 +44,7 @@ import {
   usePreviewBridge,
 } from "./preview-bridge.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
-import { artifactPath } from "./router.ts";
+import { type ArtifactTarget, artifactPath } from "./router.ts";
 
 export type ArtifactFullProps = {
   id: string;
@@ -52,7 +52,13 @@ export type ArtifactFullProps = {
   currentUserId: string;
   onHome: () => void;
   onSignOut: () => void;
-  onOpenArtifact: (id: string) => void;
+  onOpenArtifact: (id: string, target?: ArtifactTarget) => void;
+  /** A version to open the panel on, e.g. from a notification. */
+  versionId?: string | null;
+  /** A comment to open the panel on and reveal in the artifact. */
+  commentId?: string | null;
+  /** Called once the page has acted on `versionId` or `commentId`, so the link can be dropped. */
+  onLinkShown?: () => void;
 };
 
 type HeaderAction = {
@@ -123,6 +129,9 @@ export function ArtifactFull({
   onHome,
   onSignOut,
   onOpenArtifact,
+  versionId = null,
+  commentId = null,
+  onLinkShown,
 }: ArtifactFullProps) {
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -167,6 +176,26 @@ export function ArtifactFull({
   }, [versions, viewedVersionId]);
 
   const viewedVersion = versions.find((version) => version.id === viewedId) ?? null;
+
+  /** A comment from a link, waiting to be revealed in the artifact. */
+  const [pendingReveal, setPendingReveal] = useState<string | null>(null);
+  const [frameReady, setFrameReady] = useState(false);
+
+  const linkShown = useRef(onLinkShown);
+  useEffect(() => {
+    linkShown.current = onLinkShown;
+  });
+
+  useEffect(() => {
+    if (!versionId && !commentId) return;
+    if (versionId) setViewedVersionId(versionId);
+    if (commentId) {
+      setFocusedId(commentId);
+      setPendingReveal(commentId);
+    }
+    setPanelOpen(true);
+    linkShown.current?.();
+  }, [versionId, commentId]);
 
   const highlights = useMemo(
     () =>
@@ -256,6 +285,7 @@ export function ArtifactFull({
     (message: BridgeMessage) => {
       if (message.type === "ready") {
         // The frame just loaded (or reloaded), so it knows nothing yet.
+        setFrameReady(true);
         sendToPreview(frameRef.current, { type: "mode", enabled: panelOpen });
         sendToPreview(frameRef.current, { type: "highlights", anchors: highlights });
         sendToPreview(frameRef.current, { type: "comments", comments: pageComments });
@@ -288,6 +318,15 @@ export function ArtifactFull({
   useEffect(() => {
     sendToPreview(frameRef.current, { type: "highlights", anchors: highlights });
   }, [highlights]);
+
+  // After the highlights above, so the frame knows the passage by the time it
+  // is asked to reveal it.
+  useEffect(() => {
+    if (!pendingReveal || !frameReady) return;
+    if (!comments.some((comment) => comment.id === pendingReveal)) return;
+    sendToPreview(frameRef.current, { type: "reveal", id: pendingReveal });
+    setPendingReveal(null);
+  }, [pendingReveal, frameReady, comments]);
 
   useEffect(() => {
     sendToPreview(frameRef.current, { type: "comments", comments: pageComments });

@@ -2,13 +2,14 @@ import { type ReactNode, useEffect, useState } from "react";
 import logoMark from "./assets/logo-mark.png";
 import { CloseIcon, MenuIcon } from "./Icons.tsx";
 import { NotificationBell } from "./NotificationBell.tsx";
+import type { ArtifactTarget } from "./router.ts";
 
 export type MastheadProps = {
   email: string;
   onHome: () => void;
   onSignOut: () => void;
-  /** Opens an artifact picked from the notifications. */
-  onOpenArtifact: (id: string) => void;
+  /** Opens an artifact picked from the notifications, on the version or comment it is about. */
+  onOpenArtifact: (id: string, target?: ArtifactTarget) => void;
   /** Sits between the wordmark and the account, for a page that has its own chrome. */
   children?: ReactNode;
   /** Sits just before the account block, e.g. a page's own toggle. */

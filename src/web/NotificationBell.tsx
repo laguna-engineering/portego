@@ -3,6 +3,7 @@ import { type ActivityFeed, type ActivityItem, fetchActivity, markActivityRead }
 import { BellIcon } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
+import type { ArtifactTarget } from "./router.ts";
 
 function describe(item: ActivityItem): string {
   const { actor, artifact } = item;
@@ -20,6 +21,12 @@ function describe(item: ActivityItem): string {
   }
 }
 
+function targetOf(item: ActivityItem): ArtifactTarget | undefined {
+  if (item.kind === "version.created") return { versionId: item.id };
+  if (item.kind === "comment.created") return { commentId: item.id };
+  return undefined;
+}
+
 function isAfter(item: ActivityItem, readAt: string | null): boolean {
   return readAt === null || Date.parse(item.createdAt) > Date.parse(readAt);
 }
@@ -29,7 +36,11 @@ function isAfter(item: ActivityItem, readAt: string | null): boolean {
  * reader opened the list, and opening it clears the dot everywhere the reader
  * is signed in. The list follows the change stream while the page is open.
  */
-export function NotificationBell({ onOpenArtifact }: { onOpenArtifact: (id: string) => void }) {
+export function NotificationBell({
+  onOpenArtifact,
+}: {
+  onOpenArtifact: (id: string, target?: ArtifactTarget) => void;
+}) {
   const [feed, setFeed] = useState<ActivityFeed | null>(null);
   const [open, setOpen] = useState(false);
   /** The read marker as it was when the list opened, so what was new stays marked while it is open. */
@@ -130,7 +141,7 @@ export function NotificationBell({ onOpenArtifact }: { onOpenArtifact: (id: stri
                       data-unread={isAfter(item, openedSince) || undefined}
                       onClick={() => {
                         setOpen(false);
-                        onOpenArtifact(item.artifact.id);
+                        onOpenArtifact(item.artifact.id, targetOf(item));
                       }}
                     >
                       <span>{describe(item)}</span>

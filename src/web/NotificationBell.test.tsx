@@ -3,6 +3,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ActivityFeed, ActivityItem } from "./api.ts";
 import { NotificationBell } from "./NotificationBell.tsx";
+import type { ArtifactTarget } from "./router.ts";
 import { restoreFetch, StubEventSource, stubFetchWith } from "./testing.ts";
 
 afterEach(restoreFetch);
@@ -59,7 +60,7 @@ function stubServer(feed: ActivityFeed, options: { failRead?: boolean } = {}) {
   return server;
 }
 
-function renderBell(onOpenArtifact: (id: string) => void = () => {}) {
+function renderBell(onOpenArtifact: (id: string, target?: ArtifactTarget) => void = () => {}) {
   return render(<NotificationBell onOpenArtifact={onOpenArtifact} />);
 }
 
@@ -193,16 +194,52 @@ describe("list", () => {
     expect(server.reads).toBe(0);
   });
 
-  test("opens the artifact an entry is about and closes", async () => {
+  test("opens the comment a comment entry is about, and closes", async () => {
     stubServer({ items: [item({ kind: "comment.created", reply: false })], readAt: READ });
-    const opened: string[] = [];
-    renderBell((id) => opened.push(id));
+    const opened: unknown[] = [];
+    renderBell((id, target) => opened.push([id, target]));
 
     await userEvent.click(await screen.findByRole("button", { name: "Notifications, unread" }));
     await userEvent.click(screen.getByRole("button", { name: /commented on Plan/ }));
 
-    expect(opened).toEqual(["artifact-1"]);
+    expect(opened).toEqual([["artifact-1", { commentId: "item-1" }]]);
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+  });
+
+  test("opens the version a new-version entry is about", async () => {
+    stubServer({
+      items: [item({ id: "version-3", kind: "version.created", versionNumber: 3 })],
+      readAt: READ,
+    });
+    const opened: unknown[] = [];
+    renderBell((id, target) => opened.push([id, target]));
+
+    await userEvent.click(await screen.findByRole("button", { name: "Notifications, unread" }));
+    await userEvent.click(screen.getByRole("button", { name: /uploaded version 3/ }));
+
+    expect(opened).toEqual([["artifact-1", { versionId: "version-3" }]]);
+  });
+
+  test("opens just the artifact for a new artifact or a status change", async () => {
+    stubServer({
+      items: [
+        item({ id: "a", kind: "status.changed", change: "solved" }),
+        item({ id: "b", kind: "artifact.created" }),
+      ],
+      readAt: READ,
+    });
+    const opened: unknown[] = [];
+    renderBell((id, target) => opened.push([id, target]));
+
+    await userEvent.click(await screen.findByRole("button", { name: "Notifications, unread" }));
+    await userEvent.click(screen.getByRole("button", { name: /marked Plan solved/ }));
+    await userEvent.click(bell());
+    await userEvent.click(screen.getByRole("button", { name: /uploaded Plan/ }));
+
+    expect(opened).toEqual([
+      ["artifact-1", undefined],
+      ["artifact-1", undefined],
+    ]);
   });
 
   test("closes on Escape and gives focus back to the bell", async () => {

@@ -128,7 +128,7 @@ export function App() {
     <Masthead
       email={session.user.email}
       onHome={() => navigate("/")}
-      onOpenArtifact={(id) => navigate(artifactPath(id))}
+      onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
       onSignOut={handleSignOut}
       menu={
         route.name === "gallery"
@@ -158,10 +158,13 @@ export function App() {
       <ArtifactFull
         key={route.id}
         id={route.id}
+        versionId={route.versionId}
+        commentId={route.commentId}
+        onLinkShown={() => navigate(artifactPath(route.id), { replace: true })}
         email={session.user.email}
         currentUserId={session.user.id}
         onHome={() => navigate("/")}
-        onOpenArtifact={(id) => navigate(artifactPath(id))}
+        onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
         onSignOut={handleSignOut}
       />
     );

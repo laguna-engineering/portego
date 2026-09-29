@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ArtifactFull } from "./ArtifactFull.tsx";
+import { ArtifactFull, type ArtifactFullProps } from "./ArtifactFull.tsx";
 import type { ArtifactVersion, Comment } from "./api.ts";
 import { artifact, restoreFetch, StubEventSource, stubFetch, stubFetchWith } from "./testing.ts";
 
@@ -52,17 +52,20 @@ function answer(path: string) {
   return { body: { artifact: artifact() } };
 }
 
-function renderFull() {
-  return render(
-    <ArtifactFull
-      id="artifact-1"
-      email="person@acme.example"
-      currentUserId="user-1"
-      onHome={() => {}}
-      onSignOut={() => {}}
-      onOpenArtifact={() => {}}
-    />,
-  );
+function fullProps(overrides: Partial<ArtifactFullProps> = {}): ArtifactFullProps {
+  return {
+    id: "artifact-1",
+    email: "person@acme.example",
+    currentUserId: "user-1",
+    onHome: () => {},
+    onSignOut: () => {},
+    onOpenArtifact: () => {},
+    ...overrides,
+  };
+}
+
+function renderFull(overrides: Partial<ArtifactFullProps> = {}) {
+  return render(<ArtifactFull {...fullProps(overrides)} />);
 }
 
 /**
@@ -587,6 +590,128 @@ describe("comments panel", () => {
   });
 });
 
+describe("links to a comment", () => {
+  const REVEAL = { portego: 1, type: "reveal", id: "comment-1" };
+
+  function stubAnchoredComment() {
+    stubFetch((path) =>
+      path.endsWith("/comments")
+        ? {
+            body: {
+              comments: [
+                {
+                  id: "comment-1",
+                  body: "See this",
+                  createdAt: new Date().toISOString(),
+                  author: { id: "user-2", name: "Someone", email: "s@x.test" },
+                  anchor: { quote: "the highlighted bit", prefix: "", suffix: "" },
+                  parentId: null,
+                  inApp: true,
+                },
+              ],
+            },
+          }
+        : answer(path),
+    );
+  }
+
+  test("opens the panel on the comment, and reveals it once the artifact is listening", async () => {
+    stubAnchoredComment();
+    let shown = 0;
+    renderFull({
+      commentId: "comment-1",
+      onLinkShown: () => {
+        shown += 1;
+      },
+    });
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+    await screen.findByText("the highlighted bit");
+
+    expect(
+      screen.getByRole("button", { name: "Versions & comments" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(document.getElementById("comment-comment-1")?.className).toContain("focused");
+    expect(shown).toBe(1);
+    expect(sent).not.toContainEqual(REVEAL);
+
+    await sendFromFrame(frame, { type: "ready" });
+    expect(sent).toContainEqual(REVEAL);
+
+    // Revealed once: the artifact reloading later does not jump back to it.
+    sent.length = 0;
+    await sendFromFrame(frame, { type: "ready" });
+    expect(sent).not.toContainEqual(REVEAL);
+
+    // Nor does a later change to the comments reopen what the reader closed.
+    await userEvent.click(screen.getByRole("button", { name: "Close comments" }));
+    await announce({ type: "comment.changed", artifactId: "artifact-1" });
+    expect(
+      screen.getByRole("button", { name: "Versions & comments" }).getAttribute("aria-pressed"),
+    ).toBe("false");
+    expect(sent).not.toContainEqual(REVEAL);
+    expect(shown).toBe(1);
+  });
+
+  test("waits for the comments when the artifact is listening before they arrive", async () => {
+    let releaseComments = () => {};
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+    stubFetchWith((path) => {
+      if (!path.endsWith("/comments")) return Promise.resolve(json(answer(path).body));
+      return new Promise((resolve) => {
+        releaseComments = () =>
+          resolve(
+            json({
+              comments: [
+                {
+                  id: "comment-1",
+                  body: "See this",
+                  createdAt: new Date().toISOString(),
+                  author: { id: "user-2", name: "Someone", email: "s@x.test" },
+                  anchor: { quote: "the highlighted bit", prefix: "", suffix: "" },
+                  parentId: null,
+                  inApp: true,
+                },
+              ],
+            }),
+          );
+      });
+    });
+    renderFull({ commentId: "comment-1" });
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+
+    await sendFromFrame(frame, { type: "ready" });
+    expect(sent).not.toContainEqual(REVEAL);
+
+    await act(async () => releaseComments());
+    await screen.findByText("the highlighted bit");
+
+    const reveal = sent.findIndex((message) => JSON.stringify(message) === JSON.stringify(REVEAL));
+    const lastHighlights = sent.findLastIndex(
+      (message) => (message as { type?: string }).type === "highlights",
+    );
+    expect(reveal).toBeGreaterThan(lastHighlights);
+  });
+
+  test("reveals the comment at once when the artifact is already showing", async () => {
+    stubAnchoredComment();
+    const { rerender } = renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+    await screen.findByText("the highlighted bit");
+    await sendFromFrame(frame, { type: "ready" });
+    expect(sent).not.toContainEqual(REVEAL);
+
+    await act(async () => {
+      rerender(<ArtifactFull {...fullProps({ commentId: "comment-1" })} />);
+    });
+
+    expect(sent).toContainEqual(REVEAL);
+  });
+});
+
 describe("links in the artifact", () => {
   test("opens a link the artifact passes up in a new tab that cannot reach this one", async () => {
     stubFetch(answer);
@@ -1058,6 +1183,32 @@ describe("versions", () => {
       return answer(path);
     });
   }
+
+  test("opens the panel on the version a link points at, then lets the link go", async () => {
+    stubTwoVersions();
+    let shown = 0;
+    const onLinkShown = () => {
+      shown += 1;
+    };
+    const { rerender } = renderFull({ versionId: "v1", onLinkShown });
+
+    const older = await screen.findByRole("button", { name: "Version 1" });
+    expect(older.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      screen.getByRole("button", { name: "Versions & comments" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(shown).toBe(1);
+
+    // The app drops the link; following it again later opens the panel again.
+    rerender(<ArtifactFull {...fullProps({ versionId: null, onLinkShown })} />);
+    await userEvent.click(screen.getByRole("button", { name: "Close comments" }));
+    rerender(<ArtifactFull {...fullProps({ versionId: "v1", onLinkShown })} />);
+
+    expect(
+      screen.getByRole("button", { name: "Versions & comments" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(shown).toBe(2);
+  });
 
   test("shows a row per version, highest first, and marks the current one", async () => {
     stubTwoVersions();

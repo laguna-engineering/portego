@@ -48,14 +48,32 @@ describe("readRoute", () => {
     expect(readRoute(new URL("http://app.test/a/abc-123"))).toEqual({
       name: "artifact",
       id: "abc-123",
+      versionId: null,
+      commentId: null,
     });
-    expect(readRoute(new URL("http://app.test/a/a%2Fb"))).toEqual({ name: "artifact", id: "a/b" });
+    expect(readRoute(new URL("http://app.test/a/a%2Fb"))).toEqual({
+      name: "artifact",
+      id: "a/b",
+      versionId: null,
+      commentId: null,
+    });
+  });
+
+  test("reads the version an artifact link points at", () => {
+    expect(readRoute(new URL("http://app.test/a/abc-123?version=v%2F2"))).toEqual({
+      name: "artifact",
+      id: "abc-123",
+      versionId: "v/2",
+      commentId: null,
+    });
   });
 
   test("still opens links copied when the view lived at /full", () => {
     expect(readRoute(new URL("http://app.test/a/abc-123/full"))).toEqual({
       name: "artifact",
       id: "abc-123",
+      versionId: null,
+      commentId: null,
     });
   });
 
@@ -88,5 +106,27 @@ describe("paths", () => {
 
   test("escapes an artifact id", () => {
     expect(artifactPath("a/b")).toBe("/a/a%2Fb");
+  });
+
+  test("points at one comment when asked, and reads back the same", () => {
+    const path = artifactPath("a/b", { commentId: "c/1" });
+    expect(path).toBe("/a/a%2Fb?comment=c%2F1");
+    expect(readRoute(new URL(path, "http://app.test"))).toEqual({
+      name: "artifact",
+      id: "a/b",
+      versionId: null,
+      commentId: "c/1",
+    });
+  });
+
+  test("points at one version when asked, and reads back the same", () => {
+    const path = artifactPath("a/b", { versionId: "v/2" });
+    expect(path).toBe("/a/a%2Fb?version=v%2F2");
+    expect(readRoute(new URL(path, "http://app.test"))).toEqual({
+      name: "artifact",
+      id: "a/b",
+      versionId: "v/2",
+      commentId: null,
+    });
   });
 });

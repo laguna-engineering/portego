@@ -31,8 +31,8 @@ export type GalleryFilters = {
 
 export type Route =
   | ({ name: "gallery" } & GalleryFilters)
-  /** One artifact filling the viewport under the masthead. */
-  | { name: "artifact"; id: string }
+  /** One artifact filling the viewport under the masthead, optionally opened on a version or comment. */
+  | { name: "artifact"; id: string; versionId: string | null; commentId: string | null }
   /** The MCP authorization pages. They carry the signed OAuth query through. */
   | { name: "mcp-login"; query: string }
   | { name: "mcp-consent"; query: string }
@@ -43,7 +43,14 @@ export function readRoute(url: URL): Route {
   // `/full` is the path the view had before it became the only one. Links
   // copied then still open.
   const artifact = url.pathname.match(/^\/a\/([^/]+)(?:\/full)?\/?$/);
-  if (artifact?.[1]) return { name: "artifact", id: decodeURIComponent(artifact[1]) };
+  if (artifact?.[1]) {
+    return {
+      name: "artifact",
+      id: decodeURIComponent(artifact[1]),
+      versionId: url.searchParams.get("version") || null,
+      commentId: url.searchParams.get("comment") || null,
+    };
+  }
   if (url.pathname === "/mcp/login") return { name: "mcp-login", query: url.search };
   if (url.pathname === "/mcp/consent") return { name: "mcp-consent", query: url.search };
   if (url.pathname === "/") {
@@ -76,8 +83,15 @@ export function galleryPath(filters: Partial<GalleryFilters>): string {
   return search.size === 0 ? "/" : `/?${search}`;
 }
 
-export function artifactPath(id: string): string {
-  return `/a/${encodeURIComponent(id)}`;
+/** What in an artifact a link opens the panel on. */
+export type ArtifactTarget = { versionId?: string; commentId?: string };
+
+export function artifactPath(id: string, target: ArtifactTarget = {}): string {
+  const search = new URLSearchParams();
+  if (target.versionId) search.set("version", target.versionId);
+  if (target.commentId) search.set("comment", target.commentId);
+  const path = `/a/${encodeURIComponent(id)}`;
+  return search.size === 0 ? path : `${path}?${search}`;
 }
 
 /**
