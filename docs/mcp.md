@@ -343,14 +343,16 @@ the ticket itself. Its deployment tools are:
 upload_artifact_from_path({ path, contentType?, markdownPath?, title?, description?,
                             artifactId?, allowDuplicateTitle?, folderId?, tagIds? })
 list_artifacts({ query?, folderId?, cursor? })
+list_artifact_comments({ id })
+add_artifact_comment({ id, body, anchor?, parentId?, versionId? })
 list_folders()
 list_tags()
 sign_in()
 ```
 
-The three listings call the deployment's tools of the same names, so an agent
-with only this server can find the `artifactId`, `folderId`, and `tagIds` for
-an upload.
+The listings and `add_artifact_comment` call the deployment's tools of the same
+names, so an agent with only this server can find the `artifactId`, `folderId`,
+and `tagIds` for an upload, and read and add comments on an artifact.
 
 It also exposes local tools that need no deployment or sign-in:
 

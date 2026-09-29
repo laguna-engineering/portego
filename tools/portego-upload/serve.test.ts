@@ -73,8 +73,10 @@ describe("a first run with no deployment set", () => {
   test("offers local style and validation tools before setup", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "add_artifact_comment",
       "finalize_artifact",
       "get_artifact_style",
+      "list_artifact_comments",
       "list_artifacts",
       "list_folders",
       "list_tags",
