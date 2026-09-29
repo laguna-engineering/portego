@@ -88,6 +88,8 @@ export type UploadInput = {
   images?: UploadedImage[];
   /** Taken from the session, never from the request body. */
   createdBy: string;
+  /** Made in the web app, not by an agent or a ticket. */
+  inApp?: boolean;
 };
 
 export type UploadResult = {
@@ -182,8 +184,18 @@ export type ArtifactService = {
     id: string,
     versionId?: string | null,
   ) => Promise<{ artifact: ArtifactSummary } & CachedMarkdown>;
-  setStatus: (id: string, status: ArtifactStatus, actorId: string) => ArtifactSummary;
-  setArchived: (id: string, archived: boolean, actorId: string) => ArtifactSummary;
+  setStatus: (
+    id: string,
+    status: ArtifactStatus,
+    actorId: string,
+    options?: { inApp?: boolean },
+  ) => ArtifactSummary;
+  setArchived: (
+    id: string,
+    archived: boolean,
+    actorId: string,
+    options?: { inApp?: boolean },
+  ) => ArtifactSummary;
   comments: (id: string) => Comment[];
   addComment: (
     id: string,
@@ -194,6 +206,8 @@ export type ArtifactService = {
       parentId?: string | null;
       /** The version the comment was written on. Defaults to the current one. */
       versionId?: string | null;
+      /** Made in the web app, not by an agent. */
+      inApp?: boolean;
     },
   ) => Comment;
   deleteComment: (id: string, commentId: string, actorId: string) => void;
@@ -439,6 +453,7 @@ export function createArtifactService(options: {
           entrySchema,
           images,
           createdBy: input.createdBy,
+          inApp: input.inApp,
         });
         if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
         file(artifact.id);
@@ -455,6 +470,7 @@ export function createArtifactService(options: {
         entrySchema,
         images,
         createdBy: input.createdBy,
+        inApp: input.inApp,
       });
       file(artifact.id);
       publish({ type: "artifact.created", id: artifact.id });
@@ -469,15 +485,15 @@ export function createArtifactService(options: {
     // Every admitted user may move an artifact's status, archive it, restore
     // it, and comment on it. There are no roles here, so the record of who did
     // what is what matters, and every change carries the actor.
-    setStatus(id, status, actorId) {
-      const artifact = store.setStatus(id, status, actorId);
+    setStatus(id, status, actorId, options) {
+      const artifact = store.setStatus(id, status, actorId, options);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
       return summary(artifact);
     },
 
-    setArchived(id, archived, actorId) {
-      const artifact = store.setArchived(id, archived, actorId);
+    setArchived(id, archived, actorId, options) {
+      const artifact = store.setArchived(id, archived, actorId, options);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
       return summary(artifact);
@@ -525,6 +541,7 @@ export function createArtifactService(options: {
         body,
         anchor,
         parentId,
+        inApp: input.inApp,
       });
       publish({ type: "comment.changed", artifactId: id });
       return comment;

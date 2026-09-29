@@ -16,6 +16,7 @@ import { databasePath, openDatabase } from "./db.ts";
 import { createEventBus, type EventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService, type OrganizationService } from "./organization/service.ts";
+import { createActivityStore } from "./storage/activity.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
 import { createEntryStore } from "./storage/entries.ts";
@@ -94,6 +95,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     contentOrigin: options.contentOrigin ?? TEST_CONTENT_ORIGIN,
     signingSecret: config.secret,
     events,
+    activity: createActivityStore({ database }),
   });
 
   return {

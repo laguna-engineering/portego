@@ -119,7 +119,7 @@ export function artifactRoutes(
   });
 
   routes.post("/", async (c) => {
-    const result = await uploadFromForm(c, service, currentUser(c).id);
+    const result = await uploadFromForm(c, service, currentUser(c).id, { inApp: true });
     return c.json(result, 201);
   });
 
@@ -145,7 +145,9 @@ export function artifactRoutes(
     if (status !== "open" && status !== "solved") {
       throw new ServiceError("INVALID_INPUT", "status must be open or solved.");
     }
-    return c.json({ artifact: service.setStatus(c.req.param("id"), status, currentUser(c).id) });
+    return c.json({
+      artifact: service.setStatus(c.req.param("id"), status, currentUser(c).id, { inApp: true }),
+    });
   });
 
   routes.patch("/:id/archived", async (c) => {
@@ -154,7 +156,9 @@ export function artifactRoutes(
       throw new ServiceError("INVALID_INPUT", "archived must be true or false.");
     }
     return c.json({
-      artifact: service.setArchived(c.req.param("id"), body.archived, currentUser(c).id),
+      artifact: service.setArchived(c.req.param("id"), body.archived, currentUser(c).id, {
+        inApp: true,
+      }),
     });
   });
 
@@ -201,6 +205,7 @@ export function artifactRoutes(
       anchor: body.anchor ?? undefined,
       parentId: body.parentId ?? undefined,
       versionId: body.versionId ?? undefined,
+      inApp: true,
     });
     return c.json({ comment }, 201);
   });
@@ -286,7 +291,7 @@ export function uploadRoutes(service: ArtifactService, secret: string): Hono<App
       );
     }
 
-    const uploaded = await uploadFromForm(c, service, result.userId);
+    const uploaded = await uploadFromForm(c, service, result.userId, { inApp: false });
     return c.json(uploaded, 201);
   });
 
@@ -301,6 +306,7 @@ async function uploadFromForm(
   c: Context<AppEnv>,
   service: ArtifactService,
   createdBy: string,
+  options: { inApp: boolean },
 ): Promise<UploadResult> {
   const declared = Number(c.req.header("content-length") ?? "0");
   if (declared > maxUploadRequestBytes(service)) {
@@ -353,6 +359,7 @@ async function uploadFromForm(
     ...(form.has("tagId") ? { tagIds: form.getAll("tagId") } : {}),
     images,
     createdBy,
+    inApp: options.inApp,
   });
 }
 

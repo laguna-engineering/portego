@@ -8,6 +8,7 @@ import { parseEnv } from "./env.ts";
 import { createEventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService } from "./organization/service.ts";
+import { createActivityStore } from "./storage/activity.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
 import { createEntryStore } from "./storage/entries.ts";
@@ -46,6 +47,7 @@ const app = createApp({
   contentOrigin: env.CONTENT_URL,
   signingSecret: authConfig.secret,
   events,
+  activity: createActivityStore({ database }),
 });
 
 const server = Bun.serve({

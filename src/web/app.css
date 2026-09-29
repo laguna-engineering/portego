@@ -1538,3 +1538,68 @@ button.link {
   border-radius: var(--radius);
   font-size: 0.85rem;
 }
+
+/* After the page's own chrome, before the account. */
+.bell {
+  position: relative;
+  margin-left: auto;
+}
+
+.popover.activity {
+  width: 22rem;
+  gap: 0.25rem;
+  padding: 0.5rem 0;
+}
+
+.activity h2 {
+  margin: 0 0.75rem;
+  font-size: 0.85rem;
+}
+
+.activity .hint {
+  margin: 0 0.75rem;
+}
+
+.activity ul {
+  max-height: 24rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-item {
+  display: grid;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 0.85rem;
+  text-align: start;
+}
+
+.activity-item:hover {
+  background: var(--page);
+}
+
+.activity-item[data-unread] {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.activity-item time {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+/* On a phone the panel hangs from the masthead, like every other popover. */
+@media (max-width: 34rem) {
+  .bell {
+    position: static;
+  }
+
+  .popover.activity {
+    width: auto;
+  }
+}

@@ -444,3 +444,48 @@ describe("comments", () => {
     expect(remaining[0]?.id).toBe(root.comment.id);
   });
 });
+
+describe("made in the web app", () => {
+  test("marks versions and comments from the web app, and not those from an agent", async () => {
+    const id = await upload("A question");
+    const session = await server.auth.api.getSession({ headers: new Headers({ cookie }) });
+    const userId = session?.user.id ?? "";
+    await server.app.request(`/api/artifacts/${id}/comments`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ body: "From the page" }),
+    });
+    // The MCP tools and ticket uploads reach the service without the flag.
+    server.artifacts.addComment(id, { authorId: userId, body: "From an agent" });
+    await server.artifacts.upload({
+      bytes: new TextEncoder().encode("<!doctype html><html><title>Doc</title><p>y</p></html>"),
+      filename: "artifact.html",
+      artifactId: id,
+      createdBy: userId,
+    });
+
+    const comments = await server.app.request(`/api/artifacts/${id}/comments`, {
+      headers: { cookie },
+    });
+    const versions = await server.app.request(`/api/artifacts/${id}/versions`, {
+      headers: { cookie },
+    });
+
+    expect(
+      ((await comments.json()) as { comments: { body: string; inApp: boolean }[] }).comments.map(
+        ({ body, inApp }) => ({ body, inApp }),
+      ),
+    ).toEqual([
+      { body: "From the page", inApp: true },
+      { body: "From an agent", inApp: false },
+    ]);
+    expect(
+      ((await versions.json()) as { versions: { number: number; inApp: boolean }[] }).versions.map(
+        ({ number, inApp }) => ({ number, inApp }),
+      ),
+    ).toEqual([
+      { number: 2, inApp: false },
+      { number: 1, inApp: true },
+    ]);
+  });
+});

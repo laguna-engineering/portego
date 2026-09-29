@@ -1,11 +1,14 @@
 import { type ReactNode, useEffect, useState } from "react";
 import logoMark from "./assets/logo-mark.png";
 import { CloseIcon, MenuIcon } from "./Icons.tsx";
+import { NotificationBell } from "./NotificationBell.tsx";
 
 export type MastheadProps = {
   email: string;
   onHome: () => void;
   onSignOut: () => void;
+  /** Opens an artifact picked from the notifications. */
+  onOpenArtifact: (id: string) => void;
   /** Sits between the wordmark and the account, for a page that has its own chrome. */
   children?: ReactNode;
   /** Sits just before the account block, e.g. a page's own toggle. */
@@ -20,6 +23,7 @@ export function Masthead({
   email,
   onHome,
   onSignOut,
+  onOpenArtifact,
   children,
   trailing,
   menu,
@@ -44,6 +48,7 @@ export function Masthead({
         <span className="wordmark-label" role="img" aria-label="portego" />
       </button>
       {children}
+      <NotificationBell onOpenArtifact={onOpenArtifact} />
       {/* A phone has no room for the account or a page's controls, so there they are a menu. */}
       <button
         type="button"

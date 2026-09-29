@@ -44,6 +44,8 @@ check an upload before sending it.
 | `POST` | `/api/artifacts/:id/preview` | Mint a short-lived preview URL for one version |
 | `POST` | `/api/uploads` | Upload one HTML document with a ticket, no session, or a new version of one |
 | `GET` | `/api/events` | Subscribe to changes, as Server-Sent Events |
+| `GET` | `/api/activity` | Recent activity on every artifact, and when you last read it |
+| `POST` | `/api/activity/read` | Mark the activity read up to now |
 
 ### List
 
@@ -228,6 +230,41 @@ does not belong to the artifact is refused with `NOT_FOUND`. A reply
 (`parentId` set) is written on its parent's version; a `versionId` given on a
 reply is ignored. `GET /api/artifacts/:id/comments` returns every comment
 across every version, each carrying `versionId` and `versionNumber`.
+
+Comments and versions carry `inApp`: true when they were made in the web app,
+false when they came through MCP or an upload ticket. An agent works under its
+person's account, so this is what tells the two apart.
+
+### Activity
+
+`GET /api/activity` lists what happened in the last seven days, newest first,
+at most 100 items. It covers new artifacts, new versions, comments and replies,
+and status changes (solved, reopened, archived, restored), by anyone. What the
+caller did in the web app is left out; what they did through MCP or an upload
+ticket, such as an agent working under their account, is listed. A removed
+comment is no longer listed.
+
+```json
+{
+  "items": [
+    {
+      "id": "…",
+      "kind": "version.created",
+      "versionNumber": 2,
+      "createdAt": "2026-09-28T12:00:00.000Z",
+      "actor": { "id": "…", "name": "A Person" },
+      "artifact": { "id": "…", "title": "Plan" }
+    }
+  ],
+  "readAt": "2026-09-28T11:00:00.000Z"
+}
+```
+
+`kind` is `artifact.created`, `version.created` (with `versionNumber`),
+`comment.created` (with `reply`), or `status.changed` (with `change`). `id` is
+the id of the version, comment, or status change. `readAt` is when the caller
+last called `POST /api/activity/read`, or null if never; items after it are
+unread. The read marker is per user and only moves forward.
 
 ### Entries
 

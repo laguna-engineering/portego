@@ -56,6 +56,8 @@ export type ArtifactVersion = {
   createdByName: string;
   createdByEmail: string;
   createdAt: Date;
+  /** Uploaded in the web app, not by an agent or a ticket. */
+  inApp: boolean;
 };
 
 /** An image already checked by the caller: its type comes from its bytes. */
@@ -87,6 +89,8 @@ export type CreateArtifactInput = {
   images?: VersionImageInput[];
   /** Taken from the session by the caller. Never from the request body. */
   createdBy: string;
+  /** Made in the web app, not by an agent or a ticket. */
+  inApp?: boolean;
 };
 
 export type AddVersionInput = {
@@ -101,6 +105,8 @@ export type AddVersionInput = {
   entrySchema?: string | null;
   images?: VersionImageInput[];
   createdBy: string;
+  /** Made in the web app, not by an agent or a ticket. */
+  inApp?: boolean;
 };
 
 /** How a listing is ordered. The default is the most recently updated first. */
@@ -195,6 +201,7 @@ type VersionRow = {
   createdByName: string;
   createdByEmail: string;
   createdAt: number;
+  inApp: number;
 };
 
 /** Artifact columns plus the creator's name and version facts, which every read needs. */
@@ -221,7 +228,7 @@ function toArtifact(row: Row): Artifact {
 }
 
 function toVersion(row: VersionRow): ArtifactVersion {
-  return { ...row, createdAt: new Date(row.createdAt) };
+  return { ...row, createdAt: new Date(row.createdAt), inApp: row.inApp === 1 };
 }
 
 type Order = { column: string; direction: "asc" | "desc"; key: (row: Row) => string | number };
@@ -285,9 +292,19 @@ export type ArtifactStore = {
    */
   findByTitle: (title: string) => Artifact | null;
   /** Records the new status and who set it. Null when the artifact is gone. */
-  setStatus: (id: string, status: ArtifactStatus, actorId: string) => Artifact | null;
+  setStatus: (
+    id: string,
+    status: ArtifactStatus,
+    actorId: string,
+    options?: { inApp?: boolean },
+  ) => Artifact | null;
   /** Archives or restores. Records who did it. Null when the artifact is gone. */
-  setArchived: (id: string, archived: boolean, actorId: string) => Artifact | null;
+  setArchived: (
+    id: string,
+    archived: boolean,
+    actorId: string,
+    options?: { inApp?: boolean },
+  ) => Artifact | null;
   list: (options?: ListOptions) => ListResult;
   get: (id: string) => Artifact | null;
   /** Null when no such artifact exists. Throws when its bytes are gone. */
@@ -324,6 +341,23 @@ export function createArtifactStore(options: {
     return row ? toArtifact(row) : null;
   };
 
+  // Status and archive state live on the artifact row, which keeps only the
+  // latest change. The activity feed needs each one.
+  const recordStatusChange = (
+    artifactId: string,
+    change: "solved" | "reopened" | "archived" | "restored",
+    actorId: string,
+    at: number,
+    options: { inApp?: boolean },
+  ) => {
+    database
+      .query(
+        `insert into artifactStatusChanges (id, artifactId, change, actorId, createdAt, inApp)
+         values (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(Bun.randomUUIDv7(), artifactId, change, actorId, at, options.inApp ? 1 : 0);
+  };
+
   const getVersion = (id: string): ArtifactVersion | null => {
     const row = database
       .query(`${SELECT_VERSION} where artifactVersions.id = ?`)
@@ -336,8 +370,8 @@ export function createArtifactStore(options: {
     database.query(
       `insert into artifactVersions
          (id, artifactId, number, originalFilename, storageKey, sha256, byteSize, createdBy, createdAt,
-          entrySchema)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          entrySchema, inApp)
+       values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
   const insertImage = () =>
@@ -423,6 +457,7 @@ export function createArtifactStore(options: {
             input.createdBy,
             now,
             input.entrySchema ?? null,
+            input.inApp ? 1 : 0,
           );
           insertImages(id, images);
           if (input.providedMarkdown !== undefined) {
@@ -476,6 +511,7 @@ export function createArtifactStore(options: {
             input.createdBy,
             now,
             input.entrySchema ?? null,
+            input.inApp ? 1 : 0,
           );
           insertImages(id, images);
           if (input.providedMarkdown !== undefined) {
@@ -538,22 +574,40 @@ export function createArtifactStore(options: {
       return row ? toArtifact(row) : null;
     },
 
-    setStatus(id, status, actorId) {
+    setStatus(id, status, actorId, options = {}) {
       const now = Date.now();
-      database
-        .query(
-          `update artifacts set status = ?, statusChangedAt = ?, statusChangedBy = ?, updatedAt = ?
-           where id = ?`,
-        )
-        .run(status, now, actorId, now, id);
+      database.transaction(() => {
+        const before = get(id);
+        database
+          .query(
+            `update artifacts set status = ?, statusChangedAt = ?, statusChangedBy = ?, updatedAt = ?
+             where id = ?`,
+          )
+          .run(status, now, actorId, now, id);
+        if (before && before.status !== status) {
+          recordStatusChange(
+            id,
+            status === "solved" ? "solved" : "reopened",
+            actorId,
+            now,
+            options,
+          );
+        }
+      })();
       return get(id);
     },
 
-    setArchived(id, archived, actorId) {
+    setArchived(id, archived, actorId, options = {}) {
       const now = Date.now();
-      database
-        .query("update artifacts set archivedAt = ?, archivedBy = ?, updatedAt = ? where id = ?")
-        .run(archived ? now : null, archived ? actorId : null, now, id);
+      database.transaction(() => {
+        const before = get(id);
+        database
+          .query("update artifacts set archivedAt = ?, archivedBy = ?, updatedAt = ? where id = ?")
+          .run(archived ? now : null, archived ? actorId : null, now, id);
+        if (before && (before.archivedAt !== null) !== archived) {
+          recordStatusChange(id, archived ? "archived" : "restored", actorId, now, options);
+        }
+      })();
       return get(id);
     },
 
@@ -658,6 +712,9 @@ export function createArtifactStore(options: {
           .run(intoId, fromId);
         database
           .query("update artifactComments set artifactId = ? where artifactId = ?")
+          .run(intoId, fromId);
+        database
+          .query("update artifactStatusChanges set artifactId = ? where artifactId = ?")
           .run(intoId, fromId);
         // Keep every tag from both artifacts. A duplicate pair stays once,
         // then no assignment points at the row the cascade will remove.

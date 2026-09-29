@@ -189,6 +189,28 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    id: "010-activity",
+    sql: `
+      create table artifactStatusChanges (
+        id text not null primary key,
+        artifactId text not null references artifacts (id) on delete cascade,
+        change text not null check (change in ('solved', 'reopened', 'archived', 'restored')),
+        actorId text not null references "user" ("id"),
+        createdAt integer not null,
+        inApp integer not null default 0
+      );
+      create index artifactStatusChanges_created_at on artifactStatusChanges (createdAt);
+      alter table artifactVersions add column inApp integer not null default 0;
+      alter table artifactComments add column inApp integer not null default 0;
+      create index artifactVersions_created_at on artifactVersions (createdAt);
+      create index artifactComments_created_at on artifactComments (createdAt);
+      create table activityReads (
+        userId text not null primary key references "user" ("id") on delete cascade,
+        readAt integer not null
+      );
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

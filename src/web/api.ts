@@ -35,6 +35,8 @@ export type ArtifactVersion = {
   byteSize: number;
   creator: { id: string; name: string; email: string };
   createdAt: string;
+  /** Uploaded in the web app, not by an agent or a ticket. */
+  inApp: boolean;
 };
 
 /** A passage of the artifact's text: the quote and a little of what surrounds it. */
@@ -52,6 +54,8 @@ export type Comment = {
   /** The version this comment was written on. */
   versionId: string;
   versionNumber: number;
+  /** Written in the web app, not by an agent. */
+  inApp: boolean;
 };
 
 /** `artifactCount` counts artifacts filed or tagged directly, including solved and archived ones. */
@@ -262,6 +266,30 @@ export function setArtifactOrganization(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(organization),
   }).then((body) => body.artifact);
+}
+
+/** Something that happened to an artifact. `id` is the version's, comment's, or change's. */
+export type ActivityItem = {
+  id: string;
+  createdAt: string;
+  actor: { id: string; name: string };
+  artifact: { id: string; title: string };
+} & (
+  | { kind: "artifact.created" }
+  | { kind: "version.created"; versionNumber: number }
+  | { kind: "comment.created"; reply: boolean }
+  | { kind: "status.changed"; change: "solved" | "reopened" | "archived" | "restored" }
+);
+
+/** The last seven days, newest first. `readAt` is when the reader last opened the list. */
+export type ActivityFeed = { items: ActivityItem[]; readAt: string | null };
+
+export function fetchActivity(): Promise<ActivityFeed> {
+  return request<ActivityFeed>("/api/activity");
+}
+
+export function markActivityRead(): Promise<{ readAt: string }> {
+  return request<{ readAt: string }>("/api/activity/read", { method: "POST" });
 }
 
 export function fetchComments(id: string): Promise<Comment[]> {

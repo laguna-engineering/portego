@@ -9,6 +9,7 @@ import { createEventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService } from "./organization/service.ts";
 import { excerpt } from "./social.ts";
+import { createActivityStore } from "./storage/activity.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
 import { createEntryStore } from "./storage/entries.ts";
@@ -47,6 +48,7 @@ async function createTestApp(options?: { serveClient: boolean; clientDist: strin
     contentOrigin: TEST_CONTENT_ORIGIN,
     signingSecret: config.secret,
     events,
+    activity: createActivityStore({ database }),
   });
 }
 

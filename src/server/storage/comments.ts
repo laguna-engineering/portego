@@ -19,6 +19,8 @@ export type Comment = {
   /** The version whose text the comment was written on. */
   versionId: string;
   versionNumber: number;
+  /** Written in the web app, not by an agent. */
+  inApp: boolean;
 };
 
 export type CommentStore = {
@@ -30,6 +32,8 @@ export type CommentStore = {
     body: string;
     anchor?: CommentAnchor | null;
     parentId?: string | null;
+    /** Made in the web app, not by an agent. */
+    inApp?: boolean;
   }) => Comment;
   get: (id: string) => Comment | null;
   /** Removes a comment. Returns false when it is not this author's to remove. */
@@ -48,6 +52,7 @@ type Row = {
   parentId: string | null;
   versionId: string;
   versionNumber: number;
+  inApp: number;
 };
 
 const SELECT_COMMENT = `
@@ -68,6 +73,7 @@ function toComment(row: Row): Comment {
     parentId: row.parentId,
     versionId: row.versionId,
     versionNumber: row.versionNumber,
+    inApp: row.inApp === 1,
   };
 }
 
@@ -108,8 +114,8 @@ export function createCommentStore(options: { database: Database }): CommentStor
       database
         .query(
           `insert into artifactComments
-             (id, artifactId, versionId, authorId, body, createdAt, anchor, parentId)
-           values (?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, artifactId, versionId, authorId, body, createdAt, anchor, parentId, inApp)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -120,6 +126,7 @@ export function createCommentStore(options: { database: Database }): CommentStor
           Date.now(),
           anchorJson,
           input.parentId ?? null,
+          input.inApp ? 1 : 0,
         );
       const comment = get(id);
       if (!comment) throw new Error(`Comment ${id} disappeared right after it was written`);

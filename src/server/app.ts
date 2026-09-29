@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
+import { activityRoutes } from "./activity/routes.ts";
 import { artifactRoutes, handleServiceError, uploadRoutes } from "./artifacts/routes.ts";
 import type { ArtifactService } from "./artifacts/service.ts";
 import { createUploadTicketIssuer } from "./artifacts/tickets.ts";
@@ -21,6 +22,7 @@ import type { OrganizationService } from "./organization/service.ts";
 import { previewRoutes } from "./preview/routes.ts";
 import { createPreviewIssuer } from "./preview/tokens.ts";
 import { pageMeta, withSocialTags } from "./social.ts";
+import type { ActivityStore } from "./storage/activity.ts";
 
 export type AppOptions = {
   /** Serve the built Vite client from disk. Off in development, where Vite serves it. */
@@ -36,6 +38,7 @@ export type AppOptions = {
   signingSecret: string;
   /** Announces committed changes to connected clients. */
   events: EventBus;
+  activity: ActivityStore;
 };
 
 /** The application page's policy: frames may show previews and nothing else. */
@@ -124,6 +127,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   // The change stream. It is registered before the artifact routes only for
   // readability; Hono matches on the path.
   app.route("/api/events", eventRoutes({ bus: options.events }));
+  app.route("/api/activity", activityRoutes(options.activity));
   app.route("/api", organizationRoutes(options.organization));
 
   app.route(

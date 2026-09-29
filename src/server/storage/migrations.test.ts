@@ -137,6 +137,8 @@ describe("006-artifact-versions", () => {
         createdAt: 5,
         // Added by 008. A version from before it declares no entry schema.
         entrySchema: null,
+        // Added by 010. Nothing from before it counts as made in the web app.
+        inApp: 0,
       },
     ]);
     expect(db.query("select versionId from artifactComments where id = 'c1'").get()).toEqual({

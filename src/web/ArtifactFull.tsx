@@ -52,6 +52,7 @@ export type ArtifactFullProps = {
   currentUserId: string;
   onHome: () => void;
   onSignOut: () => void;
+  onOpenArtifact: (id: string) => void;
 };
 
 type HeaderAction = {
@@ -115,7 +116,14 @@ function HeaderControl({
  * artifact's name, its metadata and the actions on it. The frame scrolls its
  * own document, so the header stays in place while the artifact moves.
  */
-export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: ArtifactFullProps) {
+export function ArtifactFull({
+  id,
+  email,
+  currentUserId,
+  onHome,
+  onSignOut,
+  onOpenArtifact,
+}: ArtifactFullProps) {
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"preview" | "text">("preview");
@@ -138,10 +146,6 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
   // announces nothing.
   const newestVersion = useRef<number | null>(null);
   const knownComments = useRef<Set<string> | null>(null);
-  // Comments posted from this page. While a post is in flight its id is not
-  // known yet, and the stream may bring the comment back before the response.
-  const postedHere = useRef(new Set<string>());
-  const postsInFlight = useRef(0);
   const [versions, setVersions] = useState<ArtifactVersion[]>([]);
   /** The version being viewed. Null means the current version. */
   const [viewedVersionId, setViewedVersionId] = useState<string | null>(null);
@@ -231,13 +235,11 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       const known = knownComments.current;
       knownComments.current = new Set(list.map((comment) => comment.id));
       if (!known) return;
-      // The reader's agent writes as the reader, so authorship alone cannot
-      // tell a comment made here from one made elsewhere.
+      // The reader's agent writes as the reader, so a comment of theirs is
+      // news unless they wrote it in the web app.
       const fresh = list.filter(
         (comment) =>
-          !known.has(comment.id) &&
-          !postedHere.current.has(comment.id) &&
-          !(postsInFlight.current > 0 && comment.author.id === currentUserId),
+          !known.has(comment.id) && !(comment.inApp && comment.author.id === currentUserId),
       );
       const [first] = fresh;
       if (!first) return;
@@ -249,18 +251,6 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
     },
     [currentUserId],
   );
-
-  const handlePosting = useCallback((posting: Promise<Comment>) => {
-    postsInFlight.current += 1;
-    posting
-      .then(
-        (comment) => postedHere.current.add(comment.id),
-        () => {},
-      )
-      .finally(() => {
-        postsInFlight.current -= 1;
-      });
-  }, []);
 
   const handleBridgeMessage = useCallback(
     (message: BridgeMessage) => {
@@ -353,8 +343,8 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       const newest = found[0];
       if (newest) {
         const seen = newestVersion.current;
-        // Nothing on this page uploads, so every new version came from elsewhere.
-        if (seen !== null && newest.number > seen) {
+        const mine = newest.inApp && newest.creator.id === currentUserId;
+        if (seen !== null && newest.number > seen && !mine) {
           setNotice({ message: `${newest.creator.name} uploaded version ${newest.number}` });
         }
         newestVersion.current = Math.max(seen ?? 0, newest.number);
@@ -363,7 +353,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
       // The version list is supplementary; a failure here leaves the artifact
       // itself, and whatever version was being viewed, on screen.
     }
-  }, [id]);
+  }, [id, currentUserId]);
 
   useEffect(() => {
     void load();
@@ -601,6 +591,7 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
         email={email}
         onHome={onHome}
         onSignOut={onSignOut}
+        onOpenArtifact={onOpenArtifact}
         trailing={commentsToggle}
         menu={menu}
         notice={
@@ -641,7 +632,6 @@ export function ArtifactFull({ id, email, currentUserId, onHome, onSignOut }: Ar
             onClearAnchor={() => setSelection(null)}
             onClose={() => setPanelOpen(false)}
             onComments={handleComments}
-            onPosting={handlePosting}
             onEntries={setEntries}
             onFocusComment={revealComment}
             focusedId={focusedId}

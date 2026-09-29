@@ -26,6 +26,7 @@ function version(overrides: Partial<ArtifactVersion> = {}): ArtifactVersion {
     byteSize: 2048,
     creator: { id: "user-1", name: "A Person", email: "person@acme.example" },
     createdAt: new Date().toISOString(),
+    inApp: false,
     ...overrides,
   };
 }
@@ -33,6 +34,7 @@ function version(overrides: Partial<ArtifactVersion> = {}): ArtifactVersion {
 function answer(path: string) {
   // Query strings (e.g. `?version=`) leave the path itself unchanged.
   const base = path.split("?")[0] ?? path;
+  if (base === "/api/activity") return { body: { items: [], readAt: null } };
   if (base.endsWith("/preview")) return { body: { url: "http://127.0.0.1:5173/preview/token" } };
   if (base.endsWith("/comments")) return { body: { comments: [] } };
   if (base.endsWith("/entries")) return { body: { entries: [], schema: null } };
@@ -58,6 +60,7 @@ function renderFull() {
       currentUserId="user-1"
       onHome={() => {}}
       onSignOut={() => {}}
+      onOpenArtifact={() => {}}
     />,
   );
 }
@@ -765,7 +768,10 @@ describe("live updates", () => {
   test("ignores a change to some other artifact", async () => {
     let calls = 0;
     stubFetch((path) => {
-      if (!path.endsWith("/preview") && !path.endsWith("/markdown")) calls += 1;
+      // The bell follows every artifact, so its reload is not the page's.
+      if (!path.endsWith("/preview") && !path.endsWith("/markdown") && path !== "/api/activity") {
+        calls += 1;
+      }
       return answer(path);
     });
     renderFull();
@@ -792,6 +798,7 @@ describe("change notices", () => {
       parentId: null,
       versionId: "artifact-1",
       versionNumber: 1,
+      inApp: false,
       ...overrides,
     };
   }
@@ -815,7 +822,12 @@ describe("change notices", () => {
       const base = path.split("?")[0] ?? path;
       if (base.endsWith("/comments") && init?.method === "POST") {
         const { body } = JSON.parse(String(init.body)) as { body: string };
-        const created = comment({ id: `posted-${lists.comments.length}`, body, author: me });
+        const created = comment({
+          id: `posted-${lists.comments.length}`,
+          body,
+          author: me,
+          inApp: true,
+        });
         lists.comments = [...lists.comments, created];
         if (!options.holdPosts) return Promise.resolve(json({ comment: created }, 201));
         return new Promise((resolve) => held.push(() => resolve(json({ comment: created }, 201))));
@@ -854,7 +866,10 @@ describe("change notices", () => {
     await renderWithVersions();
     expect(screen.queryByText(/uploaded version/)).toBeNull();
 
-    lists.versions = [version({ id: "v2", number: 2, creator: someoneElse }), ...lists.versions];
+    lists.versions = [
+      version({ id: "v2", number: 2, creator: someoneElse, inApp: true }),
+      ...lists.versions,
+    ];
     await announce({ type: "artifact.changed", id: "artifact-1" });
 
     expect(await screen.findByText("B Person uploaded version 2")).toBeDefined();
@@ -869,6 +884,22 @@ describe("change notices", () => {
     await announce({ type: "artifact.changed", id: "artifact-1" });
 
     expect(await screen.findByText("A Person uploaded version 2")).toBeDefined();
+  });
+
+  test("does not tell the reader about a version they uploaded in the web app", async () => {
+    const lists = { versions: [version({ creator: me })], comments: [] };
+    stubLists(lists);
+    await renderWithVersions();
+
+    lists.versions = [
+      version({ id: "v2", number: 2, creator: me, inApp: true }),
+      ...lists.versions,
+    ];
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+
+    await screen.findByRole("button", { name: "Version 2, current" });
+    await act(async () => {});
+    expect(screen.queryByText(/uploaded version/)).toBeNull();
   });
 
   test("clicking a new version's notice takes a reader on an older version to the new one", async () => {
@@ -904,13 +935,17 @@ describe("change notices", () => {
     await act(async () => {});
     expect(screen.queryByText(/commented/)).toBeNull();
 
-    lists.comments = [...lists.comments, comment({ id: "comment-2", body: "One more thing" })];
+    // Someone else's comment is news wherever they wrote it.
+    lists.comments = [
+      ...lists.comments,
+      comment({ id: "comment-2", body: "One more thing", inApp: true }),
+    ];
     await announce({ type: "comment.changed", artifactId: "artifact-1" });
 
     expect(await screen.findByText("B Person commented")).toBeDefined();
   });
 
-  test("tells the reader about a comment made under their own account somewhere else", async () => {
+  test("tells the reader about a comment their agent made under their account", async () => {
     const lists = { versions: [version()], comments: [comment()] };
     stubLists(lists);
     renderFull();
@@ -920,6 +955,23 @@ describe("change notices", () => {
     await announce({ type: "comment.changed", artifactId: "artifact-1" });
 
     expect(await screen.findByText("A Person commented")).toBeDefined();
+  });
+
+  test("does not tell the reader about a comment they wrote in the web app in another tab", async () => {
+    const lists = { versions: [version()], comments: [comment()] };
+    stubLists(lists);
+    renderFull();
+    await screen.findByText("Looks right");
+
+    lists.comments = [
+      ...lists.comments,
+      comment({ id: "comment-2", body: "From my other tab", author: me, inApp: true }),
+    ];
+    await announce({ type: "comment.changed", artifactId: "artifact-1" });
+
+    await screen.findByText("From my other tab");
+    await act(async () => {});
+    expect(screen.queryByText(/commented/)).toBeNull();
   });
 
   test("does not tell the reader about a comment they posted on this page", async () => {
