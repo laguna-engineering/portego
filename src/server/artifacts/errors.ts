@@ -6,6 +6,8 @@ export type ErrorCode =
   | "UNAUTHENTICATED"
   | "NOT_FOUND"
   | "FORBIDDEN"
+  /** The artifact exists and belongs to someone else. Nothing else about it is sent. */
+  | "PRIVATE"
   | "INVALID_INPUT"
   | "TITLE_REQUIRED"
   /** A new artifact would share its title with an existing one. */

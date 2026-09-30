@@ -14,9 +14,10 @@ export type PageMeta = {
 };
 
 /**
- * Social tags for the page at `path`, or null for a page that is not a
- * readable artifact. Link unfurlers send no cookie, so an anonymous request
- * gets the title only: whoever holds the link can read it, and nothing more.
+ * Social tags for the page at `path`, or null for a page that is not an
+ * artifact the request can see. Link unfurlers send no cookie, so an anonymous
+ * request gets a shared artifact's title only: whoever holds the link can read
+ * it, and nothing more.
  */
 export async function pageMeta(
   path: string,
@@ -27,14 +28,16 @@ export async function pageMeta(
   if (id === null) return null;
 
   try {
-    const artifact = deps.artifacts.get(id);
-    if (artifact.archivedAt) return null;
-
     const session = await deps.auth.api.getSession({ headers });
+    const viewer = { userId: session?.user.id ?? null };
+    const artifact = deps.artifacts.get(id, viewer);
+    if (artifact.archivedAt) return null;
     if (!session) return { title: artifact.title, description: null };
 
     const description =
-      artifact.description?.trim() || excerpt((await deps.artifacts.markdown(id)).markdown) || null;
+      artifact.description?.trim() ||
+      excerpt((await deps.artifacts.markdown(id, viewer)).markdown) ||
+      null;
     return { title: artifact.title, description };
   } catch (error) {
     if (error instanceof ServiceError) return null;

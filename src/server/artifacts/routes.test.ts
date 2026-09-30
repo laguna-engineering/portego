@@ -736,7 +736,7 @@ describe("images", () => {
     const res = await sendWithImages([pngFile("logo.png"), svg]);
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({ error: { code: "UNSUPPORTED_CONTENT" } });
-    expect(server.artifacts.list().items).toEqual([]);
+    expect(server.artifacts.list({ userId: null }).items).toEqual([]);
   });
 
   test("refuses images with a Markdown upload, whose rendering never loads them", async () => {

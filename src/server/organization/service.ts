@@ -11,14 +11,15 @@ export const ORGANIZATION_NAME_MAX_LENGTH = 100;
 export const MAX_ARTIFACT_TAGS = 20;
 
 export type OrganizationService = {
-  folders: () => Folder[];
+  /** Counts in each folder cover the artifacts `viewerId` can see. */
+  folders: (viewerId: string) => Folder[];
   createFolder: (input: { name: unknown; parentId?: unknown; actorId: string }) => Folder;
   updateFolder: (
     id: string,
     input: { name?: unknown; parentId?: unknown; actorId: string },
   ) => Folder;
   deleteFolder: (id: string) => void;
-  tags: () => Tag[];
+  tags: (viewerId: string) => Tag[];
   createTag: (input: { name: unknown; actorId: string }) => Tag;
   updateTag: (id: string, input: { name: unknown; actorId: string }) => Tag;
   deleteTag: (id: string) => void;
@@ -86,12 +87,12 @@ export function createOrganizationService(options: {
   const publish = options.events?.publish ?? (() => {});
 
   const requireFolder = (id: string): Folder => {
-    const folder = store.getFolder(id);
+    const folder = store.getFolder(id, null);
     if (!folder) throw new ServiceError("NOT_FOUND", "No such folder.");
     return folder;
   };
   const requireTags = (ids: string[]): void => {
-    if (store.getTags(ids).length !== ids.length)
+    if (store.getTags(ids, null).length !== ids.length)
       throw new ServiceError("NOT_FOUND", "No such tag.");
   };
   const wouldCycle = (folderId: string, candidateParentId: string | null): boolean => {
@@ -114,7 +115,7 @@ export function createOrganizationService(options: {
   };
 
   return {
-    folders: () => store.listFolders(),
+    folders: (viewerId) => store.listFolders(viewerId),
 
     createFolder(input) {
       const normalizedName = name(input.name);
@@ -178,7 +179,7 @@ export function createOrganizationService(options: {
         publish({ type: "artifact.changed", id: artifactId });
     },
 
-    tags: () => store.listTags(),
+    tags: (viewerId) => store.listTags(viewerId),
 
     createTag(input) {
       try {

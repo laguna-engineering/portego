@@ -45,6 +45,7 @@ describe("applyMigrations", () => {
       "archivedAt",
       "archivedBy",
       "folderId",
+      "visibility",
     ]);
   });
 

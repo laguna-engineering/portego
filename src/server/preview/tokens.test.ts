@@ -7,7 +7,7 @@ import {
 } from "./tokens.ts";
 
 const SECRET = "session-secret-session-secret-32";
-const SUBJECT = { artifactId: "artifact-1", versionId: "version-1" };
+const SUBJECT = { artifactId: "artifact-1", versionId: "version-1", viewerId: "user-1" };
 
 describe("verifyPreviewToken", () => {
   test("accepts a token this deployment issued", () => {
@@ -22,26 +22,36 @@ describe("verifyPreviewToken", () => {
 
   test("refuses a token whose artifact id was swapped for another", () => {
     const { token } = mintPreviewToken(SECRET, SUBJECT);
-    const [version, , versionId, expiry, signature] = token.split(".");
+    const [version, , versionId, viewerId, expiry, signature] = token.split(".");
     const otherId = Buffer.from("artifact-2", "utf8").toString("base64url");
-    const forged = [version, otherId, versionId, expiry, signature].join(".");
+    const forged = [version, otherId, versionId, viewerId, expiry, signature].join(".");
     expect(verifyPreviewToken(SECRET, forged)).toEqual({ valid: false, reason: "signature" });
   });
 
   test("refuses a token whose version id was swapped, so one version cannot show another", () => {
     const { token } = mintPreviewToken(SECRET, SUBJECT);
-    const [version, id, , expiry, signature] = token.split(".");
+    const [version, id, , viewerId, expiry, signature] = token.split(".");
     const otherVersion = Buffer.from("version-2", "utf8").toString("base64url");
-    const forged = [version, id, otherVersion, expiry, signature].join(".");
+    const forged = [version, id, otherVersion, viewerId, expiry, signature].join(".");
+    expect(verifyPreviewToken(SECRET, forged)).toEqual({ valid: false, reason: "signature" });
+  });
+
+  // A token issued while an artifact was shared must not read it once it is
+  // private by claiming to have been issued to the creator.
+  test("refuses a token whose viewer was swapped for another user", () => {
+    const { token } = mintPreviewToken(SECRET, SUBJECT);
+    const [version, id, versionId, , expiry, signature] = token.split(".");
+    const creator = Buffer.from("user-2", "utf8").toString("base64url");
+    const forged = [version, id, versionId, creator, expiry, signature].join(".");
     expect(verifyPreviewToken(SECRET, forged)).toEqual({ valid: false, reason: "signature" });
   });
 
   test("refuses a token whose expiry was pushed further out", () => {
     const { token } = mintPreviewToken(SECRET, SUBJECT);
-    const [version, id, versionId, expiry, signature] = token.split(".");
+    const [version, id, versionId, viewerId, expiry, signature] = token.split(".");
     const later = String(Number(expiry) + 86_400);
     expect(
-      verifyPreviewToken(SECRET, [version, id, versionId, later, signature].join(".")),
+      verifyPreviewToken(SECRET, [version, id, versionId, viewerId, later, signature].join(".")),
     ).toEqual({
       valid: false,
       reason: "signature",
@@ -67,14 +77,19 @@ describe("verifyPreviewToken", () => {
       "v2.a.b",
       "v1.artifact.999.sig",
       "v2.a.b.999.sig",
-      "v2.....",
+      "v3.a.b.999.sig",
+      "v3......",
     ]) {
       expect(verifyPreviewToken(SECRET, token).valid).toBe(false);
     }
   });
 
   test("keeps an artifact id containing a dot readable, which the format could hide", () => {
-    const subject = { artifactId: "artifact.with.dots", versionId: "version.with.dots" };
+    const subject = {
+      artifactId: "artifact.with.dots",
+      versionId: "version.with.dots",
+      viewerId: "user-1",
+    };
     const { token } = mintPreviewToken(SECRET, subject);
     expect(verifyPreviewToken(SECRET, token)).toEqual({ valid: true, ...subject });
   });

@@ -14,7 +14,7 @@ import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
 import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
-import { createTestServer, htmlFile, TEST_CONTENT_ORIGIN } from "./testing.ts";
+import { createTestServer, htmlFile, TEST_CONTENT_ORIGIN, WORKSPACE_USER } from "./testing.ts";
 
 const cleanups: (() => void)[] = [];
 
@@ -302,6 +302,40 @@ describe("GET * (social tags)", () => {
       expect(body).toContain('<meta property="og:title" content="Portego" />');
       expect(body).toContain("<title>Portego</title>");
       expect(body).not.toContain("og:description");
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("gives a private artifact's title only to its creator", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const cookie = await server.signIn();
+      const other = await server.signIn({
+        ...WORKSPACE_USER,
+        sub: "google-subject-2",
+        email: "other@acme.example",
+        name: "B Person",
+      });
+      const upload = await uploadArtifact(server, cookie, { title: "Draft plan" });
+      const { artifact } = (await upload.json()) as { artifact: { id: string } };
+      const change = await server.app.request(`/api/artifacts/${artifact.id}/visibility`, {
+        method: "PATCH",
+        headers: { cookie, origin: TEST_BASE_URL, "content-type": "application/json" },
+        body: JSON.stringify({ visibility: "private" }),
+      });
+      expect(change.status).toBe(200);
+
+      // An unfurler sends no cookie, so a pasted link must not reveal the title.
+      for (const headers of [{}, { cookie: other }] as Record<string, string>[]) {
+        const body = await (await server.app.request(`/a/${artifact.id}`, { headers })).text();
+        expect(body).toContain('<meta property="og:title" content="Portego" />');
+        expect(body).not.toContain("Draft plan");
+      }
+      const own = await (
+        await server.app.request(`/a/${artifact.id}`, { headers: { cookie } })
+      ).text();
+      expect(own).toContain('<meta property="og:title" content="Draft plan" />');
     } finally {
       server.cleanup();
     }

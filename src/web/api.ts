@@ -6,6 +6,9 @@ export type Provider = { id: string; label: string };
 
 export type ArtifactStatus = "open" | "solved";
 
+/** A private artifact is visible only to its creator. */
+export type ArtifactVisibility = "shared" | "private";
+
 export type Artifact = {
   id: string;
   title: string;
@@ -18,6 +21,7 @@ export type Artifact = {
   updatedAt: string;
   status: ArtifactStatus;
   archivedAt: string | null;
+  visibility: ArtifactVisibility;
   versionCount: number;
   currentVersionId: string;
   /** Null when the artifact is unfiled. */
@@ -171,6 +175,7 @@ export function uploadArtifact(input: {
   artifactId?: string;
   allowDuplicateTitle?: boolean;
   folderId?: string;
+  visibility?: ArtifactVisibility;
 }): Promise<{ artifact: Artifact; newArtifact: boolean }> {
   const form = new FormData();
   form.set("file", input.file);
@@ -179,6 +184,7 @@ export function uploadArtifact(input: {
   if (input.artifactId) form.set("artifactId", input.artifactId);
   if (input.allowDuplicateTitle) form.set("allowDuplicateTitle", "true");
   if (input.folderId) form.set("folderId", input.folderId);
+  if (input.visibility) form.set("visibility", input.visibility);
   return request<{ artifact: Artifact; newArtifact: boolean }>("/api/artifacts", {
     method: "POST",
     body: form,
@@ -236,6 +242,17 @@ export function setArtifactArchived(id: string, archived: boolean): Promise<Arti
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ archived }),
+  }).then((body) => body.artifact);
+}
+
+export function setArtifactVisibility(
+  id: string,
+  visibility: ArtifactVisibility,
+): Promise<Artifact> {
+  return request<{ artifact: Artifact }>(`/api/artifacts/${encodeURIComponent(id)}/visibility`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ visibility }),
   }).then((body) => body.artifact);
 }
 

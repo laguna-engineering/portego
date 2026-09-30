@@ -46,6 +46,7 @@ export function artifact(overrides: Partial<Artifact> = {}): Artifact {
     updatedAt: new Date().toISOString(),
     status: "open",
     archivedAt: null,
+    visibility: "shared",
     versionCount: 1,
     currentVersionId: id,
     folder: null,

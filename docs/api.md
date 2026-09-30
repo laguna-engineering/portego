@@ -11,6 +11,10 @@ The rules live in a transport-independent service
 tools are another, and they call the same methods rather than making HTTP
 requests to this application.
 
+An artifact is `shared`, which every signed-in user can see, or `private`,
+which only its creator can see. Every route that names someone else's private
+artifact refuses with `PRIVATE`; see [Visibility](#visibility).
+
 `GET /api/me` returns the signed-in user and the limits the client needs to
 check an upload before sending it.
 
@@ -25,6 +29,7 @@ check an upload before sending it.
 | `PATCH` | `/api/artifacts/:id/status` | Mark open or solved |
 | `PATCH` | `/api/artifacts/:id/archived` | Archive or restore |
 | `PATCH` | `/api/artifacts/:id/organization` | Set its folder or tags |
+| `PATCH` | `/api/artifacts/:id/visibility` | Make it private or shared (creator only) |
 | `GET` | `/api/folders` | List the shared folder tree |
 | `POST` | `/api/folders` | Create a shared folder |
 | `PATCH` | `/api/folders/:id` | Rename or move a folder |
@@ -110,8 +115,8 @@ user or 200 in total.
 ### Upload
 
 `multipart/form-data` with a `file` part and optional `title`,
-`description`, `artifactId`, `allowDuplicateTitle`, `folderId`, `tagId`, and
-`image` parts.
+`description`, `artifactId`, `allowDuplicateTitle`, `folderId`, `tagId`,
+`visibility`, and `image` parts.
 
 - The creator is taken from the session and reported as
   `creator: { id, name, email }`. A `createdBy` field in the form is ignored.
@@ -137,7 +142,11 @@ user or 200 in total.
   non-archived artifact already has (after trimming) is refused with
   `TITLE_EXISTS`, and the error carries that artifact's id as `artifactId`.
   `allowDuplicateTitle` set to `true` creates the artifact anyway. A matching
-  title never adds a version by itself.
+  title never adds a version by itself. Someone else's private artifact does
+  not count, because the error would reveal its id.
+- `visibility` is `shared` or `private`. A new artifact without it is shared;
+  a new version without it keeps the artifact's visibility. Only the creator
+  can set it on a version.
 - `folderId` files the artifact in a folder, and one `tagId` part per tag
   replaces its tags, with the rules of `PATCH /api/artifacts/:id/organization`.
   On a new version, an omitted field keeps the artifact's folder or tags. An
@@ -199,7 +208,8 @@ responds `{ url, expiresAt }`; the URL serves that version's bytes.
 
 `GET /api/folders` returns the shared folders as a flat array. Each record has
 `id`, `name`, `parentId`, timestamps, and `artifactCount` for artifacts filed
-directly in that folder. `POST /api/folders` accepts `{ "name", "parentId"? }`;
+directly in that folder. Counts cover only the artifacts the caller can see,
+here and for tags. `POST /api/folders` accepts `{ "name", "parentId"? }`;
 omit `parentId` for a root folder. `PATCH /api/folders/:id` accepts either or
 both fields, with `parentId: null` moving a folder to the root. A folder cannot
 be its own parent or descendant. Deleting one reparents its children and moves
@@ -222,6 +232,31 @@ not repeat an id, and has a limit of 20. Folder and tag names are at most 100
 characters and are unique without regard to case (folder names only among the
 same siblings).
 
+### Visibility
+
+`PATCH /api/artifacts/:id/visibility` accepts:
+
+```json
+{ "visibility": "private" }
+```
+
+Only the artifact's creator can change it, in either direction. Anyone else
+gets `FORBIDDEN` for a shared artifact and `PRIVATE` for a private one.
+
+A private artifact is visible only to its creator. For anyone else:
+
+- every `/api/artifacts/:id` route, reads and writes alike, refuses with
+  `PRIVATE`. The error carries no title, description, or creator.
+- `GET /api/artifacts`, the activity feed, and folder and tag counts leave it
+  out.
+- the page's social tags are the site's defaults, so a pasted link shows no
+  title.
+- a preview URL stops working, including one issued while the artifact was
+  shared. Each preview token names the user it was issued to.
+
+Comments and entries other people added while it was shared are kept. They
+see them again if the artifact is shared again.
+
 ### Comments
 
 `POST /api/artifacts/:id/comments` accepts an optional `versionId` in its
@@ -239,7 +274,8 @@ person's account, so this is what tells the two apart.
 
 `GET /api/activity` lists what happened in the last seven days, newest first,
 at most 100 items. It covers new artifacts, new versions, comments and replies,
-and status changes (solved, reopened, archived, restored), by anyone. What the
+and status changes (solved, reopened, archived, restored), by anyone, on the
+artifacts the caller can see. What the
 caller did in the web app is left out; what they did through MCP or an upload
 ticket, such as an agent working under their account, is listed. A removed
 comment is no longer listed.
@@ -301,6 +337,7 @@ Every failure has the same shape:
 | `UNAUTHENTICATED` | 401 | No session, or no usable upload ticket. |
 | `NOT_FOUND` | 404 | No artifact with that id. |
 | `FORBIDDEN` | 403 | The action is not this caller's to take. |
+| `PRIVATE` | 403 | The artifact is someone else's private one. Nothing else about it is sent. |
 | `INVALID_INPUT` | 400 | A field is missing, malformed, or too long. |
 | `TITLE_REQUIRED` | 400 | No title given and none in the document. |
 | `TITLE_EXISTS` | 409 | A new artifact would take the title of an existing one. The error carries its `artifactId`. |

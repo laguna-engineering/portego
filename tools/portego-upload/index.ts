@@ -412,6 +412,7 @@ async function upload(options: {
   allowDuplicateTitle?: boolean;
   folderId?: string;
   tagIds?: string[];
+  visibility?: "shared" | "private";
   contentType?: "html" | "markdown";
   /** A Markdown file sent with an HTML upload as the text agents read back. */
   markdownPath?: string;
@@ -492,6 +493,7 @@ async function upload(options: {
   if (options.allowDuplicateTitle) form.set("allowDuplicateTitle", "true");
   if (options.folderId) form.set("folderId", options.folderId);
   for (const tagId of options.tagIds ?? []) form.append("tagId", tagId);
+  if (options.visibility) form.set("visibility", options.visibility);
 
   const response = await fetch(ticket.url, {
     method: "POST",
@@ -645,6 +647,14 @@ async function serve(): Promise<void> {
             "Tag ids from list_tags. Replaces the artifact's tags. Omitted keeps a new " +
               "version's tags.",
           ),
+        visibility: z
+          .enum(["shared", "private"])
+          .optional()
+          .describe(
+            "private makes the artifact visible only to the user; only its creator can set " +
+              "this. Give it only when the user asks. Omitted makes a new artifact shared and " +
+              "keeps a version's visibility.",
+          ),
       },
       outputSchema: {
         id: z.string(),
@@ -666,6 +676,7 @@ async function serve(): Promise<void> {
       allowDuplicateTitle,
       folderId,
       tagIds,
+      visibility,
     }) => {
       try {
         const artifact = await upload({
@@ -678,6 +689,7 @@ async function serve(): Promise<void> {
           allowDuplicateTitle,
           folderId,
           tagIds,
+          visibility,
         });
         return {
           content: [{ type: "text" as const, text: JSON.stringify(artifact, null, 2) }],
@@ -1142,7 +1154,7 @@ async function main(): Promise<void> {
     const path = firstPositional(rest);
     if (!path)
       throw new UploadError(
-        "Usage: upload <file> [--markdown | --markdown-file text.md] [--title T] [--description D] [--artifact-id ID | --allow-duplicate-title] [--folder-id ID]",
+        "Usage: upload <file> [--markdown | --markdown-file text.md] [--title T] [--description D] [--artifact-id ID | --allow-duplicate-title] [--folder-id ID] [--private]",
       );
     const artifact = await upload({
       path,
@@ -1153,6 +1165,7 @@ async function main(): Promise<void> {
       artifactId: readFlag(rest, "artifact-id"),
       allowDuplicateTitle: rest.includes("--allow-duplicate-title"),
       folderId: readFlag(rest, "folder-id"),
+      ...(rest.includes("--private") ? { visibility: "private" as const } : {}),
     });
     console.log(artifact.url);
     return;

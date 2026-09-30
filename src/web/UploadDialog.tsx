@@ -51,6 +51,7 @@ export function UploadDialog({
   const [folders, setFolders] = useState<Folder[] | null>(null);
   const [folder, setFolder] = useState(initialFolderId ?? "");
   const [newFolderName, setNewFolderName] = useState("");
+  const [onlyMe, setOnlyMe] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -144,14 +145,16 @@ export function UploadDialog({
     setProblem(null);
     setExistingId(null);
     try {
-      // A new version keeps the folder its artifact already has.
+      // A new version keeps the folder and visibility its artifact already has.
       const chosen = creating ? await newFolder() : target.artifactId ? "" : folder;
       const filing = chosen ? { folderId: chosen } : {};
+      const visibility = onlyMe && !target.artifactId ? { visibility: "private" as const } : {};
       const { artifact } = await uploadArtifact({
         file,
         title,
         description,
         ...filing,
+        ...visibility,
         ...target,
       });
       onUploaded(artifact);
@@ -286,6 +289,16 @@ export function UploadDialog({
               />
             </>
           ) : null}
+
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={onlyMe}
+              disabled={uploading}
+              onChange={(event) => setOnlyMe(event.target.checked)}
+            />
+            Private: only you can see it
+          </label>
 
           {problem ? (
             <p className="problem" role="alert">

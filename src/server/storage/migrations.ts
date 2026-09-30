@@ -211,6 +211,13 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    id: "011-artifact-visibility",
+    sql: `
+      alter table artifacts add column visibility text not null default 'shared'
+        check (visibility in ('shared', 'private'));
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

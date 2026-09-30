@@ -117,6 +117,29 @@ describe("uploading", () => {
     expect(uploaded[0]?.id).toBe("new-artifact");
   });
 
+  test("uploads a private artifact only when the person asks for one", async () => {
+    const sent: FormData[] = [];
+    stubUploads(sent, () => ({ status: 201, body: { artifact: artifact() } }));
+
+    renderDialog();
+    await userEvent.upload(fileInput(), htmlFile());
+    await userEvent.click(screen.getByRole("button", { name: "Upload" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]?.has("visibility")).toBe(false);
+  });
+
+  test("sends visibility private when the box is ticked", async () => {
+    const sent: FormData[] = [];
+    stubUploads(sent, () => ({ status: 201, body: { artifact: artifact() } }));
+
+    renderDialog();
+    await userEvent.upload(fileInput(), htmlFile());
+    await userEvent.click(screen.getByRole("checkbox", { name: "Private: only you can see it" }));
+    await userEvent.click(screen.getByRole("button", { name: "Upload" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]?.get("visibility")).toBe("private");
+  });
+
   test("shows the upload in progress and stops a second submission", async () => {
     const held = Promise.withResolvers<void>();
     stubFetchWith(async () => {

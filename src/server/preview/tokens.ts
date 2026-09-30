@@ -6,14 +6,15 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  * bound to that version, and bound to this one purpose, so it cannot be
  * presented to anything else.
  */
-const VERSION = "v2";
+const VERSION = "v3";
 
 /** Long enough to load an iframe, short enough that a leaked URL is stale fast. */
 export const PREVIEW_TTL_SECONDS = 300;
 
 export type PreviewToken = { token: string; expiresAt: Date };
 
-export type PreviewSubject = { artifactId: string; versionId: string };
+/** `viewerId` is who the token was issued to, so it stops working if they lose access. */
+export type PreviewSubject = { artifactId: string; versionId: string; viewerId: string };
 
 export type VerifyResult =
   | ({ valid: true } & PreviewSubject)
@@ -35,7 +36,7 @@ function sign(secret: string, subject: PreviewSubject, expiresAt: number): strin
   // Each id is encoded on its own, so neither can run into the other.
   return createHmac("sha256", previewKey(secret))
     .update(
-      `preview:${VERSION}:${encode(subject.artifactId)}:${encode(subject.versionId)}:${expiresAt}`,
+      `preview:${VERSION}:${encode(subject.artifactId)}:${encode(subject.versionId)}:${encode(subject.viewerId)}:${expiresAt}`,
     )
     .digest("base64url");
 }
@@ -48,7 +49,7 @@ export function mintPreviewToken(
   const expiresAt = Math.floor(now.getTime() / 1000) + PREVIEW_TTL_SECONDS;
   const signature = sign(secret, subject, expiresAt);
   return {
-    token: `${VERSION}.${encode(subject.artifactId)}.${encode(subject.versionId)}.${expiresAt}.${signature}`,
+    token: `${VERSION}.${encode(subject.artifactId)}.${encode(subject.versionId)}.${encode(subject.viewerId)}.${expiresAt}.${signature}`,
     expiresAt: new Date(expiresAt * 1000),
   };
 }
@@ -59,9 +60,16 @@ export function verifyPreviewToken(
   now: Date = new Date(),
 ): VerifyResult {
   const parts = token.split(".");
-  if (parts.length !== 5) return { valid: false, reason: "malformed" };
-  const [version, encodedId, encodedVersionId, expiryText, signature] = parts;
-  if (version !== VERSION || !encodedId || !encodedVersionId || !expiryText || !signature) {
+  if (parts.length !== 6) return { valid: false, reason: "malformed" };
+  const [version, encodedId, encodedVersionId, encodedViewerId, expiryText, signature] = parts;
+  if (
+    version !== VERSION ||
+    !encodedId ||
+    !encodedVersionId ||
+    !encodedViewerId ||
+    !expiryText ||
+    !signature
+  ) {
     return { valid: false, reason: "malformed" };
   }
 
@@ -72,18 +80,21 @@ export function verifyPreviewToken(
   // separator cannot change how the rest of the token is read.
   const artifactId = Buffer.from(encodedId, "base64url").toString("utf8");
   const versionId = Buffer.from(encodedVersionId, "base64url").toString("utf8");
-  if (artifactId === "" || versionId === "") return { valid: false, reason: "malformed" };
+  const viewerId = Buffer.from(encodedViewerId, "base64url").toString("utf8");
+  if (artifactId === "" || versionId === "" || viewerId === "") {
+    return { valid: false, reason: "malformed" };
+  }
 
   // The signature is checked before the clock, so an expired token still has
   // to be one this deployment issued.
-  const expected = Buffer.from(sign(secret, { artifactId, versionId }, expiresAt));
+  const expected = Buffer.from(sign(secret, { artifactId, versionId, viewerId }, expiresAt));
   const given = Buffer.from(signature);
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
     return { valid: false, reason: "signature" };
   }
   if (expiresAt * 1000 <= now.getTime()) return { valid: false, reason: "expired" };
 
-  return { valid: true, artifactId, versionId };
+  return { valid: true, artifactId, versionId, viewerId };
 }
 
 export type PreviewIssuer = (subject: PreviewSubject) => { url: string; expiresAt: Date };

@@ -124,12 +124,13 @@ of it has to pass the browser's `Host` through unchanged.
 
 | Tool | Purpose |
 | --- | --- |
-| `list_artifacts` | Cursor, limit, optional query and sort. Returns compact metadata and web URLs. |
+| `list_artifacts` | Cursor, limit, optional query and sort. Returns compact metadata and web URLs. Leaves out other people's private artifacts. |
 | `get_artifact_metadata` | One metadata record. |
 | `get_artifact_source` | The stored HTML of one version, up to 1 MiB, current by default or the one named by an optional `versionId`. Larger artifacts are refused with their size and a link, rather than truncated. |
-| `upload_artifact` | Title, optional description, optional `artifactId` to add a version to an existing artifact, optional `allowDuplicateTitle`, optional `folderId` and `tagIds` to file the artifact, and either self-contained HTML or Markdown, or both. Markdown alone becomes a static HTML page in the Portego style; with HTML, it is the text agents read back. Returns the id, digest, version number, whether the upload created the artifact, and the web URL. |
+| `upload_artifact` | Title, optional description, optional `artifactId` to add a version to an existing artifact, optional `allowDuplicateTitle`, optional `folderId` and `tagIds` to file the artifact, optional `visibility`, and either self-contained HTML or Markdown, or both. Markdown alone becomes a static HTML page in the Portego style; with HTML, it is the text agents read back. Returns the id, digest, version number, whether the upload created the artifact, and the web URL. |
 | `create_upload_ticket` | A short-lived URL and ticket for sending an HTML file directly, without putting it in a tool argument. |
 | `set_artifact_status` | Mark an artifact solved or open again, archive it, or both. Records the caller as the actor. |
+| `set_artifact_visibility` | Make an artifact `private`, visible only to the caller, or `shared` again. Only the artifact's creator can change it. |
 | `list_folders` | List the shared folder tree. |
 | `create_folder`, `update_folder`, `delete_folder` | Manage shared folders. Deletion reparents children and preserves artifacts. |
 | `list_tags` | List shared tags. |
@@ -142,6 +143,10 @@ of it has to pass the browser's `Host` through unchanged.
 | `clear_artifact_entry` | Removes the caller's value for one key. |
 | `get_artifact_markdown` | The artifact's static content as Markdown, current version by default or the one named by an optional `versionId`. Its `source` says whether the version supplied Markdown or the server generated it from HTML. `empty` says so when a page renders everything from JavaScript. |
 | `list_artifact_versions` | An artifact's versions, highest number first. |
+
+A tool that names someone else's private artifact refuses with `PRIVATE`, the
+same code the HTTP API uses. The caller is the token's user, so an agent sees
+what its user sees.
 
 Every tool description states that artifact HTML is untrusted, self-contained,
 and at most 5 MiB. Artifact HTML is never written to a log.
@@ -204,7 +209,7 @@ curl -H "Authorization: Bearer <ticket>" \
 `file` is required. `contentType` is `html` by default or `markdown`. An HTML
 file may come with a `markdown` text field, the text agents read back. `title`,
 `description`, `artifactId`, `allowDuplicateTitle` (the text `true`),
-`folderId`, and one `tagId` field per tag are optional and follow the same
+`folderId`, `visibility`, and one `tagId` field per tag are optional and follow the same
 rules as `upload_artifact`: only `artifactId` adds a version, and a title that
 a non-archived artifact already has is refused with `TITLE_EXISTS` unless
 `allowDuplicateTitle` is set. Markdown is rendered in the Portego style with raw HTML and images disabled. An HTML
@@ -347,7 +352,8 @@ the ticket itself. Its deployment tools are:
 
 ```
 upload_artifact_from_path({ path, contentType?, markdownPath?, title?, description?,
-                            artifactId?, allowDuplicateTitle?, folderId?, tagIds? })
+                            artifactId?, allowDuplicateTitle?, folderId?, tagIds?,
+                            visibility? })
 list_artifacts({ query?, folderId?, cursor? })
 get_artifact_markdown({ id, versionId? })
 download_artifact_source({ id, path, versionId?, overwrite? })
@@ -476,7 +482,8 @@ npx -y portego-upload upload report.portego.html --title "Weekly report" --markd
 ```
 
 `upload` also takes `--artifact-id` to add a version, `--allow-duplicate-title`
-to create an artifact whose title another one already has, and `--folder-id`.
+to create an artifact whose title another one already has, `--folder-id`, and
+`--private`.
 
 From a clone, `bun run tools/portego-upload/index.ts` takes the same commands.
 `bun run build:upload-tool` builds the file the package ships. A tag named

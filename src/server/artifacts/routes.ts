@@ -13,6 +13,7 @@ const STATUS: Record<ErrorCode, 400 | 401 | 403 | 404 | 409 | 413 | 429 | 500> =
   UNAUTHENTICATED: 401,
   NOT_FOUND: 404,
   FORBIDDEN: 403,
+  PRIVATE: 403,
   INVALID_INPUT: 400,
   TITLE_REQUIRED: 400,
   TITLE_EXISTS: 409,
@@ -78,6 +79,8 @@ export function artifactRoutes(
   // anonymous request from learning whether an id exists.
   routes.use("*", requireUser);
 
+  const viewer = (c: Context<AppEnv>) => ({ userId: currentUser(c).id });
+
   routes.get("/", (c) => {
     const limitParameter = c.req.query("limit");
     const limit = limitParameter === undefined ? undefined : Number(limitParameter);
@@ -103,7 +106,7 @@ export function artifactRoutes(
     }
     organization.validateListFilters({ folderId, tagIds });
 
-    const page = service.list({
+    const page = service.list(viewer(c), {
       query: c.req.query("q") ?? null,
       cursor: c.req.query("cursor") ?? null,
       sort: (sort as ListSort | undefined) ?? null,
@@ -123,9 +126,11 @@ export function artifactRoutes(
     return c.json(result, 201);
   });
 
-  routes.get("/:id", (c) => c.json({ artifact: service.get(c.req.param("id")) }));
+  routes.get("/:id", (c) => c.json({ artifact: service.get(c.req.param("id"), viewer(c)) }));
 
-  routes.get("/:id/versions", (c) => c.json({ versions: service.versions(c.req.param("id")) }));
+  routes.get("/:id/versions", (c) =>
+    c.json({ versions: service.versions(c.req.param("id"), viewer(c)) }),
+  );
 
   // A preview URL is a capability, so it is issued to a session and not
   // readable from one. The artifact is looked up first, which refuses an id
@@ -133,9 +138,14 @@ export function artifactRoutes(
   routes.post("/:id/preview", async (c) => {
     const { artifact, version } = await service.source(
       c.req.param("id"),
+      viewer(c),
       c.req.query("version") ?? null,
     );
-    const preview = issuePreview({ artifactId: artifact.id, versionId: version.id });
+    const preview = issuePreview({
+      artifactId: artifact.id,
+      versionId: version.id,
+      viewerId: currentUser(c).id,
+    });
     return c.json({ url: preview.url, expiresAt: preview.expiresAt });
   });
 
@@ -162,17 +172,27 @@ export function artifactRoutes(
     });
   });
 
+  routes.patch("/:id/visibility", async (c) => {
+    const body = await readJson(c);
+    return c.json({
+      artifact: service.setVisibility(c.req.param("id"), body.visibility, currentUser(c).id),
+    });
+  });
+
   routes.patch("/:id/organization", async (c) => {
     const body = await readJson(c);
+    service.get(c.req.param("id"), viewer(c));
     organization.setArtifactOrganization(c.req.param("id"), {
       ...(Object.hasOwn(body, "folderId") ? { folderId: body.folderId } : {}),
       ...(Object.hasOwn(body, "tagIds") ? { tagIds: body.tagIds } : {}),
       actorId: currentUser(c).id,
     });
-    return c.json({ artifact: service.get(c.req.param("id")) });
+    return c.json({ artifact: service.get(c.req.param("id"), viewer(c)) });
   });
 
-  routes.get("/:id/comments", (c) => c.json({ comments: service.comments(c.req.param("id")) }));
+  routes.get("/:id/comments", (c) =>
+    c.json({ comments: service.comments(c.req.param("id"), viewer(c)) }),
+  );
 
   routes.post("/:id/comments", async (c) => {
     const body = await readJson(c);
@@ -215,7 +235,7 @@ export function artifactRoutes(
     return c.body(null, 204);
   });
 
-  routes.get("/:id/entries", (c) => c.json(service.entries(c.req.param("id"))));
+  routes.get("/:id/entries", (c) => c.json(service.entries(c.req.param("id"), viewer(c))));
 
   routes.put("/:id/entries", async (c) => {
     const body = await readJson(c);
@@ -241,6 +261,7 @@ export function artifactRoutes(
   routes.get("/:id/markdown", async (c) => {
     const { markdown, empty, source, converterVersion, generatedAt } = await service.markdown(
       c.req.param("id"),
+      viewer(c),
       c.req.query("version") ?? null,
     );
     return c.json({ markdown, empty, source, converterVersion, generatedAt });
@@ -249,6 +270,7 @@ export function artifactRoutes(
   routes.get("/:id/source", async (c) => {
     const { version, content } = await service.source(
       c.req.param("id"),
+      viewer(c),
       c.req.query("version") ?? null,
     );
     // The bytes are untrusted HTML. This origin serves them as an opaque
@@ -357,6 +379,7 @@ async function uploadFromForm(
     allowDuplicateTitle: readField(form, "allowDuplicateTitle") === "true",
     ...(form.has("folderId") ? { folderId: form.get("folderId") } : {}),
     ...(form.has("tagId") ? { tagIds: form.getAll("tagId") } : {}),
+    ...(form.has("visibility") ? { visibility: form.get("visibility") } : {}),
     images,
     createdBy,
     inApp: options.inApp,

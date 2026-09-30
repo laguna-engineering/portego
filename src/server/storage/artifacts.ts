@@ -15,6 +15,9 @@ import {
  */
 export type ArtifactStatus = "open" | "solved";
 
+/** A private artifact is visible only to its creator. */
+export type ArtifactVisibility = "shared" | "private";
+
 export type Artifact = {
   id: string;
   title: string;
@@ -34,6 +37,7 @@ export type Artifact = {
   statusChangedBy: string | null;
   archivedAt: Date | null;
   archivedBy: string | null;
+  visibility: ArtifactVisibility;
   /** How many versions exist. The current one is the highest numbered. */
   versionCount: number;
   currentVersionId: string;
@@ -87,6 +91,7 @@ export type CreateArtifactInput = {
   /** The entry schema this version declares, already checked. */
   entrySchema?: string | null;
   images?: VersionImageInput[];
+  visibility?: ArtifactVisibility;
   /** Taken from the session by the caller. Never from the request body. */
   createdBy: string;
   /** Made in the web app, not by an agent or a ticket. */
@@ -145,6 +150,8 @@ export type ListOptions = {
   tagMatch?: TagMatch;
   /** Archived artifacts are left out unless they are asked for. */
   includeArchived?: boolean;
+  /** Other people's private artifacts are left out. Null leaves out every private one. */
+  viewerId: string | null;
 };
 
 export type ListResult = { items: Artifact[]; nextCursor: string | null };
@@ -185,6 +192,7 @@ type Row = {
   statusChangedBy: string | null;
   archivedAt: number | null;
   archivedBy: string | null;
+  visibility: ArtifactVisibility;
   versionCount: number;
   currentVersionId: string;
 };
@@ -212,6 +220,9 @@ const SELECT_ARTIFACT = `
     (select id from artifactVersions where artifactVersions.artifactId = artifacts.id
       order by number desc limit 1) as currentVersionId
   from artifacts join "user" on "user".id = artifacts.createdBy`;
+
+/** Takes the viewer's id, or null for nobody, as its one parameter. */
+export const VISIBLE = "(artifacts.visibility = 'shared' or artifacts.createdBy = ?)";
 
 const SELECT_VERSION = `
   select artifactVersions.*, "user".name as createdByName, "user".email as createdByEmail
@@ -288,9 +299,10 @@ export type ArtifactStore = {
   getVersion: (id: string) => ArtifactVersion | null;
   /**
    * The most recently updated artifact with exactly this title that is not
-   * archived, so a re-upload of a document lands on it as a new version.
+   * archived and that `viewerId` can see, so a re-upload of a document lands
+   * on it as a new version.
    */
-  findByTitle: (title: string) => Artifact | null;
+  findByTitle: (title: string, viewerId: string) => Artifact | null;
   /** Records the new status and who set it. Null when the artifact is gone. */
   setStatus: (
     id: string,
@@ -305,7 +317,9 @@ export type ArtifactStore = {
     actorId: string,
     options?: { inApp?: boolean },
   ) => Artifact | null;
-  list: (options?: ListOptions) => ListResult;
+  /** Null when the artifact is gone. */
+  setVisibility: (id: string, visibility: ArtifactVisibility) => Artifact | null;
+  list: (options: ListOptions) => ListResult;
   get: (id: string) => Artifact | null;
   /** Null when no such artifact exists. Throws when its bytes are gone. */
   readContent: (id: string) => Promise<{ artifact: Artifact; content: Uint8Array } | null>;
@@ -431,8 +445,8 @@ export function createArtifactStore(options: {
             .query(
               `insert into artifacts
                  (id, title, description, originalFilename, storageKey, sha256, byteSize,
-                  createdBy, createdAt, updatedAt)
-               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  createdBy, createdAt, updatedAt, visibility)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
               id,
@@ -445,6 +459,7 @@ export function createArtifactStore(options: {
               input.createdBy,
               now,
               now,
+              input.visibility ?? "shared",
             );
           insertVersion().run(
             id,
@@ -564,14 +579,22 @@ export function createArtifactStore(options: {
       return rows.map(toVersion);
     },
 
-    findByTitle(title) {
+    findByTitle(title, viewerId) {
       const row = database
         .query(
           `${SELECT_ARTIFACT} where artifacts.title = ? and artifacts.archivedAt is null
+             and ${VISIBLE}
            order by artifacts.updatedAt desc, artifacts.id desc limit 1`,
         )
-        .get(title) as Row | null;
+        .get(title, viewerId) as Row | null;
       return row ? toArtifact(row) : null;
+    },
+
+    setVisibility(id, visibility) {
+      database
+        .query("update artifacts set visibility = ?, updatedAt = ? where id = ?")
+        .run(visibility, Date.now(), id);
+      return get(id);
     },
 
     setStatus(id, status, actorId, options = {}) {
@@ -611,15 +634,15 @@ export function createArtifactStore(options: {
       return get(id);
     },
 
-    list(listOptions = {}) {
+    list(listOptions) {
       const limit = Math.min(Math.max(listOptions.limit ?? DEFAULT_PAGE_SIZE, 1), MAX_PAGE_SIZE);
       const sort = listOptions.sort ?? DEFAULT_LIST_SORT;
       const order = ORDERS[sort];
       const cursor = listOptions.cursor ? decodeCursor(listOptions.cursor, sort) : null;
       const search = listOptions.query?.trim();
 
-      const conditions: string[] = [];
-      const parameters: (string | number)[] = [];
+      const conditions: string[] = [VISIBLE];
+      const parameters: (string | number | null)[] = [listOptions.viewerId];
       if (cursor) {
         const beyond = order.direction === "desc" ? "<" : ">";
         conditions.push(
