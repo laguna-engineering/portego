@@ -347,7 +347,7 @@ describe("links in an artifact", () => {
 <p id="below" style="margin-top: 200vh">below</p>
 </body></html>`;
 
-  async function open() {
+  async function open(fragment = "") {
     const id = await uploadArtifact(app, { title: "Links", html: LINKS });
     const context = await app.signedIn();
     // Most real sites refuse to be framed, which is why links used to fail.
@@ -359,7 +359,7 @@ describe("links in an artifact", () => {
       }),
     );
     const page = await context.newPage();
-    await page.goto(`${app.server.origin}/a/${id}`);
+    await page.goto(`${app.server.origin}/a/${id}${fragment}`);
     const frame = page.frameLocator('iframe[title="Preview of Links"]');
     await frame.locator("#plain").waitFor();
     return { id, page, context, frame };
@@ -391,6 +391,47 @@ describe("links in an artifact", () => {
 
     expect(await frame.locator("html").evaluate(() => window.scrollY)).toBeGreaterThan(0);
     expect(context.pages()).toHaveLength(1);
+  });
+
+  test("put the anchor followed in the page's address, so it can be shared", async () => {
+    const { id, page, frame } = await open();
+
+    await frame.locator("#anchor").click();
+    await page.waitForTimeout(300);
+
+    expect(page.url()).toBe(`${app.server.origin}/a/${id}#below`);
+  });
+
+  test("open the artifact at the part the address names", async () => {
+    const { frame } = await open("#below");
+    await frame.locator("#below").waitFor();
+
+    expect(await frame.locator("html").evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  });
+
+  test("reach a part the artifact renders from its entries", async () => {
+    // The part does not exist when the browser looks for it on load.
+    const html = `<!doctype html><html><head><title>Rendered</title></head><body>
+<p id="top">top</p>
+<script>
+  window.addEventListener("portego:entries", () => {
+    if (document.getElementById("late")) return;
+    const late = document.createElement("p");
+    late.id = "late";
+    late.style.marginTop = "200vh";
+    late.textContent = "late";
+    document.body.appendChild(late);
+  });
+</script>
+</body></html>`;
+    const id = await uploadArtifact(app, { title: "Rendered", html });
+    const page = await (await app.signedIn()).newPage();
+    await page.goto(`${app.server.origin}/a/${id}#late`);
+    const frame = page.frameLocator('iframe[title="Preview of Rendered"]');
+    await frame.locator("#late").waitFor();
+    await page.waitForTimeout(300);
+
+    expect(await frame.locator("html").evaluate(() => window.scrollY)).toBeGreaterThan(0);
   });
 });
 

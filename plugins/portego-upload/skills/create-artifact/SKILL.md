@@ -44,6 +44,21 @@ A template has up to three `{name}` placeholders, each matching text without `:`
 
 Agents read and change entries with `list_artifact_entries`, `set_artifact_entry`, and `clear_artifact_entry`.
 
+## Links to parts of the page
+
+Readers send each other links to one part of an artifact: an item in a list, a section of a report, a row in a table. Give each part that a reader may want to point to a stable `id` and a small visible link to it:
+
+```html
+<h3 id="item-p-01">Faster search <a href="#item-p-01" aria-label="Link to this item">#</a></h3>
+```
+
+When a reader clicks the link, Portego puts `#item-p-01` in the browser's address, so the address and the Copy link button open the artifact at that part. Opening such an address scrolls the artifact to the part.
+
+- Make ids from the content's own identifiers, such as item ids or section names, and never from positions, so links keep working in later versions. Use lowercase letters, digits, and `-`.
+- Add links to the headings of long documents and to items that readers discuss, such as backlog items, proposals, decisions, and findings.
+- A part the page renders from script, for example from entries, can have a link too. Portego looks for the target again after each `portego:entries` and `portego:comments` event, so give the element its `id` when the event handler creates it.
+- Inside the artifact, link to its own parts with `#id` alone. A full address, even to the same artifact, opens in a new tab. To link to a part of another artifact, use its address from `list_artifacts` with the fragment added, such as `<url>#item-p-01`.
+
 ## Images
 
 Put each image file, such as a chart, screenshot, or photo, in an `images/` folder next to the draft. Load it as `<img src="images/<name>" alt="...">` or as `url(images/<name>)` in CSS. Never write base64 data URIs yourself, and never read image bytes into the conversation.

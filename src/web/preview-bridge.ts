@@ -15,6 +15,7 @@ export type BridgeMessage =
   | { type: "selection"; anchor: CommentAnchor | null; rect: SelectionRect | null }
   | { type: "focus"; id: string }
   | { type: "open"; url: string }
+  | { type: "hash"; hash: string }
   | { type: "set"; key: string; value: unknown }
   | { type: "clear"; key: string };
 
@@ -55,6 +56,7 @@ const QUOTE_LIMIT = 500;
 const CONTEXT_LIMIT = 100;
 const ID_LIMIT = 100;
 const URL_LIMIT = 2048;
+const HASH_LIMIT = 256;
 const KEY_LIMIT = 200;
 /** The server's limit on a value's JSON text. */
 const VALUE_LIMIT = 4000;
@@ -124,6 +126,12 @@ export function readBridgeMessage(data: unknown): BridgeMessage | null {
     const url = readUrl(message.url);
     return url ? { type: "open", url } : null;
   }
+  if (message.type === "hash") {
+    // Refused when long rather than cut, like a URL. Empty means no fragment.
+    const hash = message.hash;
+    if (typeof hash !== "string" || hash.length > HASH_LIMIT) return null;
+    return hash === "" || hash.startsWith("#") ? { type: "hash", hash } : null;
+  }
   if (message.type === "set") {
     const key = readKey(message.key);
     const read = readValue(message.value);
@@ -163,6 +171,17 @@ export function sendToPreview(frame: HTMLIFrameElement | null, command: BridgeCo
 export function openFromPreview(url: string): void {
   if (navigator.userActivation && !navigator.userActivation.isActive) return;
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+/**
+ * Puts the frame's fragment on this page's address, so a copied address opens
+ * the artifact at the same part. The frame's own navigation already added a
+ * history entry, so this replaces the current one.
+ */
+export function showFragment(hash: string): void {
+  const url = new URL(window.location.href);
+  url.hash = hash;
+  window.history.replaceState(window.history.state, "", url);
 }
 
 /**

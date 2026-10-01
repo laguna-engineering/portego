@@ -133,6 +133,12 @@ bridge. That grants it nothing:
   `http:` or `https:` URL, opens it only while the reader's click is still
   active, and opens it with `noopener,noreferrer`. The new tab gets no handle
   on the page and no referrer, and the frame never gets a window of its own.
+- A link to a part of the document, such as `#item-42`, stays in the frame.
+  The bridge reports the frame's new fragment, and the page puts it on its own
+  address, so a copied address opens the artifact at that part. The page
+  accepts only an empty string or one that starts with `#`, at most 256
+  characters, and changes only the fragment of its address. The page passes
+  its fragment to the frame when it loads the preview.
 - A document can ask to set or clear the reader's entries
   ([entries.md](entries.md)). The application makes the write only while the
   reader's click is still active, and a browser that cannot report that gets

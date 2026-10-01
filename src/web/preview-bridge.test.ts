@@ -84,6 +84,29 @@ describe("readBridgeMessage", () => {
     expect(readBridgeMessage({ portego: 1, type: "open", url })).toBeNull();
   });
 
+  test("accepts the frame's fragment, and an empty one when the frame drops it", () => {
+    expect(readBridgeMessage({ portego: 1, type: "hash", hash: "#item-42" })).toEqual({
+      type: "hash",
+      hash: "#item-42",
+    });
+    expect(readBridgeMessage({ portego: 1, type: "hash", hash: "" })).toEqual({
+      type: "hash",
+      hash: "",
+    });
+  });
+
+  test("refuses a fragment that would change more of the address than the fragment", () => {
+    // Put on the page's address, these would change its path or query.
+    for (const hash of ["/api/artifacts", "?version=v1", 42]) {
+      expect(readBridgeMessage({ portego: 1, type: "hash", hash })).toBeNull();
+    }
+  });
+
+  test("refuses an over-long fragment rather than cutting it to another part", () => {
+    const hash = `#${"a".repeat(256)}`;
+    expect(readBridgeMessage({ portego: 1, type: "hash", hash })).toBeNull();
+  });
+
   test("ignores a message of a type the bridge does not know", () => {
     expect(readBridgeMessage({ portego: 1, type: "eval" })).toBeNull();
   });
