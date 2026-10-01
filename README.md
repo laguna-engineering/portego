@@ -3,6 +3,8 @@
 A single TypeScript application. [Hono](https://hono.dev) serves the API, and
 [Vite](https://vite.dev) builds the React client. Bun runs both.
 
+![The artifact gallery, with folders, tags, and status filters](docs/images/dashboard.png)
+
 ## Connect an agent
 
 Two MCP servers exist. The remote one at `/mcp` on the deployment lists, reads,
