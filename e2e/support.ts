@@ -120,6 +120,8 @@ export async function uploadArtifact(
     description: input.description ?? null,
     createdBy: session?.user.id ?? "",
     artifactId: input.artifactId,
+    // Tests upload the same fixture more than once.
+    allowDuplicateTitle: true,
     images: input.images ?? [],
   });
   return artifact.id;
