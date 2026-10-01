@@ -58,6 +58,7 @@ function fullProps(overrides: Partial<ArtifactFullProps> = {}): ArtifactFullProp
     email: "person@acme.example",
     currentUserId: "user-1",
     onHome: () => {},
+    onOpenFolder: () => {},
     onSignOut: () => {},
     onOpenArtifact: () => {},
     ...overrides,
@@ -120,6 +121,31 @@ describe("header", () => {
     expect(meta.getByText(/A Person/)).toBeDefined();
     expect(meta.getByText(/2 KiB/)).toBeDefined();
     expect(meta.getByText("chart.html")).toBeDefined();
+  });
+
+  test("goes back to the artifact's folder in one click", async () => {
+    stubFetch((path) =>
+      path.endsWith("/api/artifacts/artifact-1")
+        ? {
+            body: {
+              artifact: artifact({ folder: { id: "launch", name: "Launch", parentId: "lampo" } }),
+            },
+          }
+        : answer(path),
+    );
+    const opened: string[] = [];
+    renderFull({ onOpenFolder: (folderId) => opened.push(folderId) });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Open folder Launch" }));
+    expect(opened).toEqual(["launch"]);
+  });
+
+  test("shows no folder link for an unfiled artifact, which has no folder to go back to", async () => {
+    stubFetch(answer);
+    renderFull();
+
+    await screen.findByRole("heading", { name: /Sales chart/ });
+    expect(screen.queryByRole("button", { name: /^Open folder/ })).toBeNull();
   });
 });
 

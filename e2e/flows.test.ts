@@ -386,6 +386,35 @@ describe("the whole flow in a browser", () => {
       await context.close();
     });
 
+    test("goes back to the artifact's folder from the icon before a long title", async () => {
+      const id = await uploadArtifact(app, {
+        title: "A long title that fills the header, so the folder icon has to keep its own room",
+        html: SELF_CONTAINED_ARTIFACT,
+      });
+      const actor = await actorId();
+      const folder = app.server.organization.createFolder({ name: "Quarterly", actorId: actor });
+      app.server.organization.setArtifactOrganization(id, { folderId: folder.id, actorId: actor });
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`${app.server.origin}/a/${id}`);
+
+      const link = page.getByRole("button", { name: "Open folder Quarterly" });
+      const icon = await link.boundingBox();
+      const title = await page.locator(".full-title h1").boundingBox();
+      if (!icon || !title) throw new Error("The folder link or the title has no box");
+      expect(icon.width).toBeGreaterThan(0);
+      expect(icon.x + icon.width).toBeLessThan(title.x);
+      // One line, so the masthead keeps the height it has on every other page.
+      expect(title.height).toBeLessThan(40);
+
+      await link.click();
+      await page.waitForURL(`${app.server.origin}/?folder=${folder.id}`);
+      await page.getByText(/A long title/).waitFor();
+
+      await context.close();
+    });
+
     test("opens the folder panel from the phone menu at the window's width", async () => {
       const id = await uploadArtifact(app, {
         title: "Filed on a phone",
