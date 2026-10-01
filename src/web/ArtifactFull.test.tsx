@@ -1290,6 +1290,38 @@ describe("versions", () => {
     expect(rows[1]?.getAttribute("aria-pressed")).toBe("false");
   });
 
+  test("shows the viewed version in the header, so a reader knows which one they are reading", async () => {
+    stubTwoVersions();
+    renderFull();
+
+    const pill = await screen.findByRole("button", { name: "Show versions, viewing version 2" });
+    expect(pill.textContent).toBe("v2");
+
+    await userEvent.click(pill);
+    await userEvent.click(await screen.findByRole("button", { name: "Version 1" }));
+
+    expect(
+      screen.getByRole("button", { name: "Show versions, viewing version 1" }).textContent,
+    ).toBe("v1");
+  });
+
+  test("the version in the header opens the panel on the versions, and keeps it open", async () => {
+    stubTwoVersions();
+    renderFull();
+    const toggle = await screen.findByRole("button", { name: "Versions & comments" });
+    const pill = await screen.findByRole("button", { name: /^Show versions/ });
+
+    await userEvent.click(pill);
+
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    const current = screen.getByRole("button", { name: "Version 2, current" });
+    await waitFor(() => expect(document.activeElement).toBe(current));
+
+    // A toggle would close the panel the reader asked to see.
+    await userEvent.click(pill);
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+  });
+
   test("clicking a version switches the preview, markdown, and source requests to that version", async () => {
     const requested: string[] = [];
     stubTwoVersions((path) => {
@@ -1422,11 +1454,16 @@ describe("versions", () => {
     renderFull();
     await userEvent.click(await screen.findByRole("button", { name: "Versions & comments" }));
     await screen.findByRole("button", { name: "Version 1, current" });
+    // With one version there is no other to tell it apart from.
+    expect(screen.queryByRole("button", { name: /^Show versions/ })).toBeNull();
 
     listed = [version({ id: "v2", number: 2 }), version({ id: "v1", number: 1 })];
     currentVersionId = "v2";
     await announce({ type: "artifact.changed", id: "artifact-1" });
 
     expect(await screen.findByRole("button", { name: "Version 2, current" })).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Show versions, viewing version 2" }).textContent,
+    ).toBe("v2");
   });
 });

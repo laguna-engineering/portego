@@ -66,7 +66,7 @@ export function CommentsPanel({
       </div>
 
       {versions.length > 0 ? (
-        <section className="versions" aria-label="Versions">
+        <section id="versions" className="versions" aria-label="Versions">
           <h3>Versions</h3>
           <ul>
             {versions.map((version) => {
