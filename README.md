@@ -21,10 +21,12 @@ local server, asks for the address of the deployment, and adds the
 /plugin install portego-upload@portego
 ```
 
-To also read artifacts, add the remote server:
+The plugin also reads artifacts and their comments. To use the deployment's
+other tools, such as versions, status, folders, and entries, add the remote
+server for every project:
 
 ```sh
-claude mcp add --transport http portego https://share.acme.example/mcp
+claude mcp add --scope user --transport http portego https://share.acme.example/mcp
 ```
 
 Sign-in opens a browser. Over SSH the OAuth callback needs a forwarded port;

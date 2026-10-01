@@ -257,9 +257,15 @@ a browser window for sign-in and consent.
 
 **Claude Code**
 
+The `portego-upload` plugin reads, uploads, and comments on artifacts, and is
+all most users need. Add the remote server for the other tools, such as
+versions, status, folders, and entries:
+
 ```sh
-claude mcp add --transport http portego https://share.acme.example/mcp
+claude mcp add --scope user --transport http portego https://share.acme.example/mcp
 ```
+
+Without `--scope user`, Claude Code adds the server to the current project only.
 
 Claude Code serves the OAuth callback on `http://localhost:<port>/callback` on
 the machine it runs on. Over SSH the browser is on the other machine, so that
@@ -343,6 +349,8 @@ the ticket itself. Its deployment tools are:
 upload_artifact_from_path({ path, contentType?, markdownPath?, title?, description?,
                             artifactId?, allowDuplicateTitle?, folderId?, tagIds? })
 list_artifacts({ query?, folderId?, cursor? })
+get_artifact_markdown({ id, versionId? })
+download_artifact_source({ id, path, versionId?, overwrite? })
 list_artifact_comments({ id })
 add_artifact_comment({ id, body, anchor?, parentId?, versionId? })
 list_folders()
@@ -350,9 +358,13 @@ list_tags()
 sign_in()
 ```
 
-The listings and `add_artifact_comment` call the deployment's tools of the same
-names, so an agent with only this server can find the `artifactId`, `folderId`,
-and `tagIds` for an upload, and read and add comments on an artifact.
+The listings, `get_artifact_markdown`, and `add_artifact_comment` call the
+deployment's tools of the same names, so an agent with only this server can find
+the `artifactId`, `folderId`, and `tagIds` for an upload, read an artifact, and
+read and add comments on it. `download_artifact_source` calls
+`get_artifact_source` and writes the HTML to `path`. The agent edits that file
+and uploads it with `artifactId`, so the page never passes through the
+conversation. Images uploaded as files with the page are not downloaded.
 
 It also exposes local tools that need no deployment or sign-in:
 
