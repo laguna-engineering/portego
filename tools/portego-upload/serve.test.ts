@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -74,7 +74,9 @@ describe("a first run with no deployment set", () => {
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       "add_artifact_comment",
+      "download_artifact_source",
       "finalize_artifact",
+      "get_artifact_markdown",
       "get_artifact_style",
       "list_artifact_comments",
       "list_artifacts",
@@ -100,5 +102,108 @@ describe("a first run with no deployment set", () => {
       JSON.stringify({ defaultOrigin: "https://main.example", tokens: {} }),
     );
     expect(await uploadError()).toContain("Not signed in to https://main.example");
+  });
+});
+
+describe("reading an artifact from a signed-in deployment", () => {
+  const html = "<!doctype html><title>Plans</title><p>Acqua alta</p>";
+  const calls: { name: string; arguments: Record<string, unknown>; authorization: string }[] = [];
+  let deployment: ReturnType<typeof Bun.serve>;
+  let reader: Client;
+
+  beforeAll(async () => {
+    deployment = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const { params } = (await request.json()) as {
+          params: { name: string; arguments: Record<string, unknown> };
+        };
+        calls.push({ ...params, authorization: request.headers.get("authorization") ?? "" });
+        const structuredContent =
+          params.name === "get_artifact_source"
+            ? { id: "a1", versionId: "v2", versionNumber: 2, sha256: "s", byteSize: 51, html }
+            : { id: "a1", markdown: "Acqua alta", empty: false, source: "generated" };
+        return Response.json({ jsonrpc: "2.0", id: 1, result: { structuredContent } });
+      },
+    });
+    const origin = `http://127.0.0.1:${deployment.port}`;
+    const credentials = join(directory, "signed-in.json");
+    await writeFile(
+      credentials,
+      JSON.stringify({ tokens: { [origin]: { accessToken: "token", expiresAt: 4102444800 } } }),
+    );
+    reader = new Client({ name: "test", version: "0" });
+    await reader.connect(
+      new StdioClientTransport({
+        command: "bun",
+        args: ["run", join(import.meta.dir, "index.ts")],
+        env: {
+          PATH: process.env.PATH ?? "",
+          PORTEGO_ORIGIN: origin,
+          PORTEGO_CREDENTIALS: credentials,
+        },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    await reader.close();
+    deployment.stop(true);
+  });
+
+  // An agent changes a page by editing a local file and uploading it again, so
+  // the page goes to disk and its bytes stay out of the conversation.
+  test("download_artifact_source writes the HTML to the file and returns only the record", async () => {
+    const path = join(directory, "plans.html");
+    const result = (await reader.callTool({
+      name: "download_artifact_source",
+      arguments: { id: "a1", path, versionId: "v2" },
+    })) as { isError?: boolean; content: { text: string }[]; structuredContent?: unknown };
+
+    expect(result.isError).not.toBe(true);
+    expect(await readFile(path, "utf8")).toBe(html);
+    expect(result.structuredContent).toEqual({
+      path,
+      id: "a1",
+      versionId: "v2",
+      versionNumber: 2,
+      sha256: "s",
+      byteSize: 51,
+    });
+    expect(result.content[0]?.text).not.toContain("Acqua alta");
+    expect(calls.at(-1)).toEqual({
+      name: "get_artifact_source",
+      arguments: { id: "a1", versionId: "v2" },
+      authorization: "Bearer token",
+    });
+  });
+
+  // A file the agent already edited must survive a second download.
+  test("download_artifact_source keeps an existing file unless told to overwrite it", async () => {
+    const path = join(directory, "edited.html");
+    await writeFile(path, "edited");
+    const refused = (await reader.callTool({
+      name: "download_artifact_source",
+      arguments: { id: "a1", path },
+    })) as { isError?: boolean; content: { text: string }[] };
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]?.text).toContain("already exists");
+    expect(await readFile(path, "utf8")).toBe("edited");
+
+    await reader.callTool({
+      name: "download_artifact_source",
+      arguments: { id: "a1", path, overwrite: true },
+    });
+    expect(await readFile(path, "utf8")).toBe(html);
+  });
+
+  test("get_artifact_markdown returns the deployment's Markdown", async () => {
+    const result = (await reader.callTool({
+      name: "get_artifact_markdown",
+      arguments: { id: "a1" },
+    })) as { structuredContent?: { markdown?: string } };
+    expect(result.structuredContent?.markdown).toBe("Acqua alta");
+    expect(calls.at(-1)?.arguments).toEqual({ id: "a1" });
   });
 });
