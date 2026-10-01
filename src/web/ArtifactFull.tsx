@@ -21,6 +21,7 @@ import { formatBytes } from "./format.ts";
 import {
   ArchiveIcon,
   CheckIcon,
+  ChevronRightIcon,
   CommentIcon,
   DownloadIcon,
   FolderIcon,
@@ -52,6 +53,7 @@ export type ArtifactFullProps = {
   email: string;
   currentUserId: string;
   onHome: () => void;
+  onOpenFolder: (folderId: string) => void;
   onSignOut: () => void;
   onOpenArtifact: (id: string, target?: ArtifactTarget) => void;
   /** A version to open the panel on, e.g. from a notification. */
@@ -128,6 +130,7 @@ export function ArtifactFull({
   email,
   currentUserId,
   onHome,
+  onOpenFolder,
   onSignOut,
   onOpenArtifact,
   versionId = null,
@@ -523,11 +526,26 @@ export function ArtifactFull({
   const header = artifact ? (
     <div className="full-header">
       <div className="full-title">
-        <h1 title={artifact.title}>
-          {artifact.title}
-          {artifact.status === "solved" ? <span className="badge solved">solved</span> : null}
-          {artifact.archivedAt ? <span className="badge">archived</span> : null}
-        </h1>
+        <div className="full-name">
+          {artifact.folder ? (
+            <>
+              <button
+                type="button"
+                className="icon-button icon-only folder-link"
+                onClick={() => artifact.folder && onOpenFolder(artifact.folder.id)}
+              >
+                <FolderIcon size={20} />
+                <span>Open folder {artifact.folder.name}</span>
+              </button>
+              <ChevronRightIcon />
+            </>
+          ) : null}
+          <h1 title={artifact.title}>
+            {artifact.title}
+            {artifact.status === "solved" ? <span className="badge solved">solved</span> : null}
+            {artifact.archivedAt ? <span className="badge">archived</span> : null}
+          </h1>
+        </div>
         <p className="detail-meta">
           {artifact.creator.name} · <RelativeTime iso={artifact.createdAt} />
           <span className="meta-extra">

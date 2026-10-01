@@ -1114,6 +1114,32 @@ button.link {
   top: 0.05em;
 }
 
+/* The folder link and the title. It shrinks so a long title still ends in an
+   ellipsis. */
+.full-name {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--ink-muted);
+}
+
+.full-name h1 {
+  color: var(--ink);
+}
+
+.icon-button.icon-only.folder-link {
+  flex: none;
+  padding: 0.15rem;
+  border: 0;
+  background: none;
+  color: inherit;
+}
+
+.folder-link:hover {
+  color: var(--ink);
+}
+
 .full-title h1 {
   margin: 0;
   font-size: 1.05rem;

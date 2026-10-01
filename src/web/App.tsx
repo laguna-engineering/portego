@@ -164,6 +164,7 @@ export function App() {
         email={session.user.email}
         currentUserId={session.user.id}
         onHome={() => navigate("/")}
+        onOpenFolder={(folderId) => navigate(galleryPath({ folderId }))}
         onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
         onSignOut={handleSignOut}
       />
