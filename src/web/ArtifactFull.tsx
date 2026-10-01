@@ -357,6 +357,17 @@ export function ArtifactFull({
     );
   }
 
+  // The versions are the first section of the panel, so its top shows them.
+  function showVersions() {
+    setPanelOpen(true);
+    // No scrolling into view while the panel slides in, as in commentOnSelection.
+    window.requestAnimationFrame(() => {
+      const section = document.getElementById("versions");
+      if (section?.parentElement) section.parentElement.scrollTop = 0;
+      section?.querySelector<HTMLElement>(".version-row.selected")?.focus({ preventScroll: true });
+    });
+  }
+
   const revealComment = useCallback((commentId: string) => {
     sendToPreview(frameRef.current, { type: "reveal", id: commentId });
     setFocusedId(commentId);
@@ -545,6 +556,17 @@ export function ArtifactFull({
             {artifact.status === "solved" ? <span className="badge solved">solved</span> : null}
             {artifact.archivedAt ? <span className="badge">archived</span> : null}
           </h1>
+          {viewedVersion && versions.length > 1 ? (
+            <button
+              type="button"
+              className="version-pill"
+              aria-label={`Show versions, viewing version ${viewedVersion.number}`}
+              title="Show versions"
+              onClick={showVersions}
+            >
+              v{viewedVersion.number}
+            </button>
+          ) : null}
         </div>
         <p className="detail-meta">
           {artifact.creator.name} · <RelativeTime iso={artifact.createdAt} />

@@ -1140,6 +1140,19 @@ button.link {
   color: var(--ink);
 }
 
+.version-pill {
+  flex: none;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.version-pill:hover {
+  color: var(--ink);
+}
+
 .full-title h1 {
   margin: 0;
   font-size: 1.05rem;

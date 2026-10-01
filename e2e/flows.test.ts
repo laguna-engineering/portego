@@ -415,6 +415,36 @@ describe("the whole flow in a browser", () => {
       await context.close();
     });
 
+    test("keeps the version after a long title and opens the versions from it", async () => {
+      const id = await uploadArtifact(app, {
+        title: "A long title that fills the header, so the version has to keep its own room",
+        html: SELF_CONTAINED_ARTIFACT,
+      });
+      await uploadArtifact(app, {
+        title: "A long title that fills the header, so the version has to keep its own room",
+        html: SELF_CONTAINED_ARTIFACT,
+        artifactId: id,
+      });
+      const context = await app.signedIn();
+      const page = await context.newPage();
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.goto(`${app.server.origin}/a/${id}`);
+
+      const pill = page.getByRole("button", { name: "Show versions, viewing version 2" });
+      const box = await pill.boundingBox();
+      const title = await page.locator(".full-title h1").boundingBox();
+      if (!box || !title) throw new Error("The version or the title has no box");
+      expect(box.width).toBeGreaterThan(0);
+      expect(box.x).toBeGreaterThan(title.x + title.width - 1);
+
+      await pill.click();
+      await page.waitForFunction(
+        () => document.activeElement?.getAttribute("aria-label") === "Version 2, current",
+      );
+
+      await context.close();
+    });
+
     test("opens the folder panel from the phone menu at the window's width", async () => {
       const id = await uploadArtifact(app, {
         title: "Filed on a phone",
