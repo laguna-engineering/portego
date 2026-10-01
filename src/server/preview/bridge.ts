@@ -10,6 +10,9 @@
  * data from a hostile page (see src/web/preview-bridge.ts), and a comment is
  * only ever created by the person who writes it.
  *
+ * The frame's fragment is reported too, so the page's address can link to a
+ * part of the artifact.
+ *
  * A passage is a text quote plus a little text on each side, matched against
  * the raw text nodes of the document in order. `Range.toString()` is the same
  * concatenation, so what the reader selected is what is searched for later.
@@ -182,6 +185,26 @@ export const BRIDGE_SCRIPT = `(() => {
   window.addEventListener("click", follow);
   window.addEventListener("auxclick", follow);
 
+  // A target the page renders from its comments or entries does not exist yet
+  // when the browser scrolls to the fragment on load, so look again after each.
+  let landed = location.hash === "";
+  function land() {
+    if (landed) return;
+    let id = location.hash.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch (error) {}
+    const target = document.getElementById(id);
+    if (!target) return;
+    landed = true;
+    target.scrollIntoView();
+  }
+
+  window.addEventListener("hashchange", () => {
+    landed = true;
+    send({ type: "hash", hash: location.hash });
+  });
+
   window.addEventListener("message", (event) => {
     if (event.source !== parent) return;
     const message = event.data;
@@ -196,10 +219,12 @@ export const BRIDGE_SCRIPT = `(() => {
       const comments = Array.isArray(message.comments) ? message.comments : [];
       window.portego.comments = comments;
       window.dispatchEvent(new CustomEvent("portego:comments", { detail: comments }));
+      land();
     } else if (message.type === "entries") {
       const entries = Array.isArray(message.entries) ? message.entries : [];
       window.portego.entries = entries;
       window.dispatchEvent(new CustomEvent("portego:entries", { detail: entries }));
+      land();
     } else if (message.type === "reveal") {
       paint(message.id);
       const range = ranges.get(message.id);
@@ -217,6 +242,7 @@ export const BRIDGE_SCRIPT = `(() => {
   });
   const watch = () => {
     if (document.body) observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    land();
     send({ type: "ready" });
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", watch);

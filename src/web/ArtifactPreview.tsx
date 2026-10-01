@@ -24,6 +24,9 @@ export type ArtifactPreviewProps = {
  * than navigating to the preview URL. A sandboxed document that is itself the
  * top-level page can navigate its own tab anywhere, and no header prevents it.
  * A framed one cannot.
+ *
+ * The page's fragment is passed to the frame when the preview loads, so a link
+ * to a part of the artifact opens there.
  */
 export function ArtifactPreview({
   artifactId,
@@ -41,7 +44,7 @@ export function ArtifactPreview({
     setError(null);
     mintPreview(artifactId, versionId)
       .then((preview) => {
-        if (!cancelled) setUrl(preview.url);
+        if (!cancelled) setUrl(preview.url + window.location.hash);
       })
       .catch((cause: Error) => {
         if (!cancelled) setError(cause.message);

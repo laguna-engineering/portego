@@ -734,6 +734,44 @@ describe("links in the artifact", () => {
   });
 });
 
+describe("links to a part of the artifact", () => {
+  const start = window.location.href;
+  afterEach(() => window.history.replaceState(null, "", start));
+
+  test("opens the preview on the part the address names", async () => {
+    window.history.replaceState(null, "", "/a/artifact-1#item-42");
+    stubFetch(answer);
+    renderFull();
+
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+
+    expect(frame.getAttribute("src")).toBe("http://127.0.0.1:5173/preview/token#item-42");
+  });
+
+  test("puts the part the reader followed in the address and the copied link", async () => {
+    stubFetch(answer);
+    const copied: string[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: async (text: string) => void copied.push(text) },
+    });
+    renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const historyLength = window.history.length;
+
+    await sendFromFrame(frame, { type: "hash", hash: "#item-42" });
+    await userEvent.click(screen.getByRole("button", { name: "Copy link" }));
+
+    expect(window.location.hash).toBe("#item-42");
+    // The frame's navigation already added a history entry; another would
+    // make Back take two presses.
+    expect(window.history.length).toBe(historyLength);
+    expect(copied).toEqual(["http://localhost:5173/a/artifact-1#item-42"]);
+    // The frame already shows that part, so it is not reloaded with it.
+    expect(frame.getAttribute("src")).toBe("http://127.0.0.1:5173/preview/token");
+  });
+});
+
 describe("entries", () => {
   const ENTRY = {
     key: "vote:P-01",

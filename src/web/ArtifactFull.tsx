@@ -41,6 +41,7 @@ import {
   readerIsActing,
   type SelectionRect,
   sendToPreview,
+  showFragment,
   usePreviewBridge,
 } from "./preview-bridge.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
@@ -297,6 +298,8 @@ export function ArtifactFull({
         if (panelOpen) setSelection(message.anchor);
       } else if (message.type === "open") {
         openFromPreview(message.url);
+      } else if (message.type === "hash") {
+        showFragment(message.hash);
       } else if (message.type === "set" || message.type === "clear") {
         if (!readerIsActing()) return;
         void changeEntry(message.key, message.type === "set" ? { value: message.value } : null);
@@ -431,7 +434,10 @@ export function ArtifactFull({
   }
 
   async function copyLink() {
-    const link = new URL(artifactPath(id), window.location.origin).toString();
+    const link = new URL(
+      artifactPath(id) + window.location.hash,
+      window.location.origin,
+    ).toString();
     try {
       await navigator.clipboard.writeText(link);
       setCopied(true);
