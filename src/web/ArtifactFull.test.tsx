@@ -1019,21 +1019,22 @@ describe("live updates", () => {
   });
 
   test("ignores a change to some other artifact", async () => {
-    let calls = 0;
+    // Only the artifact itself is counted: the heading waits for it, while
+    // the other first-load requests may still be on their way.
+    let loads = 0;
     stubFetch((path) => {
-      // The bell follows every artifact, so its reload is not the page's.
-      if (!path.endsWith("/preview") && !path.endsWith("/markdown") && path !== "/api/activity") {
-        calls += 1;
-      }
+      if ((path.split("?")[0] ?? path) === "/api/artifacts/artifact-1") loads += 1;
       return answer(path);
     });
     renderFull();
     await screen.findByRole("heading", { name: /Sales chart/ });
-    const before = calls;
+    expect(loads).toBe(1);
 
     await announce({ type: "artifact.changed", id: "artifact-2" });
+    await announce({ type: "artifact.changed", id: "artifact-1" });
 
-    await waitFor(() => expect(calls).toBe(before));
+    // The second announcement shows events are handled; only it reloads.
+    await waitFor(() => expect(loads).toBe(2));
   });
 });
 
