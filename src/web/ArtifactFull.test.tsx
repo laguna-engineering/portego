@@ -57,6 +57,7 @@ function fullProps(overrides: Partial<ArtifactFullProps> = {}): ArtifactFullProp
     id: "artifact-1",
     email: "person@acme.example",
     currentUserId: "user-1",
+    privateArtifacts: true,
     onHome: () => {},
     onOpenFolder: () => {},
     onSignOut: () => {},
@@ -201,6 +202,39 @@ describe("actions", () => {
     ]);
   });
 
+  test("lets the creator make the artifact private and share it again", async () => {
+    const sent: unknown[] = [];
+    stubFetch((path, init) => {
+      if (!path.endsWith("/visibility")) return answer(path);
+      const body = JSON.parse(String(init?.body)) as { visibility: "shared" | "private" };
+      sent.push(body);
+      return { body: { artifact: artifact({ visibility: body.visibility }) } };
+    });
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Make private" }));
+    expect(await screen.findByText("private")).toBeDefined();
+    await userEvent.click(screen.getByRole("button", { name: "Share with everyone" }));
+    expect(await screen.findByRole("button", { name: "Make private" })).toBeDefined();
+    expect(sent).toEqual([{ visibility: "private" }, { visibility: "shared" }]);
+  });
+
+  test("does not offer to change visibility to anyone but the creator", async () => {
+    stubFetch(answer);
+    renderFull({ currentUserId: "user-2" });
+
+    await screen.findByRole("button", { name: "Mark solved" });
+    expect(screen.queryByRole("button", { name: "Make private" })).toBeNull();
+  });
+
+  test("does not offer privacy on a deployment that turned private artifacts off", async () => {
+    stubFetch(answer);
+    renderFull({ privateArtifacts: false });
+
+    await screen.findByRole("button", { name: "Mark solved" });
+    expect(screen.queryByRole("button", { name: "Make private" })).toBeNull();
+  });
+
   test("offers the source as a download that keeps the original name", async () => {
     stubFetch(answer);
     renderFull();
@@ -226,6 +260,36 @@ describe("actions", () => {
     // The failed change did not replace the artifact with an error page.
     expect(screen.getByRole("heading", { name: /Sales chart/ })).toBeDefined();
     expect(screen.getByRole("button", { name: "Mark solved" })).toBeDefined();
+  });
+});
+
+describe("someone else's private artifact", () => {
+  const PRIVATE = {
+    status: 403,
+    body: { error: { code: "PRIVATE", message: "This artifact is private." } },
+  };
+
+  test("says the artifact is private and nothing else about it", async () => {
+    stubFetch((path) => (path === "/api/artifacts/artifact-1" ? PRIVATE : answer(path)));
+    renderFull({ currentUserId: "user-2" });
+
+    expect(await screen.findByText("This artifact is private.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Back to the gallery" })).toBeDefined();
+    expect(screen.queryByRole("heading")).toBeNull();
+    expect(document.body.textContent).not.toContain("A Person");
+  });
+
+  test("hides an open artifact once its creator makes it private", async () => {
+    let hidden = false;
+    stubFetch((path) => (hidden && path === "/api/artifacts/artifact-1" ? PRIVATE : answer(path)));
+    renderFull({ currentUserId: "user-2" });
+    await screen.findByRole("heading", { name: /Sales chart/ });
+
+    hidden = true;
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+
+    expect(await screen.findByText("This artifact is private.")).toBeDefined();
+    expect(screen.queryByRole("heading", { name: /Sales chart/ })).toBeNull();
   });
 });
 
@@ -955,21 +1019,22 @@ describe("live updates", () => {
   });
 
   test("ignores a change to some other artifact", async () => {
-    let calls = 0;
+    // Only the artifact itself is counted: the heading waits for it, while
+    // the other first-load requests may still be on their way.
+    let loads = 0;
     stubFetch((path) => {
-      // The bell follows every artifact, so its reload is not the page's.
-      if (!path.endsWith("/preview") && !path.endsWith("/markdown") && path !== "/api/activity") {
-        calls += 1;
-      }
+      if ((path.split("?")[0] ?? path) === "/api/artifacts/artifact-1") loads += 1;
       return answer(path);
     });
     renderFull();
     await screen.findByRole("heading", { name: /Sales chart/ });
-    const before = calls;
+    expect(loads).toBe(1);
 
     await announce({ type: "artifact.changed", id: "artifact-2" });
+    await announce({ type: "artifact.changed", id: "artifact-1" });
 
-    await waitFor(() => expect(calls).toBe(before));
+    // The second announcement shows events are handled; only it reloads.
+    await waitFor(() => expect(loads).toBe(2));
   });
 });
 

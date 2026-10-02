@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { VISIBLE } from "./artifacts.ts";
 
 export type StatusChange = "solved" | "reopened" | "archived" | "restored";
 
@@ -18,7 +19,8 @@ export type Activity = {
 export type ActivityStore = {
   /**
    * Everything since `since` (epoch ms), newest first, at most `limit` items.
-   * What `userId` did in the web app is left out: they were there.
+   * What `userId` did in the web app is left out: they were there. So is
+   * everything on someone else's private artifact.
    */
   list: (options: { since: number; limit: number; userId: string }) => Activity[];
   /** When the user last opened their notifications. Null if never. */
@@ -57,7 +59,7 @@ const SELECT_ACTIVITY = `
   ) activity
     join artifacts on artifacts.id = activity.artifactId
     join "user" on "user".id = activity.actorId
-  where not (activity.actorId = ? and activity.inApp = 1)
+  where not (activity.actorId = ? and activity.inApp = 1) and ${VISIBLE}
   order by activity.createdAt desc, activity.id desc
   limit ?`;
 
@@ -90,7 +92,9 @@ export function createActivityStore(options: { database: Database }): ActivitySt
 
   return {
     list({ since, limit, userId }) {
-      const rows = database.query(SELECT_ACTIVITY).all(since, since, since, userId, limit) as Row[];
+      const rows = database
+        .query(SELECT_ACTIVITY)
+        .all(since, since, since, userId, userId, limit) as Row[];
       return rows.map(toActivity);
     },
 

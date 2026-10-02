@@ -27,6 +27,12 @@ describe("parseEnv", () => {
     );
   });
 
+  test("keeps private artifacts on unless the deployment turns them off", () => {
+    expect(parseEnv({}).PRIVATE_ARTIFACTS).toBe(true);
+    expect(parseEnv({ PRIVATE_ARTIFACTS: "false" }).PRIVATE_ARTIFACTS).toBe(false);
+    expect(() => parseEnv({ PRIVATE_ARTIFACTS: "no" })).toThrow(/PRIVATE_ARTIFACTS/);
+  });
+
   test("allows a missing SESSION_SECRET outside production so a clean checkout runs", () => {
     expect(parseEnv({ NODE_ENV: "development" }).SESSION_SECRET).toBeUndefined();
   });

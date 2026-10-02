@@ -109,7 +109,7 @@ describe("serving a preview", () => {
     const past = new Date(Date.now() - 3_600_000);
     const { token } = mintPreviewToken(
       server.signingSecret,
-      { artifactId: id, versionId: id },
+      { artifactId: id, versionId: id, viewerId: "user-1" },
       past,
     );
     expect((await onContentHost(`${TEST_CONTENT_ORIGIN}/preview/${token}`)).status).toBe(403);
@@ -340,7 +340,7 @@ describe("serving a preview's images", () => {
     const id = await storeWithImages([{ name: "chart.png" }]);
     const { token } = mintPreviewToken(
       server.signingSecret,
-      { artifactId: id, versionId: id },
+      { artifactId: id, versionId: id, viewerId: "user-1" },
       new Date(Date.now() - 3_600_000),
     );
     const res = await onContentHost(`${TEST_CONTENT_ORIGIN}/preview/${token}/images/chart.png`);

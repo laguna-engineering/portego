@@ -13,6 +13,7 @@ import {
   fetchVersions,
   setArtifactArchived,
   setArtifactStatus,
+  setArtifactVisibility,
   setEntry,
   sourceUrl,
 } from "./api.ts";
@@ -26,11 +27,13 @@ import {
   DownloadIcon,
   FolderIcon,
   LinkIcon,
+  LockIcon,
   PreviewIcon,
   ReopenIcon,
   RestoreIcon,
   TagIcon,
   TextIcon,
+  UnlockIcon,
 } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
 import { Masthead } from "./Masthead.tsx";
@@ -52,6 +55,8 @@ export type ArtifactFullProps = {
   id: string;
   email: string;
   currentUserId: string;
+  /** False when the deployment has no private artifacts. */
+  privateArtifacts: boolean;
   onHome: () => void;
   onOpenFolder: (folderId: string) => void;
   onSignOut: () => void;
@@ -129,6 +134,7 @@ export function ArtifactFull({
   id,
   email,
   currentUserId,
+  privateArtifacts,
   onHome,
   onOpenFolder,
   onSignOut,
@@ -139,6 +145,8 @@ export function ArtifactFull({
 }: ArtifactFullProps) {
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Someone else's private artifact, of which the page shows nothing. */
+  const [hidden, setHidden] = useState(false);
   const [view, setView] = useState<"preview" | "text">("preview");
   const [copied, setCopied] = useState(false);
   const [changing, setChanging] = useState(false);
@@ -380,9 +388,16 @@ export function ArtifactFull({
       // A slower earlier request must not overwrite a later one.
       if (attempt !== request.current) return;
       shown.current = true;
+      setHidden(false);
       setArtifact(found);
     } catch (cause) {
       if (attempt !== request.current) return;
+      // Its creator made it private while it was open here.
+      if (cause instanceof ApiError && cause.code === "PRIVATE") {
+        setArtifact(null);
+        setHidden(true);
+        return;
+      }
       // A background reload that fails leaves the artifact on screen.
       if (shown.current) return;
       setError(cause instanceof ApiError ? cause.message : "Could not load the artifact.");
@@ -487,6 +502,23 @@ export function ArtifactFull({
           disabled: changing,
           onSelect: () => void change(() => setArtifactArchived(artifact.id, !artifact.archivedAt)),
         },
+        ...(privateArtifacts && artifact.creator.id === currentUserId
+          ? [
+              {
+                id: "visibility",
+                label: artifact.visibility === "private" ? "Share with everyone" : "Make private",
+                icon: artifact.visibility === "private" ? <UnlockIcon /> : <LockIcon />,
+                disabled: changing,
+                onSelect: () =>
+                  void change(() =>
+                    setArtifactVisibility(
+                      artifact.id,
+                      artifact.visibility === "private" ? "shared" : "private",
+                    ),
+                  ),
+              },
+            ]
+          : []),
         {
           id: "download",
           label: "Download source",
@@ -555,6 +587,7 @@ export function ArtifactFull({
             {artifact.title}
             {artifact.status === "solved" ? <span className="badge solved">solved</span> : null}
             {artifact.archivedAt ? <span className="badge">archived</span> : null}
+            {artifact.visibility === "private" ? <span className="badge">private</span> : null}
           </h1>
           {viewedVersion && versions.length > 1 ? (
             <button
@@ -613,7 +646,18 @@ export function ArtifactFull({
     : undefined;
 
   let body: ReactNode;
-  if (error) {
+  if (hidden) {
+    body = (
+      <main className="shell">
+        <section className="empty">
+          <p>This artifact is private.</p>
+          <button type="button" onClick={onHome}>
+            Back to the gallery
+          </button>
+        </section>
+      </main>
+    );
+  } else if (error) {
     body = (
       <main className="shell">
         <p role="alert">{error}</p>

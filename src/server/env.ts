@@ -42,6 +42,12 @@ const schema = z
       .min(0)
       .max(256 * 1024 * 1024)
       .default(50 * 1024 * 1024),
+    // false turns private artifacts off. The server refuses to start while
+    // private artifacts exist with it off.
+    PRIVATE_ARTIFACTS: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== "production") return;

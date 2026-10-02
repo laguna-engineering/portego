@@ -18,11 +18,19 @@ ever breaks.
 ## Who may do what
 
 Anyone the admission policy admits may change a status, archive, restore,
-comment, and organize any artifact. They may also manage shared folders and
+comment, and organize any artifact they can see. They may also manage shared folders and
 tags. There are no roles here, so the record of who did what
 is what matters: every status change stores `statusChangedBy` and
 `statusChangedAt`, archiving stores `archivedBy` and `archivedAt`, and a
 comment stores its author and creation time.
+
+An artifact is shared by default. Its creator, and only its creator, can make
+it private, which hides it from everyone else, and share it again. Someone
+who opens the link to another person's private artifact sees a page that says
+"This artifact is private." and shows nothing else about it, not even who owns
+it. The API's rules are in [api.md](api.md#visibility). A deployment can turn
+private artifacts off with `PRIVATE_ARTIFACTS=false`; the client then does not
+offer them.
 
 ## Comments
 

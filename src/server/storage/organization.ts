@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { VISIBLE } from "./artifacts.ts";
 
 export type Folder = {
   id: string;
@@ -8,6 +9,7 @@ export type Folder = {
   createdAt: Date;
   updatedBy: string;
   updatedAt: Date;
+  /** Counts only the artifacts the viewer the folder was read for can see. */
   artifactCount: number;
 };
 
@@ -34,9 +36,10 @@ export type ArtifactOrganizationInput = {
   actorId: string;
 };
 
+/** Each read takes the viewer whose artifacts it counts. Null counts shared artifacts only. */
 export type OrganizationStore = {
-  listFolders: () => Folder[];
-  getFolder: (id: string) => Folder | null;
+  listFolders: (viewerId: string | null) => Folder[];
+  getFolder: (id: string, viewerId: string | null) => Folder | null;
   createFolder: (input: { name: string; parentId: string | null; actorId: string }) => Folder;
   updateFolder: (
     id: string,
@@ -44,9 +47,9 @@ export type OrganizationStore = {
   ) => Folder | null;
   /** Reparents child folders and files direct artifacts in the parent. */
   removeFolder: (id: string) => { artifactIds: string[] } | null;
-  listTags: () => Tag[];
-  getTag: (id: string) => Tag | null;
-  getTags: (ids: string[]) => Tag[];
+  listTags: (viewerId: string | null) => Tag[];
+  getTag: (id: string, viewerId: string | null) => Tag | null;
+  getTags: (ids: string[], viewerId: string | null) => Tag[];
   createTag: (input: { name: string; actorId: string }) => Tag;
   updateTag: (id: string, input: { name: string; actorId: string }) => Tag | null;
   /** Removes every assignment and returns the affected artifact ids. */
@@ -71,20 +74,28 @@ function toTag(row: TagRow): Tag {
   return { ...row, createdAt: new Date(row.createdAt), updatedAt: new Date(row.updatedAt) };
 }
 
+// Both take the viewer's id as their first parameter.
 const SELECT_FOLDER = `
-  select folders.*, (select count(*) from artifacts where artifacts.folderId = folders.id) as artifactCount
+  select folders.*, (select count(*) from artifacts
+    where artifacts.folderId = folders.id and ${VISIBLE}) as artifactCount
   from folders`;
 const SELECT_TAG = `
-  select tags.*, (select count(*) from artifactTags where artifactTags.tagId = tags.id) as artifactCount
+  select tags.*, (select count(*) from artifactTags
+    join artifacts on artifacts.id = artifactTags.artifactId
+    where artifactTags.tagId = tags.id and ${VISIBLE}) as artifactCount
   from tags`;
 
 export function createOrganizationStore(database: Database): OrganizationStore {
-  const getFolder = (id: string): Folder | null => {
-    const row = database.query(`${SELECT_FOLDER} where folders.id = ?`).get(id) as FolderRow | null;
+  const getFolder = (id: string, viewerId: string | null): Folder | null => {
+    const row = database
+      .query(`${SELECT_FOLDER} where folders.id = ?`)
+      .get(viewerId, id) as FolderRow | null;
     return row ? toFolder(row) : null;
   };
-  const getTag = (id: string): Tag | null => {
-    const row = database.query(`${SELECT_TAG} where tags.id = ?`).get(id) as TagRow | null;
+  const getTag = (id: string, viewerId: string | null): Tag | null => {
+    const row = database
+      .query(`${SELECT_TAG} where tags.id = ?`)
+      .get(viewerId, id) as TagRow | null;
     return row ? toTag(row) : null;
   };
 
@@ -92,10 +103,10 @@ export function createOrganizationStore(database: Database): OrganizationStore {
     getFolder,
     getTag,
 
-    listFolders() {
+    listFolders(viewerId) {
       const rows = database
         .query(`${SELECT_FOLDER} order by folders.name collate nocase, folders.id`)
-        .all() as FolderRow[];
+        .all(viewerId) as FolderRow[];
       return rows.map(toFolder);
     },
 
@@ -108,13 +119,13 @@ export function createOrganizationStore(database: Database): OrganizationStore {
            values (?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(id, input.name, input.parentId, input.actorId, now, input.actorId, now);
-      const folder = getFolder(id);
+      const folder = getFolder(id, input.actorId);
       if (!folder) throw new Error(`Folder ${id} disappeared right after it was written`);
       return folder;
     },
 
     updateFolder(id, input) {
-      const folder = getFolder(id);
+      const folder = getFolder(id, input.actorId);
       if (!folder) return null;
       const parentId = input.parentId === undefined ? folder.parentId : input.parentId;
       const name = input.name ?? folder.name;
@@ -124,11 +135,11 @@ export function createOrganizationStore(database: Database): OrganizationStore {
           "update folders set name = ?, parentId = ?, updatedBy = ?, updatedAt = ? where id = ?",
         )
         .run(name, parentId, input.actorId, now, id);
-      return getFolder(id);
+      return getFolder(id, input.actorId);
     },
 
     removeFolder(id) {
-      const folder = getFolder(id);
+      const folder = getFolder(id, null);
       if (!folder) return null;
       const artifactRows = database
         .query("select id from artifacts where folderId = ? order by id")
@@ -147,19 +158,19 @@ export function createOrganizationStore(database: Database): OrganizationStore {
       return { artifactIds };
     },
 
-    listTags() {
+    listTags(viewerId) {
       const rows = database
         .query(`${SELECT_TAG} order by tags.name collate nocase, tags.id`)
-        .all() as TagRow[];
+        .all(viewerId) as TagRow[];
       return rows.map(toTag);
     },
 
-    getTags(ids) {
+    getTags(ids, viewerId) {
       if (ids.length === 0) return [];
       const placeholders = ids.map(() => "?").join(", ");
       const rows = database
         .query(`${SELECT_TAG} where tags.id in (${placeholders})`)
-        .all(...ids) as TagRow[];
+        .all(viewerId, ...ids) as TagRow[];
       return rows.map(toTag);
     },
 
@@ -172,7 +183,7 @@ export function createOrganizationStore(database: Database): OrganizationStore {
            values (?, ?, ?, ?, ?, ?)`,
         )
         .run(id, input.name, input.actorId, now, input.actorId, now);
-      const tag = getTag(id);
+      const tag = getTag(id, input.actorId);
       if (!tag) throw new Error(`Tag ${id} disappeared right after it was written`);
       return tag;
     },
@@ -182,11 +193,11 @@ export function createOrganizationStore(database: Database): OrganizationStore {
       database
         .query("update tags set name = ?, updatedBy = ?, updatedAt = ? where id = ?")
         .run(input.name, input.actorId, now, id);
-      return getTag(id);
+      return getTag(id, input.actorId);
     },
 
     removeTag(id) {
-      if (!getTag(id)) return null;
+      if (!getTag(id, null)) return null;
       const artifactRows = database
         .query("select artifactId as id from artifactTags where tagId = ? order by artifactId")
         .all(id) as { id: string }[];

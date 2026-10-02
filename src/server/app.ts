@@ -109,13 +109,14 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   // named in client code.
   app.get("/api/auth-providers", (c) => c.json({ providers: publicProviders(options.authConfig) }));
 
-  // The client's first call: who is signed in, and the limits it needs to
-  // check an upload before sending it.
+  // The client's first call: who is signed in, the limits it needs to check an
+  // upload before sending it, and which optional features the deployment has.
   app.get("/api/me", requireUser, (c) => {
     const { id, name, email, image } = currentUser(c);
     return c.json({
       user: { id, name, email, image: image ?? null },
       limits: { maxUploadBytes: options.artifacts.maxUploadBytes },
+      features: { privateArtifacts: options.artifacts.privateArtifacts },
     });
   });
 

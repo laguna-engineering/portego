@@ -6,7 +6,9 @@ import type { OrganizationService } from "./service.ts";
 export function organizationRoutes(service: OrganizationService): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
 
-  routes.get("/folders", requireUser, (c) => c.json({ folders: service.folders() }));
+  routes.get("/folders", requireUser, (c) =>
+    c.json({ folders: service.folders(currentUser(c).id) }),
+  );
 
   routes.post("/folders", requireUser, async (c) => {
     const body = await readJson(c.req.raw);
@@ -33,7 +35,7 @@ export function organizationRoutes(service: OrganizationService): Hono<AppEnv> {
     return c.body(null, 204);
   });
 
-  routes.get("/tags", requireUser, (c) => c.json({ tags: service.tags() }));
+  routes.get("/tags", requireUser, (c) => c.json({ tags: service.tags(currentUser(c).id) }));
 
   routes.post("/tags", requireUser, async (c) => {
     const body = await readJson(c.req.raw);

@@ -42,7 +42,7 @@ export function previewRoutes(options: PreviewOptions): Hono {
     if (error instanceof ServiceError) {
       return c.text(
         "This artifact is not available.",
-        error.code === "NOT_FOUND" ? 404 : 500,
+        error.code === "NOT_FOUND" || error.code === "PRIVATE" ? 404 : 500,
         PLAIN_HEADERS,
       );
     }
@@ -54,7 +54,11 @@ export function previewRoutes(options: PreviewOptions): Hono {
     if (subject instanceof Response) return subject;
 
     try {
-      const { content } = await options.service.source(subject.artifactId, subject.versionId);
+      const { content } = await options.service.source(
+        subject.artifactId,
+        { userId: subject.viewerId },
+        subject.versionId,
+      );
       // The response declares UTF-8, so the browser reads the upload as UTF-8
       // whichever way it was written. Decoding it the same way here changes
       // nothing about what the browser sees.
@@ -81,7 +85,12 @@ export function previewRoutes(options: PreviewOptions): Hono {
     if (!isImageName(name)) return c.text("No such image.", 404, PLAIN_HEADERS);
 
     try {
-      const image = await options.service.image(subject.artifactId, subject.versionId, name);
+      const image = await options.service.image(
+        subject.artifactId,
+        { userId: subject.viewerId },
+        subject.versionId,
+        name,
+      );
       // The DOM BodyInit type does not accept Uint8Array<ArrayBufferLike>, which
       // is what a Bun file read returns, though every runtime sends it correctly.
       return new Response(image.content as unknown as BodyInit, {

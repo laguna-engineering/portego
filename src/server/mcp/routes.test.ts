@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createLiveTestServer, type LiveTestServer } from "../testing.ts";
+import { createLiveTestServer, type LiveTestServer, WORKSPACE_USER } from "../testing.ts";
 import { authorizeClient, callTool, type McpClient, registerClient } from "./testing.ts";
 
 let server: LiveTestServer;
@@ -180,6 +180,7 @@ describe("tools", () => {
       "upload_artifact",
       "create_upload_ticket",
       "set_artifact_status",
+      "set_artifact_visibility",
       "list_artifact_comments",
       "add_artifact_comment",
       "list_artifact_entries",
@@ -256,6 +257,50 @@ describe("tools", () => {
     ).result?.structuredContent as { html: string; versionNumber: number };
     expect(source.versionNumber).toBe(1);
     expect(source.html).toContain("hi");
+  });
+
+  test("an agent can make its user's artifact private, and another user's agent cannot read it", async () => {
+    const created = (
+      await callTool(client, "upload_artifact", {
+        title: "Private through MCP",
+        html: "<!doctype html><html><title>t</title>hi</html>",
+        visibility: "private",
+      })
+    ).result?.structuredContent as { id: string };
+    const shared = (
+      await callTool(client, "set_artifact_visibility", { id: created.id, visibility: "shared" })
+    ).result?.structuredContent as { visibility: string };
+    expect(shared.visibility).toBe("shared");
+    const hidden = (
+      await callTool(client, "set_artifact_visibility", { id: created.id, visibility: "private" })
+    ).result?.structuredContent as { visibility: string };
+    expect(hidden.visibility).toBe("private");
+
+    const otherCookie = await server.signIn({
+      ...WORKSPACE_USER,
+      sub: "google-subject-mcp-other",
+      email: "mcp-other@acme.example",
+      name: "Another Person",
+    });
+    const otherClient = await authorizeClient(server, {
+      cookie: otherCookie,
+      clientId: await registerClient(server, otherCookie),
+    });
+    for (const [tool, args] of [
+      ["get_artifact_metadata", { id: created.id }],
+      ["get_artifact_source", { id: created.id }],
+      ["list_artifact_comments", { id: created.id }],
+      ["set_artifact_visibility", { id: created.id, visibility: "shared" }],
+    ] as const) {
+      const refused = await callTool(otherClient, tool, args);
+      expect(refused.result?.isError, tool).toBe(true);
+      const text = JSON.stringify(refused.result?.content);
+      expect(text, tool).toContain("PRIVATE");
+      expect(text, tool).not.toContain("person@acme.example");
+    }
+    const listed = (await callTool(otherClient, "list_artifacts", { query: "Private through MCP" }))
+      .result?.structuredContent as { items: unknown[] };
+    expect(listed.items).toHaveLength(0);
   });
 
   test("moves status and archives through MCP, recording the caller", async () => {
@@ -428,7 +473,7 @@ describe("tools", () => {
 
   test("records the authenticated user as the creator of an upload", async () => {
     const created = await upload("Creator check");
-    const artifact = server.artifacts.get(created.id);
+    const artifact = server.artifacts.get(created.id, { userId: null });
     const session = await server.auth.api.getSession({ headers: new Headers({ cookie }) });
 
     expect(artifact.creator.id).toBe(session?.user.id ?? "");
@@ -443,7 +488,9 @@ describe("tools", () => {
       userId: "someone-else",
     });
     const created = result.result?.structuredContent as { id: string };
-    expect(server.artifacts.get(created.id).creator.email).toBe("person@acme.example");
+    expect(server.artifacts.get(created.id, { userId: null }).creator.email).toBe(
+      "person@acme.example",
+    );
   });
 
   test("lists, reads, and returns the source of an artifact it stored", async () => {
@@ -647,11 +694,12 @@ describe("scopes", () => {
       });
       expect(result.result?.isError).toBe(true);
       expect(JSON.stringify(result.result?.content)).toContain("insufficient_scope");
-      expect(own.artifacts.list().items).toHaveLength(0);
+      expect(own.artifacts.list({ userId: null }).items).toHaveLength(0);
 
       // The same rule covers every write tool, not only uploads.
       for (const tool of [
         "set_artifact_status",
+        "set_artifact_visibility",
         "add_artifact_comment",
         "create_upload_ticket",
         "set_artifact_entry",
@@ -661,6 +709,7 @@ describe("scopes", () => {
           id: "any",
           body: "x",
           status: "solved",
+          visibility: "private",
           key: "x",
           value: 1,
         });
@@ -724,5 +773,37 @@ describe("staying signed in", () => {
     const clientId = await registerClient(server, cookie, "artifacts:read artifacts:write", GRANTS);
     const online = await authorizeClient(server, { cookie, clientId });
     expect(online.refreshToken).toBeUndefined();
+  });
+});
+
+describe("a deployment without private artifacts", () => {
+  let closed: LiveTestServer;
+  let agent: McpClient;
+
+  beforeAll(async () => {
+    closed = await createLiveTestServer({ privateArtifacts: false });
+    const owner = await closed.signIn();
+    agent = await authorizeClient(closed, {
+      cookie: owner,
+      clientId: await registerClient(closed, owner),
+    });
+  });
+
+  afterAll(() => {
+    closed.stop();
+  });
+
+  test("offers agents no way to make an artifact private", async () => {
+    const response = await agent.call({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const body = (await response.json()) as {
+      result: {
+        tools: { name: string; description: string; inputSchema: { properties: object } }[];
+      };
+    };
+    const names = body.result.tools.map((tool) => tool.name);
+    expect(names).not.toContain("set_artifact_visibility");
+    const upload = body.result.tools.find((tool) => tool.name === "upload_artifact");
+    expect(Object.keys(upload?.inputSchema.properties ?? {})).not.toContain("visibility");
+    for (const tool of body.result.tools) expect(tool.description).not.toMatch(/private/i);
   });
 });

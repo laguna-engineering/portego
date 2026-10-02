@@ -8,6 +8,7 @@ import type {
   ArtifactStatus,
   ArtifactStore,
   ArtifactVersion,
+  ArtifactVisibility,
   ListResult,
   ListSort,
   TagMatch,
@@ -61,6 +62,11 @@ export type VersionSummary = Omit<
   creator: { id: string; name: string; email: string };
 };
 
+/** Who a read is for. Null is someone with no session, who sees shared artifacts only. */
+export type Viewer = { userId: string | null };
+
+const VISIBILITIES: readonly ArtifactVisibility[] = ["shared", "private"];
+
 export type UploadInput = {
   bytes: Uint8Array;
   /** Markdown is rendered to the stored static HTML document. */
@@ -84,6 +90,8 @@ export type UploadInput = {
   /** Filed as with setArtifactOrganization. Omitted keeps a new version's folder and tags. */
   folderId?: unknown;
   tagIds?: unknown;
+  /** Set as with setVisibility. Omitted makes a new artifact shared and keeps a version's. */
+  visibility?: unknown;
   /** Files the HTML loads as images/<name>. Only with an HTML upload. */
   images?: UploadedImage[];
   /** Taken from the session, never from the request body. */
@@ -162,28 +170,41 @@ function validateAnchor(anchor: unknown): CommentAnchor | null {
   return { quote: trimmedQuote, prefix, suffix };
 }
 
+/**
+ * Every method that takes an artifact id refuses with PRIVATE when the
+ * artifact is someone else's private one. Reads take the viewer; writes use
+ * the actor.
+ */
 export type ArtifactService = {
-  list: (input?: ListInput) => { items: ArtifactSummary[]; nextCursor: string | null };
-  get: (id: string) => ArtifactSummary;
+  list: (
+    viewer: Viewer,
+    input?: ListInput,
+  ) => { items: ArtifactSummary[]; nextCursor: string | null };
+  get: (id: string, viewer: Viewer) => ArtifactSummary;
   upload: (input: UploadInput) => Promise<UploadResult>;
   /** Highest number first. */
-  versions: (id: string) => VersionSummary[];
+  versions: (id: string, viewer: Viewer) => VersionSummary[];
   /** One version's bytes. Without a version id, the current one. */
   source: (
     id: string,
+    viewer: Viewer,
     versionId?: string | null,
   ) => Promise<{ artifact: ArtifactSummary; version: VersionSummary; content: Uint8Array }>;
   /** One image of a version, by the name its HTML uses. */
   image: (
     id: string,
+    viewer: Viewer,
     versionId: string,
     name: string,
   ) => Promise<{ contentType: string; content: Uint8Array }>;
   /** A version's static content as Markdown. Converted once, then reused. */
   markdown: (
     id: string,
+    viewer: Viewer,
     versionId?: string | null,
   ) => Promise<{ artifact: ArtifactSummary } & CachedMarkdown>;
+  /** Only the artifact's creator can change its visibility. */
+  setVisibility: (id: string, visibility: unknown, actorId: string) => ArtifactSummary;
   setStatus: (
     id: string,
     status: ArtifactStatus,
@@ -196,7 +217,7 @@ export type ArtifactService = {
     actorId: string,
     options?: { inApp?: boolean },
   ) => ArtifactSummary;
-  comments: (id: string) => Comment[];
+  comments: (id: string, viewer: Viewer) => Comment[];
   addComment: (
     id: string,
     input: {
@@ -212,7 +233,7 @@ export type ArtifactService = {
   ) => Comment;
   deleteComment: (id: string, commentId: string, actorId: string) => void;
   /** Every person's entries, and the schema the current version declares. */
-  entries: (id: string) => { entries: Entry[]; schema: unknown };
+  entries: (id: string, viewer: Viewer) => { entries: Entry[]; schema: unknown };
   /** Sets the author's value for a key, replacing any value they had. */
   setEntry: (id: string, input: { authorId: string; key: string; value: unknown }) => Entry;
   /** Removes the author's value for a key. Removing a key they never set is not an error. */
@@ -220,6 +241,8 @@ export type ArtifactService = {
   maxUploadBytes: number;
   maxImages: number;
   maxImageBytesTotal: number;
+  /** False when the deployment turned private artifacts off. */
+  privateArtifacts: boolean;
 };
 
 function toSummary(artifact: Artifact, organization?: ArtifactOrganization): ArtifactSummary {
@@ -264,6 +287,11 @@ export function createArtifactService(options: {
   maxUploadBytes?: number;
   maxImages?: number;
   maxImageBytesTotal?: number;
+  /**
+   * False refuses to make an artifact private. Throws when private artifacts
+   * already exist, because they would otherwise stay hidden. Defaults to true.
+   */
+  privateArtifacts?: boolean;
   /** Where a committed change is announced. Absent in tests that ignore it. */
   events?: EventBus;
   /** Adds shared folder and tag metadata, and files an upload that asks for it. */
@@ -279,6 +307,23 @@ export function createArtifactService(options: {
   const maxUploadBytes = options.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   const maxImages = options.maxImages ?? DEFAULT_MAX_IMAGES;
   const maxImageBytesTotal = options.maxImageBytesTotal ?? DEFAULT_MAX_IMAGE_BYTES_TOTAL;
+  const privateArtifacts = options.privateArtifacts ?? true;
+  if (!privateArtifacts) {
+    const count = store.countPrivate();
+    if (count > 0) {
+      throw new Error(
+        `Private artifacts are turned off, but ${count} private artifact(s) exist. ` +
+          "Set PRIVATE_ARTIFACTS=true, or make them shared before turning it off.",
+      );
+    }
+  }
+  const readVisibility = (visibility: unknown): ArtifactVisibility => {
+    const checked = parseVisibility(visibility);
+    if (checked === "private" && !privateArtifacts) {
+      throw new ServiceError("FORBIDDEN", "This deployment does not allow private artifacts.");
+    }
+    return checked;
+  };
   // Published after the write returns, so a failed write announces nothing.
   const publish = options.events?.publish ?? (() => {});
   const entryWrites = createWriteLimiter(ENTRY_WRITES_PER_MINUTE, 60_000);
@@ -294,9 +339,17 @@ export function createArtifactService(options: {
     return schema;
   };
 
-  const writableKey = (id: string, key: string) => {
+  const visible = (id: string, viewer: Viewer): Artifact => {
     const artifact = store.get(id);
     if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+    if (artifact.visibility === "private" && artifact.createdBy !== viewer.userId) {
+      throw new ServiceError("PRIVATE", "This artifact is private.");
+    }
+    return artifact;
+  };
+
+  const writableKey = (id: string, authorId: string, key: string) => {
+    const artifact = visible(id, { userId: authorId });
     if (!isEntryKey(key)) {
       throw new ServiceError(
         "INVALID_INPUT",
@@ -319,10 +372,11 @@ export function createArtifactService(options: {
     maxUploadBytes,
     maxImages,
     maxImageBytesTotal,
+    privateArtifacts,
 
-    list(input = {}) {
+    list(viewer, input = {}) {
       try {
-        const result = store.list(input);
+        const result = store.list({ ...input, viewerId: viewer.userId });
         return toResult(result, assignments(result.items.map((artifact) => artifact.id)));
       } catch (cause) {
         if (cause instanceof InvalidCursorError) {
@@ -332,10 +386,8 @@ export function createArtifactService(options: {
       }
     },
 
-    get(id) {
-      const artifact = store.get(id);
-      if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
-      return summary(artifact);
+    get(id, viewer) {
+      return summary(visible(id, viewer));
     },
 
     async upload(input) {
@@ -380,13 +432,15 @@ export function createArtifactService(options: {
         maxImages,
         maxTotalBytes: maxImageBytesTotal,
       });
+      const visibility =
+        input.visibility === undefined ? undefined : readVisibility(input.visibility);
 
       // An explicit target is checked before anything is written, so a wrong
       // id is refused rather than turned into a new artifact.
       let target: Artifact | null = null;
       if (input.artifactId) {
-        target = store.get(input.artifactId);
-        if (!target) throw new ServiceError("NOT_FOUND", "No such artifact.");
+        target = visible(input.artifactId, { userId: input.createdBy });
+        if (visibility !== undefined) requireCreator(target, input.createdBy);
       }
 
       const title = readTitle(input.title, text, isMarkdown, target?.title);
@@ -410,7 +464,7 @@ export function createArtifactService(options: {
       // A shared title alone never selects the artifact to version: that
       // takes an explicit artifactId, and a duplicate takes an explicit flag.
       if (!target && !input.allowDuplicateTitle) {
-        const existing = store.findByTitle(title);
+        const existing = store.findByTitle(title, input.createdBy);
         if (existing) {
           throw new ServiceError(
             "TITLE_EXISTS",
@@ -457,8 +511,12 @@ export function createArtifactService(options: {
         });
         if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
         file(artifact.id);
+        const current =
+          visibility === undefined
+            ? artifact
+            : (store.setVisibility(artifact.id, visibility) ?? artifact);
         publish({ type: "artifact.changed", id: artifact.id });
-        return { artifact: summary(artifact), newArtifact: false };
+        return { artifact: summary(current), newArtifact: false };
       }
 
       const artifact = await store.create({
@@ -469,6 +527,7 @@ export function createArtifactService(options: {
         ...(providedMarkdown === null ? {} : { providedMarkdown }),
         entrySchema,
         images,
+        visibility,
         createdBy: input.createdBy,
         inApp: input.inApp,
       });
@@ -477,15 +536,25 @@ export function createArtifactService(options: {
       return { artifact: summary(artifact), newArtifact: true };
     },
 
-    versions(id) {
-      if (!store.get(id)) throw new ServiceError("NOT_FOUND", "No such artifact.");
+    versions(id, viewer) {
+      visible(id, viewer);
       return store.versions(id).map(toVersionSummary);
     },
 
-    // Every admitted user may move an artifact's status, archive it, restore
-    // it, and comment on it. There are no roles here, so the record of who did
-    // what is what matters, and every change carries the actor.
+    setVisibility(id, visibility, actorId) {
+      const checked = readVisibility(visibility);
+      requireCreator(visible(id, { userId: actorId }), actorId);
+      const artifact = store.setVisibility(id, checked);
+      if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+      publish({ type: "artifact.changed", id });
+      return summary(artifact);
+    },
+
+    // Every admitted user who can see an artifact may move its status, archive
+    // it, restore it, and comment on it. There are no roles here, so the record
+    // of who did what is what matters, and every change carries the actor.
     setStatus(id, status, actorId, options) {
+      visible(id, { userId: actorId });
       const artifact = store.setStatus(id, status, actorId, options);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
@@ -493,20 +562,20 @@ export function createArtifactService(options: {
     },
 
     setArchived(id, archived, actorId, options) {
+      visible(id, { userId: actorId });
       const artifact = store.setArchived(id, archived, actorId, options);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
       return summary(artifact);
     },
 
-    comments(id) {
-      if (!store.get(id)) throw new ServiceError("NOT_FOUND", "No such artifact.");
+    comments(id, viewer) {
+      visible(id, viewer);
       return commentStore.list(id);
     },
 
     addComment(id, input) {
-      const artifact = store.get(id);
-      if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+      const artifact = visible(id, { userId: input.authorId });
       const body = input.body.trim();
       if (body === "") throw new ServiceError("INVALID_INPUT", "Write something first.");
       if (body.length > COMMENT_MAX_LENGTH) {
@@ -548,6 +617,7 @@ export function createArtifactService(options: {
     },
 
     deleteComment(id, commentId, actorId) {
+      visible(id, { userId: actorId });
       const comment = commentStore.get(commentId);
       if (!comment || comment.artifactId !== id) {
         throw new ServiceError("NOT_FOUND", "No such comment.");
@@ -565,15 +635,14 @@ export function createArtifactService(options: {
       publish({ type: "comment.changed", artifactId: id });
     },
 
-    entries(id) {
-      const artifact = store.get(id);
-      if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+    entries(id, viewer) {
+      const artifact = visible(id, viewer);
       const schema = entryStore.schema(artifact.currentVersionId);
       return { entries: entryStore.list(id), schema: schema === null ? null : JSON.parse(schema) };
     },
 
     setEntry(id, input) {
-      const artifact = writableKey(id, input.key);
+      const artifact = writableKey(id, input.authorId, input.key);
       if (input.value === undefined) throw new ServiceError("INVALID_INPUT", "Give a value.");
       const value = JSON.stringify(input.value);
       if (Buffer.byteLength(value) > ENTRY_VALUE_MAX_BYTES) {
@@ -615,16 +684,15 @@ export function createArtifactService(options: {
     },
 
     clearEntry(id, input) {
-      writableKey(id, input.key);
+      writableKey(id, input.authorId, input.key);
       limitWrites(id, input.authorId);
       if (entryStore.remove(id, input.authorId, input.key)) {
         publish({ type: "entry.changed", artifactId: id });
       }
     },
 
-    async markdown(id, versionId) {
-      const artifact = store.get(id);
-      if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+    async markdown(id, viewer, versionId) {
+      const artifact = visible(id, viewer);
       const version = requireVersion(store, id, versionId ?? artifact.currentVersionId);
 
       const provided = markdownStore.readProvided(version.id);
@@ -646,15 +714,15 @@ export function createArtifactService(options: {
       return { artifact: summary(artifact), ...stored };
     },
 
-    async source(id, versionId) {
-      const artifact = store.get(id);
-      if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+    async source(id, viewer, versionId) {
+      const artifact = visible(id, viewer);
       const version = requireVersion(store, id, versionId ?? artifact.currentVersionId);
       const content = await readSource(store, version.id);
       return { artifact: summary(artifact), version: toVersionSummary(version), content };
     },
 
-    async image(id, versionId, name) {
+    async image(id, viewer, versionId, name) {
+      visible(id, viewer);
       requireVersion(store, id, versionId);
       try {
         const result = await store.readVersionImage(versionId, name);
@@ -668,6 +736,19 @@ export function createArtifactService(options: {
       }
     },
   };
+}
+
+function parseVisibility(visibility: unknown): ArtifactVisibility {
+  if (!VISIBILITIES.includes(visibility as ArtifactVisibility)) {
+    throw new ServiceError("INVALID_INPUT", 'visibility is "shared" or "private".');
+  }
+  return visibility as ArtifactVisibility;
+}
+
+function requireCreator(artifact: Artifact, actorId: string) {
+  if (artifact.createdBy !== actorId) {
+    throw new ServiceError("FORBIDDEN", "Only the artifact's creator can change its visibility.");
+  }
 }
 
 /** The version, which has to belong to the artifact it was asked for under. */

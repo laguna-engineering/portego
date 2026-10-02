@@ -40,6 +40,7 @@ export function ArtifactCard({ artifact, onOpen }: ArtifactCardProps) {
             ) : null}
             {artifact.status === "solved" ? <span className="badge solved">solved</span> : null}
             {artifact.archivedAt ? <span className="badge">archived</span> : null}
+            {artifact.visibility === "private" ? <span className="badge">private</span> : null}
           </span>
           {artifact.description ? (
             <span className="card-description">{excerpt(artifact.description, 110)}</span>

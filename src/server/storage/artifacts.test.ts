@@ -121,13 +121,19 @@ describe("list", () => {
   test("returns the most recently updated artifact first", async () => {
     const older = await storage.store.create(input({ title: "Older" }));
     await storage.store.create(input({ title: "Newer" }));
-    expect(storage.store.list().items.map((item) => item.title)).toEqual(["Newer", "Older"]);
+    expect(storage.store.list({ viewerId: null }).items.map((item) => item.title)).toEqual([
+      "Newer",
+      "Older",
+    ]);
 
     // Whatever was touched last comes first, however old the upload is.
     storage.database
       .query("update artifacts set updatedAt = updatedAt + 1000 where id = ?")
       .run(older.id);
-    expect(storage.store.list().items.map((item) => item.title)).toEqual(["Older", "Newer"]);
+    expect(storage.store.list({ viewerId: null }).items.map((item) => item.title)).toEqual([
+      "Older",
+      "Newer",
+    ]);
   });
 
   test("orders by creation time or title when asked", async () => {
@@ -138,7 +144,8 @@ describe("list", () => {
       .query("update artifacts set updatedAt = updatedAt + 1000 where id = ?")
       .run(first.id);
 
-    const titles = (sort: ListSort) => storage.store.list({ sort }).items.map((item) => item.title);
+    const titles = (sort: ListSort) =>
+      storage.store.list({ viewerId: null, sort }).items.map((item) => item.title);
     expect(titles("updated-desc")).toEqual(["banana", "cherry", "Apple"]);
     expect(titles("updated-asc")).toEqual(["Apple", "cherry", "banana"]);
     expect(titles("created-desc")).toEqual(["cherry", "Apple", "banana"]);
@@ -156,7 +163,7 @@ describe("list", () => {
     const seen: string[] = [];
     let cursor: string | null = null;
     do {
-      const page = storage.store.list({ sort: "title-asc", limit: 2, cursor });
+      const page = storage.store.list({ viewerId: null, sort: "title-asc", limit: 2, cursor });
       seen.push(...page.items.map((item) => item.title));
       cursor = page.nextCursor;
     } while (cursor);
@@ -176,7 +183,7 @@ describe("list", () => {
     const seen: string[] = [];
     let cursor: string | null = null;
     do {
-      const page = storage.store.list({ limit: 2, cursor });
+      const page = storage.store.list({ viewerId: null, limit: 2, cursor });
       seen.push(...page.items.map((item) => item.title));
       cursor = page.nextCursor;
     } while (cursor);
@@ -187,47 +194,51 @@ describe("list", () => {
 
   test("stops offering a cursor on the last page", async () => {
     await storage.store.create(input());
-    expect(storage.store.list({ limit: 10 }).nextCursor).toBeNull();
+    expect(storage.store.list({ viewerId: null, limit: 10 }).nextCursor).toBeNull();
   });
 
   test("refuses a cursor it did not produce", () => {
-    expect(() => storage.store.list({ cursor: "not-a-cursor" })).toThrow(InvalidCursorError);
+    expect(() => storage.store.list({ viewerId: null, cursor: "not-a-cursor" })).toThrow(
+      InvalidCursorError,
+    );
   });
 
   test("refuses a cursor from a different order", async () => {
     await storage.store.create(input());
     await storage.store.create(input());
-    const cursor = storage.store.list({ sort: "title-asc", limit: 1 }).nextCursor;
+    const cursor = storage.store.list({ viewerId: null, sort: "title-asc", limit: 1 }).nextCursor;
     expect(cursor).not.toBeNull();
 
-    expect(() => storage.store.list({ sort: "created-desc", cursor })).toThrow(InvalidCursorError);
+    expect(() => storage.store.list({ viewerId: null, sort: "created-desc", cursor })).toThrow(
+      InvalidCursorError,
+    );
   });
 
   test("keeps only the artifacts matching a search term", async () => {
     await storage.store.create(input({ title: "Sales chart" }));
     await storage.store.create(input({ title: "Latency report", description: "p99 by region" }));
 
-    expect(storage.store.list({ query: "chart" }).items.map((item) => item.title)).toEqual([
-      "Sales chart",
-    ]);
-    expect(storage.store.list({ query: "p99" }).items.map((item) => item.title)).toEqual([
-      "Latency report",
-    ]);
+    expect(
+      storage.store.list({ viewerId: null, query: "chart" }).items.map((item) => item.title),
+    ).toEqual(["Sales chart"]);
+    expect(
+      storage.store.list({ viewerId: null, query: "p99" }).items.map((item) => item.title),
+    ).toEqual(["Latency report"]);
   });
 
   test("reads a wildcard in a search term as text, not as a pattern", async () => {
     await storage.store.create(input({ title: "Anything" }));
     await storage.store.create(input({ title: "100% coverage" }));
 
-    expect(storage.store.list({ query: "100%" }).items.map((item) => item.title)).toEqual([
-      "100% coverage",
-    ]);
-    expect(storage.store.list({ query: "_" }).items).toHaveLength(0);
+    expect(
+      storage.store.list({ viewerId: null, query: "100%" }).items.map((item) => item.title),
+    ).toEqual(["100% coverage"]);
+    expect(storage.store.list({ viewerId: null, query: "_" }).items).toHaveLength(0);
   });
 
   test("caps the page size a caller can ask for", async () => {
     await storage.store.create(input());
-    expect(storage.store.list({ limit: 10_000 }).items).toHaveLength(1);
+    expect(storage.store.list({ viewerId: null, limit: 10_000 }).items).toHaveLength(1);
   });
 });
 
@@ -312,8 +323,8 @@ describe("versions", () => {
     const live = await storage.store.create(input({ title: "Report" }));
     await storage.store.create(input({ title: "report" }));
 
-    expect(storage.store.findByTitle("Report")?.id).toBe(live.id);
-    expect(storage.store.findByTitle("Reports")).toBeNull();
+    expect(storage.store.findByTitle("Report", "nobody")?.id).toBe(live.id);
+    expect(storage.store.findByTitle("Reports", "nobody")).toBeNull();
   });
 });
 

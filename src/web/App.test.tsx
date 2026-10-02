@@ -23,6 +23,7 @@ function captureNavigation(): string[] {
 const SIGNED_IN = {
   user: { id: "user-1", name: "A Person", email: "person@acme.example", image: null },
   limits: { maxUploadBytes: 5 * 1024 * 1024 },
+  features: { privateArtifacts: true },
 };
 
 function signedIn(path: string) {

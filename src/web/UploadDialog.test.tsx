@@ -14,12 +14,14 @@ function renderDialog(
     onUploaded?: (uploaded: ReturnType<typeof artifact>) => void;
     onClose?: () => void;
     maxUploadBytes?: number;
+    privateArtifacts?: boolean;
     initialFolderId?: string | null;
   } = {},
 ) {
   return render(
     <UploadDialog
       maxUploadBytes={options.maxUploadBytes ?? LIMIT}
+      privateArtifacts={options.privateArtifacts ?? true}
       initialFolderId={options.initialFolderId ?? null}
       onClose={options.onClose ?? (() => {})}
       onUploaded={options.onUploaded ?? (() => {})}
@@ -115,6 +117,34 @@ describe("uploading", () => {
 
     await waitFor(() => expect(uploaded).toHaveLength(1));
     expect(uploaded[0]?.id).toBe("new-artifact");
+  });
+
+  test("uploads a private artifact only when the person asks for one", async () => {
+    const sent: FormData[] = [];
+    stubUploads(sent, () => ({ status: 201, body: { artifact: artifact() } }));
+
+    renderDialog();
+    await userEvent.upload(fileInput(), htmlFile());
+    await userEvent.click(screen.getByRole("button", { name: "Upload" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]?.has("visibility")).toBe(false);
+  });
+
+  test("sends visibility private when the box is ticked", async () => {
+    const sent: FormData[] = [];
+    stubUploads(sent, () => ({ status: 201, body: { artifact: artifact() } }));
+
+    renderDialog();
+    await userEvent.upload(fileInput(), htmlFile());
+    await userEvent.click(screen.getByRole("checkbox", { name: "Private: only you can see it" }));
+    await userEvent.click(screen.getByRole("button", { name: "Upload" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]?.get("visibility")).toBe("private");
+  });
+
+  test("does not offer privacy on a deployment that turned private artifacts off", () => {
+    renderDialog({ privateArtifacts: false });
+    expect(screen.queryByRole("checkbox", { name: "Private: only you can see it" })).toBeNull();
   });
 
   test("shows the upload in progress and stops a second submission", async () => {
