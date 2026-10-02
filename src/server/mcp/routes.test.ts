@@ -775,3 +775,35 @@ describe("staying signed in", () => {
     expect(online.refreshToken).toBeUndefined();
   });
 });
+
+describe("a deployment without private artifacts", () => {
+  let closed: LiveTestServer;
+  let agent: McpClient;
+
+  beforeAll(async () => {
+    closed = await createLiveTestServer({ privateArtifacts: false });
+    const owner = await closed.signIn();
+    agent = await authorizeClient(closed, {
+      cookie: owner,
+      clientId: await registerClient(closed, owner),
+    });
+  });
+
+  afterAll(() => {
+    closed.stop();
+  });
+
+  test("offers agents no way to make an artifact private", async () => {
+    const response = await agent.call({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const body = (await response.json()) as {
+      result: {
+        tools: { name: string; description: string; inputSchema: { properties: object } }[];
+      };
+    };
+    const names = body.result.tools.map((tool) => tool.name);
+    expect(names).not.toContain("set_artifact_visibility");
+    const upload = body.result.tools.find((tool) => tool.name === "upload_artifact");
+    expect(Object.keys(upload?.inputSchema.properties ?? {})).not.toContain("visibility");
+    for (const tool of body.result.tools) expect(tool.description).not.toMatch(/private/i);
+  });
+});

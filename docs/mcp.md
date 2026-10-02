@@ -148,6 +148,11 @@ A tool that names someone else's private artifact refuses with `PRIVATE`, the
 same code the HTTP API uses. The caller is the token's user, so an agent sees
 what its user sees.
 
+A deployment with `PRIVATE_ARTIFACTS=false` does not offer
+`set_artifact_visibility` or the `visibility` parameter of `upload_artifact`.
+The upload plugin keeps its `visibility` option and `--private` flag, and the
+server refuses them with `FORBIDDEN`.
+
 Every tool description states that artifact HTML is untrusted, self-contained,
 and at most 5 MiB. Artifact HTML is never written to a log.
 

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { TEST_BASE_URL } from "../auth/testing.ts";
+import { createMarkdownStore } from "../markdown/store.ts";
+import { createArtifactStore } from "../storage/artifacts.ts";
+import { createCommentStore } from "../storage/comments.ts";
+import { createEntryStore } from "../storage/entries.ts";
 import {
   createTestServer,
   htmlFile,
@@ -7,6 +11,8 @@ import {
   type TestServer,
   WORKSPACE_USER,
 } from "../testing.ts";
+
+import { createArtifactService } from "./service.ts";
 
 let server: TestServer;
 /** A Person, who creates the artifacts. */
@@ -256,5 +262,89 @@ describe("previews", () => {
 
     expect((await server.app.request(theirs)).status).toBe(404);
     expect((await server.app.request(mine)).status).toBe(200);
+  });
+});
+
+describe("a deployment without private artifacts", () => {
+  let closed: TestServer;
+  let cookie: string;
+
+  beforeEach(async () => {
+    closed = await createTestServer({ privateArtifacts: false });
+    cookie = await closed.signIn();
+  });
+
+  afterEach(() => {
+    closed.cleanup();
+  });
+
+  function closedRequest(path: string, init: { method?: string; body?: unknown } = {}) {
+    return closed.app.request(path, {
+      method: init.method ?? "GET",
+      headers: { cookie, origin: TEST_BASE_URL, "content-type": "application/json" },
+      ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+    });
+  }
+
+  test("tells the client, so it does not offer privacy", async () => {
+    const res = await closedRequest("/api/me");
+    await expect(res.json()).resolves.toMatchObject({ features: { privateArtifacts: false } });
+  });
+
+  function closedUpload(fields: Record<string, string>) {
+    const form = new FormData();
+    form.set("file", htmlFile("<p>x</p>"));
+    for (const [name, value] of Object.entries(fields)) form.set(name, value);
+    return closed.app.request("/api/artifacts", {
+      method: "POST",
+      headers: { cookie, origin: TEST_BASE_URL },
+      body: form,
+    });
+  }
+
+  test("refuses a private upload and creates nothing", async () => {
+    const res = await closedUpload({ title: "Secret", visibility: "private" });
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "FORBIDDEN" } });
+
+    const list = (await (await closedRequest("/api/artifacts")).json()) as { items: unknown[] };
+    expect(list.items).toEqual([]);
+  });
+
+  test("refuses to make an artifact private, and it stays shared", async () => {
+    const created = (await (await closedUpload({ title: "Plan" })).json()) as {
+      artifact: { id: string };
+    };
+    const path = `/api/artifacts/${created.artifact.id}`;
+    const res = await closedRequest(`${path}/visibility`, {
+      method: "PATCH",
+      body: { visibility: "private" },
+    });
+    expect(res.status).toBe(403);
+    await expect((await closedRequest(path)).json()).resolves.toMatchObject({
+      artifact: { visibility: "shared" },
+    });
+  });
+});
+
+describe("turning private artifacts off", () => {
+  // The server would otherwise start with artifacts that nobody but their
+  // creator can see and that nobody can share again from the client.
+  function startWithout() {
+    return createArtifactService({
+      store: createArtifactStore({ database: server.database, dataDir: server.dataDir }),
+      markdownStore: createMarkdownStore({ database: server.database }),
+      commentStore: createCommentStore({ database: server.database }),
+      entryStore: createEntryStore({ database: server.database }),
+      privateArtifacts: false,
+    });
+  }
+
+  test("refuses to start while private artifacts exist", async () => {
+    const id = await upload("Plan", { visibility: "private" });
+    expect(startWithout).toThrow(/1 private artifact/);
+
+    await setVisibility(owner, id, "shared");
+    expect(startWithout).not.toThrow();
   });
 });

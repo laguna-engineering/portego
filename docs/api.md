@@ -15,8 +15,9 @@ An artifact is `shared`, which every signed-in user can see, or `private`,
 which only its creator can see. Every route that names someone else's private
 artifact refuses with `PRIVATE`; see [Visibility](#visibility).
 
-`GET /api/me` returns the signed-in user and the limits the client needs to
-check an upload before sending it.
+`GET /api/me` returns the signed-in user, the limits the client needs to
+check an upload before sending it, and `features.privateArtifacts`, which is
+false when the deployment turned private artifacts off.
 
 ## Endpoints
 
@@ -243,6 +244,10 @@ same siblings).
 Only the artifact's creator can change it, in either direction. Anyone else
 gets `FORBIDDEN` for a shared artifact and `PRIVATE` for a private one.
 
+A deployment with `PRIVATE_ARTIFACTS=false` refuses `private` with
+`FORBIDDEN`, here and on upload. It does not start while private artifacts
+exist, so every artifact on it is shared.
+
 A private artifact is visible only to its creator. For anyone else:
 
 - every `/api/artifacts/:id` route, reads and writes alike, refuses with
@@ -336,7 +341,7 @@ Every failure has the same shape:
 | --- | --- | --- |
 | `UNAUTHENTICATED` | 401 | No session, or no usable upload ticket. |
 | `NOT_FOUND` | 404 | No artifact with that id. |
-| `FORBIDDEN` | 403 | The action is not this caller's to take. |
+| `FORBIDDEN` | 403 | The action is not this caller's to take, or the deployment turned it off. |
 | `PRIVATE` | 403 | The artifact is someone else's private one. Nothing else about it is sent. |
 | `INVALID_INPUT` | 400 | A field is missing, malformed, or too long. |
 | `TITLE_REQUIRED` | 400 | No title given and none in the document. |

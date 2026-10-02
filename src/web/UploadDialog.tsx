@@ -12,6 +12,8 @@ import { formatBytes } from "./format.ts";
 
 export type UploadDialogProps = {
   maxUploadBytes: number;
+  /** False when the deployment has no private artifacts. */
+  privateArtifacts: boolean;
   /** The folder open in the gallery, which a new artifact is filed in by default. */
   initialFolderId?: string | null;
   onClose: () => void;
@@ -34,6 +36,7 @@ const NEW_FOLDER = "new-folder";
 
 export function UploadDialog({
   maxUploadBytes,
+  privateArtifacts,
   initialFolderId = null,
   onClose,
   onUploaded,
@@ -290,15 +293,17 @@ export function UploadDialog({
             </>
           ) : null}
 
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={onlyMe}
-              disabled={uploading}
-              onChange={(event) => setOnlyMe(event.target.checked)}
-            />
-            Private: only you can see it
-          </label>
+          {privateArtifacts ? (
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={onlyMe}
+                disabled={uploading}
+                onChange={(event) => setOnlyMe(event.target.checked)}
+              />
+              Private: only you can see it
+            </label>
+          ) : null}
 
           {problem ? (
             <p className="problem" role="alert">

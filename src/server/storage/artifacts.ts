@@ -319,6 +319,7 @@ export type ArtifactStore = {
   ) => Artifact | null;
   /** Null when the artifact is gone. */
   setVisibility: (id: string, visibility: ArtifactVisibility) => Artifact | null;
+  countPrivate: () => number;
   list: (options: ListOptions) => ListResult;
   get: (id: string) => Artifact | null;
   /** Null when no such artifact exists. Throws when its bytes are gone. */
@@ -595,6 +596,13 @@ export function createArtifactStore(options: {
         .query("update artifacts set visibility = ?, updatedAt = ? where id = ?")
         .run(visibility, Date.now(), id);
       return get(id);
+    },
+
+    countPrivate() {
+      const row = database
+        .query("select count(*) as count from artifacts where visibility = 'private'")
+        .get() as { count: number };
+      return row.count;
     },
 
     setStatus(id, status, actorId, options = {}) {

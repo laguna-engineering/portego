@@ -163,6 +163,7 @@ export function App() {
         onLinkShown={() => navigate(artifactPath(route.id), { replace: true })}
         email={session.user.email}
         currentUserId={session.user.id}
+        privateArtifacts={session.features.privateArtifacts}
         onHome={() => navigate("/")}
         onOpenFolder={(folderId) => navigate(galleryPath({ folderId }))}
         onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
@@ -216,6 +217,7 @@ export function App() {
       {uploading ? (
         <UploadDialog
           maxUploadBytes={session.limits.maxUploadBytes}
+          privateArtifacts={session.features.privateArtifacts}
           initialFolderId={route.name === "gallery" ? route.folderId : null}
           onClose={() => setUploading(false)}
           onUploaded={(artifact) => {

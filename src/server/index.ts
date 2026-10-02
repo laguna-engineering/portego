@@ -34,6 +34,7 @@ const artifacts = createArtifactService({
   maxUploadBytes: env.ARTIFACT_MAX_BYTES,
   maxImages: env.ARTIFACT_MAX_IMAGES,
   maxImageBytesTotal: env.ARTIFACT_IMAGES_MAX_BYTES,
+  privateArtifacts: env.PRIVATE_ARTIFACTS,
   events,
 });
 

@@ -57,6 +57,7 @@ function fullProps(overrides: Partial<ArtifactFullProps> = {}): ArtifactFullProp
     id: "artifact-1",
     email: "person@acme.example",
     currentUserId: "user-1",
+    privateArtifacts: true,
     onHome: () => {},
     onOpenFolder: () => {},
     onSignOut: () => {},
@@ -221,6 +222,14 @@ describe("actions", () => {
   test("does not offer to change visibility to anyone but the creator", async () => {
     stubFetch(answer);
     renderFull({ currentUserId: "user-2" });
+
+    await screen.findByRole("button", { name: "Mark solved" });
+    expect(screen.queryByRole("button", { name: "Make private" })).toBeNull();
+  });
+
+  test("does not offer privacy on a deployment that turned private artifacts off", async () => {
+    stubFetch(answer);
+    renderFull({ privateArtifacts: false });
 
     await screen.findByRole("button", { name: "Mark solved" });
     expect(screen.queryByRole("button", { name: "Make private" })).toBeNull();

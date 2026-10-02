@@ -117,7 +117,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export type Session = { user: User; limits: { maxUploadBytes: number } };
+export type Session = {
+  user: User;
+  limits: { maxUploadBytes: number };
+  /** Optional features the deployment turned on. */
+  features: { privateArtifacts: boolean };
+};
 
 /** The session, or null when nobody is signed in. */
 export async function fetchSession(): Promise<Session | null> {

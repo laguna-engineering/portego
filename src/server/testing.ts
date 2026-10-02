@@ -50,6 +50,7 @@ export type TestServer = {
 
 export type TestServerOptions = {
   maxUploadBytes?: number;
+  privateArtifacts?: boolean;
   /** The origin the app answers on. A live server passes its own. */
   baseURL?: string;
   contentOrigin?: string;
@@ -83,6 +84,9 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     organization,
     events,
     ...(options.maxUploadBytes ? { maxUploadBytes: options.maxUploadBytes } : {}),
+    ...(options.privateArtifacts === undefined
+      ? {}
+      : { privateArtifacts: options.privateArtifacts }),
   });
 
   const app = createApp({
@@ -139,7 +143,7 @@ export type LiveTestServer = TestServer & {
  * rather than an in-process request.
  */
 export async function createLiveTestServer(
-  options: { serveClient?: boolean; idleTimeout?: number } = {},
+  options: { serveClient?: boolean; idleTimeout?: number; privateArtifacts?: boolean } = {},
 ): Promise<LiveTestServer> {
   let handle: TestServer | null = null;
   const listener = Bun.serve({
@@ -157,6 +161,9 @@ export async function createLiveTestServer(
     // A different host on the same listener, which is what isolates previews.
     contentOrigin: `http://localhost:${listener.port}`,
     ...(options.serveClient ? { serveClient: true } : {}),
+    ...(options.privateArtifacts === undefined
+      ? {}
+      : { privateArtifacts: options.privateArtifacts }),
   });
   handle = server;
 

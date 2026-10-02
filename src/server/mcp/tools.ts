@@ -188,13 +188,16 @@ function asJson(value: unknown) {
 
 export function registerArtifactTools(server: McpServer, context: ToolContext): void {
   const viewer = { userId: context.userId };
+  // A deployment without private artifacts does not offer them to agents.
+  const privateArtifacts = context.service.privateArtifacts;
   server.registerTool(
     "list_artifacts",
     {
       title: "List artifacts",
-      description:
-        "List the artifacts you can see, most recently updated first: every shared artifact and " +
-        `your own private ones. ${UNTRUSTED} ${VERSIONS}`,
+      description: privateArtifacts
+        ? "List the artifacts you can see, most recently updated first: every shared artifact " +
+          `and your own private ones. ${UNTRUSTED} ${VERSIONS}`
+        : `List the artifacts, most recently updated first. ${UNTRUSTED} ${VERSIONS}`,
       inputSchema: {
         cursor: z.string().optional().describe("Continue from a previous page."),
         sort: z
@@ -355,9 +358,12 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         "list_artifacts. A description given with a new version replaces the artifact's " +
         "description. folderId and tagIds file the artifact as set_artifact_organization does; " +
         "find ids with list_folders and list_tags, and omit both unless the user names a folder " +
-        "or tags. visibility private makes the artifact visible only to you; omit it unless the " +
-        "user asks, which makes a new artifact shared and keeps a version's visibility. To send " +
-        "images as separate files instead of data URIs, use create_upload_ticket.",
+        "or tags. " +
+        (privateArtifacts
+          ? "visibility private makes the artifact visible only to you; omit it unless the user " +
+            "asks, which makes a new artifact shared and keeps a version's visibility. "
+          : "") +
+        "To send images as separate files instead of data URIs, use create_upload_ticket.",
       inputSchema: {
         title: z.string().min(1).max(200).describe("Shown in the gallery."),
         description: z.string().max(2000).optional(),
@@ -391,10 +397,14 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
           .max(20)
           .optional()
           .describe("Replaces the artifact's tags. Omitted keeps a new version's tags."),
-        visibility: z
-          .enum(["shared", "private"])
-          .optional()
-          .describe("Who can see the artifact. Only its creator can set it."),
+        ...(privateArtifacts
+          ? {
+              visibility: z
+                .enum(["shared", "private"])
+                .optional()
+                .describe("Who can see the artifact. Only its creator can set it."),
+            }
+          : {}),
       },
       outputSchema: {
         id: z.string(),
@@ -461,7 +471,8 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         "client, and whenever it is large: the bytes never enter the conversation. Send a " +
         "multipart form with the file in the `file` field, and optionally `title`, " +
         "`description`, `artifactId`, `allowDuplicateTitle` (the text true), `folderId`, " +
-        "`visibility`, and one `tagId` field per tag, which follow the same rules as upload_artifact. For example: " +
+        (privateArtifacts ? "`visibility`, " : "") +
+        "and one `tagId` field per tag, which follow the same rules as upload_artifact. For example: " +
         'curl -H "Authorization: Bearer <ticket>" -F file=@page.html -F title="A chart" <url>. ' +
         "An HTML upload may also carry images the page loads as images/<name>: send each as an " +
         "`image` field whose filename is that name, for example -F image=@images/chart.png. Each " +
@@ -528,30 +539,32 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
     },
   );
 
-  server.registerTool(
-    "set_artifact_visibility",
-    {
-      title: "Set artifact visibility",
-      description:
-        "Make an artifact private, so only you can see it, or shared again with everyone. Only " +
-        "the artifact's creator can change this. Change it only when the user asks.",
-      inputSchema: {
-        id: z.string().describe("The artifact id."),
-        visibility: z.enum(["shared", "private"]),
+  if (privateArtifacts) {
+    server.registerTool(
+      "set_artifact_visibility",
+      {
+        title: "Set artifact visibility",
+        description:
+          "Make an artifact private, so only you can see it, or shared again with everyone. Only " +
+          "the artifact's creator can change this. Change it only when the user asks.",
+        inputSchema: {
+          id: z.string().describe("The artifact id."),
+          visibility: z.enum(["shared", "private"]),
+        },
+        outputSchema: metadataShape,
       },
-      outputSchema: metadataShape,
-    },
-    async ({ id, visibility }) => {
-      requireWriteScope(context, "not change them");
-      try {
-        return asJson(
-          describe(context.service.setVisibility(id, visibility, context.userId), context),
-        );
-      } catch (error) {
-        return refuse(error);
-      }
-    },
-  );
+      async ({ id, visibility }) => {
+        requireWriteScope(context, "not change them");
+        try {
+          return asJson(
+            describe(context.service.setVisibility(id, visibility, context.userId), context),
+          );
+        } catch (error) {
+          return refuse(error);
+        }
+      },
+    );
+  }
 
   server.registerTool(
     "list_artifact_comments",

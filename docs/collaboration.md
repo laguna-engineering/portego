@@ -28,7 +28,9 @@ An artifact is shared by default. Its creator, and only its creator, can make
 it private, which hides it from everyone else, and share it again. Someone
 who opens the link to another person's private artifact sees a page that says
 "This artifact is private." and shows nothing else about it, not even who owns
-it. The API's rules are in [api.md](api.md#visibility).
+it. The API's rules are in [api.md](api.md#visibility). A deployment can turn
+private artifacts off with `PRIVATE_ARTIFACTS=false`; the client then does not
+offer them.
 
 ## Comments
 

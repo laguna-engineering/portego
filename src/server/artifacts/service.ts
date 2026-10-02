@@ -241,6 +241,8 @@ export type ArtifactService = {
   maxUploadBytes: number;
   maxImages: number;
   maxImageBytesTotal: number;
+  /** False when the deployment turned private artifacts off. */
+  privateArtifacts: boolean;
 };
 
 function toSummary(artifact: Artifact, organization?: ArtifactOrganization): ArtifactSummary {
@@ -285,6 +287,11 @@ export function createArtifactService(options: {
   maxUploadBytes?: number;
   maxImages?: number;
   maxImageBytesTotal?: number;
+  /**
+   * False refuses to make an artifact private. Throws when private artifacts
+   * already exist, because they would otherwise stay hidden. Defaults to true.
+   */
+  privateArtifacts?: boolean;
   /** Where a committed change is announced. Absent in tests that ignore it. */
   events?: EventBus;
   /** Adds shared folder and tag metadata, and files an upload that asks for it. */
@@ -300,6 +307,23 @@ export function createArtifactService(options: {
   const maxUploadBytes = options.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   const maxImages = options.maxImages ?? DEFAULT_MAX_IMAGES;
   const maxImageBytesTotal = options.maxImageBytesTotal ?? DEFAULT_MAX_IMAGE_BYTES_TOTAL;
+  const privateArtifacts = options.privateArtifacts ?? true;
+  if (!privateArtifacts) {
+    const count = store.countPrivate();
+    if (count > 0) {
+      throw new Error(
+        `Private artifacts are turned off, but ${count} private artifact(s) exist. ` +
+          "Set PRIVATE_ARTIFACTS=true, or make them shared before turning it off.",
+      );
+    }
+  }
+  const readVisibility = (visibility: unknown): ArtifactVisibility => {
+    const checked = parseVisibility(visibility);
+    if (checked === "private" && !privateArtifacts) {
+      throw new ServiceError("FORBIDDEN", "This deployment does not allow private artifacts.");
+    }
+    return checked;
+  };
   // Published after the write returns, so a failed write announces nothing.
   const publish = options.events?.publish ?? (() => {});
   const entryWrites = createWriteLimiter(ENTRY_WRITES_PER_MINUTE, 60_000);
@@ -348,6 +372,7 @@ export function createArtifactService(options: {
     maxUploadBytes,
     maxImages,
     maxImageBytesTotal,
+    privateArtifacts,
 
     list(viewer, input = {}) {
       try {
@@ -713,7 +738,7 @@ export function createArtifactService(options: {
   };
 }
 
-function readVisibility(visibility: unknown): ArtifactVisibility {
+function parseVisibility(visibility: unknown): ArtifactVisibility {
   if (!VISIBILITIES.includes(visibility as ArtifactVisibility)) {
     throw new ServiceError("INVALID_INPUT", 'visibility is "shared" or "private".');
   }

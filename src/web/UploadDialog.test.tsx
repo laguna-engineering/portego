@@ -14,12 +14,14 @@ function renderDialog(
     onUploaded?: (uploaded: ReturnType<typeof artifact>) => void;
     onClose?: () => void;
     maxUploadBytes?: number;
+    privateArtifacts?: boolean;
     initialFolderId?: string | null;
   } = {},
 ) {
   return render(
     <UploadDialog
       maxUploadBytes={options.maxUploadBytes ?? LIMIT}
+      privateArtifacts={options.privateArtifacts ?? true}
       initialFolderId={options.initialFolderId ?? null}
       onClose={options.onClose ?? (() => {})}
       onUploaded={options.onUploaded ?? (() => {})}
@@ -138,6 +140,11 @@ describe("uploading", () => {
     await userEvent.click(screen.getByRole("button", { name: "Upload" }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]?.get("visibility")).toBe("private");
+  });
+
+  test("does not offer privacy on a deployment that turned private artifacts off", () => {
+    renderDialog({ privateArtifacts: false });
+    expect(screen.queryByRole("checkbox", { name: "Private: only you can see it" })).toBeNull();
   });
 
   test("shows the upload in progress and stops a second submission", async () => {

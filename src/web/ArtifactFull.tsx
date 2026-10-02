@@ -55,6 +55,8 @@ export type ArtifactFullProps = {
   id: string;
   email: string;
   currentUserId: string;
+  /** False when the deployment has no private artifacts. */
+  privateArtifacts: boolean;
   onHome: () => void;
   onOpenFolder: (folderId: string) => void;
   onSignOut: () => void;
@@ -132,6 +134,7 @@ export function ArtifactFull({
   id,
   email,
   currentUserId,
+  privateArtifacts,
   onHome,
   onOpenFolder,
   onSignOut,
@@ -499,7 +502,7 @@ export function ArtifactFull({
           disabled: changing,
           onSelect: () => void change(() => setArtifactArchived(artifact.id, !artifact.archivedAt)),
         },
-        ...(artifact.creator.id === currentUserId
+        ...(privateArtifacts && artifact.creator.id === currentUserId
           ? [
               {
                 id: "visibility",
