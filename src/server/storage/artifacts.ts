@@ -136,6 +136,9 @@ export const DEFAULT_LIST_SORT: ListSort = "updated-desc";
 
 export type TagMatch = "all" | "any";
 
+/** The `folderId` filter value for artifacts filed in no folder. */
+export const ROOT_FOLDER_ID = "root";
+
 export type ListOptions = {
   limit?: number;
   cursor?: string | null;
@@ -143,7 +146,7 @@ export type ListOptions = {
   /** Matches title and description. Absent or empty means no filter. */
   query?: string | null;
   status?: ArtifactStatus | null;
-  /** Filters to artifacts filed directly in this folder. */
+  /** Filters to artifacts filed directly in this folder, or in none for `ROOT_FOLDER_ID`. */
   folderId?: string | null;
   /** Filters by tag ids. All selected tags must match unless tagMatch is any. */
   tagIds?: string[];
@@ -662,7 +665,9 @@ export function createArtifactStore(options: {
         conditions.push("artifacts.status = ?");
         parameters.push(listOptions.status);
       }
-      if (listOptions.folderId) {
+      if (listOptions.folderId === ROOT_FOLDER_ID) {
+        conditions.push("artifacts.folderId is null");
+      } else if (listOptions.folderId) {
         conditions.push("artifacts.folderId = ?");
         parameters.push(listOptions.folderId);
       }

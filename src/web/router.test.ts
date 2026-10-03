@@ -9,7 +9,7 @@ describe("readRoute", () => {
       status: "open",
       archived: false,
       sort: "updated-desc",
-      folderId: null,
+      folderId: "root",
       tagIds: [],
     });
     expect(readRoute(new URL("http://app.test/?q=latency"))).toMatchObject({
@@ -41,7 +41,13 @@ describe("readRoute", () => {
       folderId: "f1",
       tagIds: ["t1", "t2"],
     });
-    expect(readRoute(new URL("http://app.test/?folder="))).toMatchObject({ folderId: null });
+    expect(readRoute(new URL("http://app.test/?folder="))).toMatchObject({ folderId: "root" });
+  });
+
+  test("opens on the root folder, so all artifacts is an explicit choice", () => {
+    expect(readRoute(new URL("http://app.test/?folder=all"))).toMatchObject({ folderId: null });
+    expect(galleryPath({ folderId: null })).toBe("/?folder=all");
+    expect(galleryPath({ folderId: "root" })).toBe("/");
   });
 
   test("reads an artifact id, including one that was escaped", () => {
@@ -98,7 +104,7 @@ describe("paths", () => {
         status: "open",
         archived: false,
         sort: "updated-desc",
-        folderId: null,
+        folderId: "root",
         tagIds: [],
       }),
     ).toBe("/");

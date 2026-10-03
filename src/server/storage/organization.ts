@@ -39,6 +39,8 @@ export type ArtifactOrganizationInput = {
 /** Each read takes the viewer whose artifacts it counts. Null counts shared artifacts only. */
 export type OrganizationStore = {
   listFolders: (viewerId: string | null) => Folder[];
+  /** Artifacts `viewerId` can see that are filed in no folder. */
+  countUnfiled: (viewerId: string | null) => number;
   getFolder: (id: string, viewerId: string | null) => Folder | null;
   createFolder: (input: { name: string; parentId: string | null; actorId: string }) => Folder;
   updateFolder: (
@@ -102,6 +104,13 @@ export function createOrganizationStore(database: Database): OrganizationStore {
   return {
     getFolder,
     getTag,
+
+    countUnfiled(viewerId) {
+      const row = database
+        .query(`select count(*) as count from artifacts where folderId is null and ${VISIBLE}`)
+        .get(viewerId) as { count: number };
+      return row.count;
+    },
 
     listFolders(viewerId) {
       const rows = database

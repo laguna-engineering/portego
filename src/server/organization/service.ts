@@ -1,5 +1,6 @@
 import { ServiceError } from "../artifacts/errors.ts";
 import type { EventBus } from "../events/bus.ts";
+import { ROOT_FOLDER_ID } from "../storage/artifacts.ts";
 import type {
   ArtifactOrganization,
   Folder,
@@ -13,6 +14,8 @@ export const MAX_ARTIFACT_TAGS = 20;
 export type OrganizationService = {
   /** Counts in each folder cover the artifacts `viewerId` can see. */
   folders: (viewerId: string) => Folder[];
+  /** Artifacts `viewerId` can see that are filed in no folder, shown at the root of the tree. */
+  rootArtifactCount: (viewerId: string) => number;
   createFolder: (input: { name: unknown; parentId?: unknown; actorId: string }) => Folder;
   updateFolder: (
     id: string,
@@ -116,6 +119,7 @@ export function createOrganizationService(options: {
 
   return {
     folders: (viewerId) => store.listFolders(viewerId),
+    rootArtifactCount: (viewerId) => store.countUnfiled(viewerId),
 
     createFolder(input) {
       const normalizedName = name(input.name);
@@ -243,7 +247,7 @@ export function createOrganizationService(options: {
     },
 
     validateListFilters(input) {
-      if (input.folderId) requireFolder(input.folderId);
+      if (input.folderId && input.folderId !== ROOT_FOLDER_ID) requireFolder(input.folderId);
       if (input.tagIds) requireTags(tagIds(input.tagIds));
     },
   };

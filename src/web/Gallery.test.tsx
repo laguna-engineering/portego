@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { ARTIFACT_DRAG_TYPE } from "./ArtifactCard.tsx";
 import { Gallery } from "./Gallery.tsx";
 import type { GalleryFilters, GallerySort } from "./router.ts";
 import { artifact, restoreFetch, StubEventSource, stubFetch, stubFetchWith } from "./testing.ts";
@@ -73,6 +74,16 @@ describe("empty states", () => {
     expect(filtered).toEqual([{ folderId: null, tagIds: [] }]);
   });
 
+  test("at the root, says the artifacts may be in folders and offers all of them", async () => {
+    stubFetch(() => ({ body: { items: [], nextCursor: null } }));
+    const filtered: Partial<GalleryFilters>[] = [];
+    renderGallery({ folderId: "root", onFilter: (filters) => filtered.push(filters) });
+
+    expect(await screen.findByText("No artifacts outside folders.")).toBeDefined();
+    await userEvent.click(screen.getByRole("button", { name: "Show all artifacts" }));
+    expect(filtered).toEqual([{ folderId: null }]);
+  });
+
   test("offers to clear a search that found nothing", async () => {
     stubFetch(() => ({ body: { items: [], nextCursor: null } }));
     const filtered: Partial<GalleryFilters>[] = [];
@@ -134,6 +145,20 @@ describe("filters", () => {
       expect(search.get("folderId")).toBe("folder-1");
       expect(search.getAll("tagId")).toEqual(["tag-1", "tag-2"]);
     }
+  });
+
+  test("searches every folder, wherever the search starts", async () => {
+    const requested: string[] = [];
+    stubFetch((path) => {
+      requested.push(path);
+      return { body: { items: [artifact()], nextCursor: null } };
+    });
+    renderGallery({ folderId: "root", query: "chart" });
+
+    await screen.findByText("Sales chart");
+    const search = new URL(requested[0] ?? "", "http://app.test").searchParams;
+    expect(search.get("q")).toBe("chart");
+    expect(search.has("folderId")).toBe(false);
   });
 
   test("leaves archived artifacts out unless they are asked for", async () => {
@@ -434,5 +459,19 @@ describe("live updates", () => {
     await announce({ type: "reconnected" });
 
     expect(await screen.findByText("Second")).toBeDefined();
+  });
+});
+
+describe("dragging", () => {
+  test("a card carries its artifact id, so the library can file it in a folder", async () => {
+    stubFetch(() => ({ body: { items: [artifact({ id: "a1" })], nextCursor: null } }));
+    renderGallery();
+
+    const data = new Map<string, string>();
+    fireEvent.dragStart(await screen.findByRole("link", { name: /Sales chart/ }), {
+      dataTransfer: { setData: (type: string, value: string) => data.set(type, value) },
+    });
+
+    expect(data.get(ARTIFACT_DRAG_TYPE)).toBe("a1");
   });
 });

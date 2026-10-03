@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ArtifactCard } from "./ArtifactCard.tsx";
 import { ApiError, type Artifact, fetchArtifacts } from "./api.ts";
 import { useLiveEvents } from "./live.ts";
-import { GALLERY_SORTS, type GalleryFilters, type GallerySort } from "./router.ts";
+import { GALLERY_SORTS, type GalleryFilters, type GallerySort, ROOT_FOLDER_ID } from "./router.ts";
 
 export type GalleryProps = {
   filters: GalleryFilters;
@@ -24,10 +24,13 @@ const SORT_LABELS: Record<GallerySort, string> = {
 type Load = { status: "loading" } | { status: "ready" } | { status: "error"; message: string };
 
 export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
-  const { query, status, archived, sort, folderId } = filters;
+  const { query, status, archived, sort } = filters;
+  // A search covers every folder, wherever it was started.
+  const folderId = query.trim() === "" ? filters.folderId : null;
   // The route builds a new array on every navigation. Ids have no commas, so
   // the joined string is a stable dependency.
   const tagKey = filters.tagIds.join(",");
+  const atRoot = folderId === ROOT_FOLDER_ID && tagKey === "";
   const filtered = folderId !== null || tagKey !== "";
   const searchId = useId();
   const sortId = useId();
@@ -210,6 +213,16 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
               <p>Nothing matches “{query}”.</p>
               <button type="button" onClick={() => onFilter({ query: "" })}>
                 Clear the search
+              </button>
+            </>
+          ) : atRoot ? (
+            <>
+              <p>No artifacts outside folders.</p>
+              <button type="button" onClick={() => onFilter({ folderId: null })}>
+                Show all artifacts
+              </button>
+              <button type="button" className="primary" onClick={onUpload}>
+                Upload
               </button>
             </>
           ) : filtered ? (

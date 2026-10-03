@@ -35,3 +35,32 @@ export function folderPath(folder: Folder, folders: Folder[]): string {
   }
   return names.join(" › ");
 }
+
+export type FolderRow = { folder: Folder; depth: number; hasChildren: boolean };
+
+/** `folderRows` without the descendants of folders missing from `expanded`. */
+export function visibleFolderRows(folders: Folder[], expanded: ReadonlySet<string>): FolderRow[] {
+  const parents = new Set(folders.map((folder) => folder.parentId));
+  const rows: FolderRow[] = [];
+  let hiddenBelow = Number.POSITIVE_INFINITY;
+  for (const { folder, depth } of folderRows(folders)) {
+    if (depth > hiddenBelow) continue;
+    hiddenBelow = Number.POSITIVE_INFINITY;
+    const hasChildren = parents.has(folder.id);
+    rows.push({ folder, depth, hasChildren });
+    if (hasChildren && !expanded.has(folder.id)) hiddenBelow = depth;
+  }
+  return rows;
+}
+
+/** The ids of a folder's ancestors, nearest first. */
+export function folderAncestors(id: string, folders: Folder[]): string[] {
+  const byId = new Map(folders.map((folder) => [folder.id, folder]));
+  const ids: string[] = [];
+  let parentId = byId.get(id)?.parentId ?? null;
+  while (parentId && !ids.includes(parentId)) {
+    ids.push(parentId);
+    parentId = byId.get(parentId)?.parentId ?? null;
+  }
+  return ids;
+}

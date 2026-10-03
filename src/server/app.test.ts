@@ -101,13 +101,14 @@ describe("GET /api/me", () => {
     await expect(res.json()).resolves.toMatchObject({ error: { code: "UNAUTHENTICATED" } });
   });
 
-  test("returns the signed-in user", async () => {
+  test("returns the signed-in user and the deployment's name for the folder root", async () => {
     const { app, cookie } = await signedInCookie();
     const res = await app.request("/api/me", { headers: { cookie } });
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       user: { email: "person@acme.example" },
       limits: { maxUploadBytes: 5 * 1024 * 1024 },
+      appName: "Test App",
     });
   });
 });

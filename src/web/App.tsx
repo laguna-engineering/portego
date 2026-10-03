@@ -16,7 +16,7 @@ import { useLiveEvents } from "./live.ts";
 import { Masthead } from "./Masthead.tsx";
 import { McpConsent } from "./McpConsent.tsx";
 import { McpLogin } from "./McpLogin.tsx";
-import { artifactPath, galleryPath, useRoute } from "./router.ts";
+import { artifactPath, galleryPath, ROOT_FOLDER_ID, useRoute } from "./router.ts";
 import { SignIn } from "./SignIn.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
 
@@ -183,6 +183,7 @@ export function App() {
         {route.name === "gallery" ? (
           <div className="library-layout">
             <Library
+              appName={session.appName}
               folderId={route.folderId}
               tagIds={route.tagIds}
               onFilter={(filters) => navigate(galleryPath({ ...route, ...filters }))}
@@ -218,7 +219,9 @@ export function App() {
         <UploadDialog
           maxUploadBytes={session.limits.maxUploadBytes}
           privateArtifacts={session.features.privateArtifacts}
-          initialFolderId={route.name === "gallery" ? route.folderId : null}
+          initialFolderId={
+            route.name === "gallery" && route.folderId !== ROOT_FOLDER_ID ? route.folderId : null
+          }
           onClose={() => setUploading(false)}
           onUploaded={(artifact) => {
             setUploading(false);

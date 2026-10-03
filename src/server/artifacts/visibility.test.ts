@@ -243,6 +243,20 @@ describe("someone else's private artifact", () => {
     expect(await counts(owner)).toEqual([1, 1]);
     expect(await counts(other)).toEqual([0, 0]);
   });
+
+  test("is left out of the root count and the root listing", async () => {
+    const root = async (cookie: string) => {
+      const folders = (await (await request(cookie, "/api/folders")).json()) as {
+        rootArtifactCount: number;
+      };
+      const listing = (await (await request(cookie, "/api/artifacts?folderId=root")).json()) as {
+        items: unknown[];
+      };
+      return [folders.rootArtifactCount, listing.items.length];
+    };
+    expect(await root(owner)).toEqual([1, 1]);
+    expect(await root(other)).toEqual([0, 0]);
+  });
 });
 
 describe("previews", () => {
