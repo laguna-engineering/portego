@@ -3,6 +3,9 @@ import { excerpt, formatBytes } from "./format.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
 import { artifactPath } from "./router.ts";
 
+/** The drag data type that carries an artifact id to a folder in the library. */
+export const ARTIFACT_DRAG_TYPE = "application/x-portego-artifact";
+
 export type ArtifactCardProps = { artifact: Artifact; onOpen: (id: string) => void };
 
 /**
@@ -27,6 +30,11 @@ export function ArtifactCard({ artifact, onOpen }: ArtifactCardProps) {
           if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
           event.preventDefault();
           onOpen(artifact.id);
+        }}
+        onDragStart={(event) => {
+          event.dataTransfer.setData(ARTIFACT_DRAG_TYPE, artifact.id);
+          // A link allows only copy and link by default. The library drop is a move.
+          event.dataTransfer.effectAllowed = "all";
         }}
       >
         <span className="card-mark" aria-hidden="true" style={{ background: mark(artifact.id) }}>

@@ -117,6 +117,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
       user: { id, name, email, image: image ?? null },
       limits: { maxUploadBytes: options.artifacts.maxUploadBytes },
       features: { privateArtifacts: options.artifacts.privateArtifacts },
+      appName: options.authConfig.appName,
     });
   });
 

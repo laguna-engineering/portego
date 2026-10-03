@@ -16,8 +16,9 @@ which only its creator can see. Every route that names someone else's private
 artifact refuses with `PRIVATE`; see [Visibility](#visibility).
 
 `GET /api/me` returns the signed-in user, the limits the client needs to
-check an upload before sending it, and `features.privateArtifacts`, which is
-false when the deployment turned private artifacts off.
+check an upload before sending it, `features.privateArtifacts`, which is
+false when the deployment turned private artifacts off, and the deployment's
+`appName`, which names the root of the folder tree.
 
 ## Endpoints
 
@@ -57,14 +58,19 @@ false when the deployment turned private artifacts off.
 
 Query parameters: `q` filters on title and description, `status` is `open` or
 `solved`, `archived=true` includes archived artifacts (they are left out
-otherwise), `folderId` filters to artifacts filed directly in one folder, and
+otherwise), `folderId` filters to artifacts filed directly in one folder
+(`folderId=root` lists the artifacts in no folder), and
 repeated `tagId` filters by tags. Tag filters require every selected tag by
 default; `tagMatch=any` matches any selected tag. `sort` picks the order,
 `cursor` continues a page, and `limit` sets the page size (24 by default, 100
 at most).
 
-Omit `folderId` and `tagId` for the global listing. This is the default view and
-always includes artifacts regardless of their folder or tags.
+Omit `folderId` and `tagId` for the global listing, which includes artifacts
+regardless of their folder or tags. The web client opens on `folderId=root`
+instead and offers the global listing as "All artifacts".
+
+`GET /api/folders` returns `folders` and `rootArtifactCount`, the number of
+artifacts in no folder.
 
 `sort` is one of `updated-desc` (the default), `updated-asc`, `created-desc`,
 `created-asc`, `title-asc`, or `title-desc`. Title order ignores case.

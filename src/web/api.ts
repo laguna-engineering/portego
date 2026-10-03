@@ -72,7 +72,10 @@ export type GalleryFilters = {
   status?: ArtifactStatus | null;
   archived?: boolean;
   sort?: GallerySort;
-  /** Matches artifacts filed directly in this folder, not in its children. */
+  /**
+   * Matches artifacts filed directly in this folder, not in its children.
+   * `ROOT_FOLDER_ID` matches artifacts in no folder, and `null` matches all.
+   */
   folderId?: string | null;
   /** Matches artifacts that carry every one of these tags. */
   tagIds?: string[];
@@ -122,6 +125,7 @@ export type Session = {
   limits: { maxUploadBytes: number };
   /** Optional features the deployment turned on. */
   features: { privateArtifacts: boolean };
+  appName: string;
 };
 
 /** The session, or null when nobody is signed in. */
@@ -153,8 +157,14 @@ export function fetchArtifacts(
   return request<Page>(`/api/artifacts${suffix}`);
 }
 
+export type FolderTree = { folders: Folder[]; rootArtifactCount: number };
+
+export function fetchFolderTree(): Promise<FolderTree> {
+  return request<FolderTree>("/api/folders");
+}
+
 export function fetchFolders(): Promise<Folder[]> {
-  return request<{ folders: Folder[] }>("/api/folders").then((body) => body.folders);
+  return fetchFolderTree().then((tree) => tree.folders);
 }
 
 export function fetchTags(): Promise<Tag[]> {
@@ -267,6 +277,15 @@ export function createFolder(name: string, parentId?: string): Promise<Folder> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(parentId ? { name, parentId } : { name }),
+  }).then((body) => body.folder);
+}
+
+/** `parentId: null` moves the folder to the top level. */
+export function setFolderParent(id: string, parentId: string | null): Promise<Folder> {
+  return request<{ folder: Folder }>(`/api/folders/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ parentId }),
   }).then((body) => body.folder);
 }
 

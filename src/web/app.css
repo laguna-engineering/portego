@@ -966,6 +966,25 @@ button.link {
   margin: 0;
 }
 
+/* A view of every artifact, set apart from the tree because nothing can be filed in it. */
+.library-all {
+  display: block;
+  margin-bottom: 0.4rem;
+  padding: 0.3rem 0.55rem;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  text-align: start;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.library-all[aria-pressed="true"] {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+
 .library-folders {
   list-style: none;
   margin: 0;
@@ -974,10 +993,62 @@ button.link {
   gap: 0.15rem;
 }
 
+.library-folders > li {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* The drop line sits in the gap between rows, indented to the level it files into. */
+.library-folders > li.drop-before::before,
+.library-folders > li.drop-after::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--drop-indent, 0) 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.library-folders > li.drop-before::before {
+  top: calc(-0.075rem - 1px);
+}
+
+.library-folders > li.drop-after::after {
+  bottom: calc(-0.075rem - 1px);
+}
+
+.library-folders > li.dragging {
+  opacity: 0.5;
+}
+
+.library-disclosure {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-muted);
+}
+
+.library-disclosure svg {
+  transition: transform 120ms ease;
+}
+
+.library-disclosure[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
 .library-folder {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+  flex: 1;
+  min-width: 0;
   width: 100%;
   padding: 0.3rem 0.55rem;
   border-color: transparent;
@@ -998,6 +1069,18 @@ button.link {
   font-weight: 500;
 }
 
+.library-folder.drop-target {
+  border-color: var(--accent);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.library-folder.drop-parent {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
 .library-folder-name {
   min-width: 0;
   overflow: hidden;
@@ -1010,6 +1093,10 @@ button.link {
   font-size: 0.72rem;
   font-weight: 400;
   color: var(--ink-muted);
+}
+
+.library-folder.drop-target .library-count {
+  color: inherit;
 }
 
 .library-new {

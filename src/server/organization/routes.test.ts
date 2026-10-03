@@ -148,6 +148,27 @@ describe("tags and artifact organization", () => {
     await expect(allTags.json()).resolves.toMatchObject({ items: [{ id: first }] });
   });
 
+  test("lists and counts the artifacts in no folder at the root", async () => {
+    const folder = await createFolder("Research");
+    const filed = await upload("Filed");
+    const loose = await upload("Loose");
+    await server.app.request(`/api/artifacts/${filed}/organization`, {
+      method: "PATCH",
+      headers: headers(),
+      body: JSON.stringify({ folderId: folder }),
+    });
+
+    const root = await server.app.request("/api/artifacts?folderId=root", { headers: { cookie } });
+    expect(root.status).toBe(200);
+    await expect(root.json()).resolves.toMatchObject({ items: [{ id: loose }] });
+
+    const folders = await server.app.request("/api/folders", { headers: { cookie } });
+    await expect(folders.json()).resolves.toMatchObject({
+      folders: [{ id: folder, artifactCount: 1 }],
+      rootArtifactCount: 1,
+    });
+  });
+
   test("can match any selected tag and rejects unknown or duplicate assignments", async () => {
     const firstTag = await createTag("One");
     const secondTag = await createTag("Two");

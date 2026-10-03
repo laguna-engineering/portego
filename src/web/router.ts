@@ -19,12 +19,16 @@ export const GALLERY_SORTS: readonly GallerySort[] = [
 
 export const DEFAULT_GALLERY_SORT: GallerySort = "updated-desc";
 
+/** The `folderId` filter value for artifacts filed in no folder. */
+export const ROOT_FOLDER_ID = "root";
+
 export type GalleryFilters = {
   query: string;
   /** `null` is every status. The default is `open`, so "all" is explicit in the URL. */
   status: "open" | "solved" | null;
   archived: boolean;
   sort: GallerySort;
+  /** `null` is every folder. The default is the root, so "all" is explicit in the URL. */
   folderId: string | null;
   tagIds: string[];
 };
@@ -64,11 +68,16 @@ export function readRoute(url: URL): Route {
       sort: GALLERY_SORTS.includes(sort as GallerySort)
         ? (sort as GallerySort)
         : DEFAULT_GALLERY_SORT,
-      folderId: url.searchParams.get("folder") || null,
+      folderId: readFolder(url.searchParams.get("folder")),
       tagIds: url.searchParams.getAll("tag").filter((id) => id !== ""),
     };
   }
   return { name: "unknown" };
+}
+
+function readFolder(value: string | null): string | null {
+  if (value === "all") return null;
+  return value || ROOT_FOLDER_ID;
 }
 
 export function galleryPath(filters: Partial<GalleryFilters>): string {
@@ -78,7 +87,9 @@ export function galleryPath(filters: Partial<GalleryFilters>): string {
   else if (filters.status && filters.status !== "open") search.set("status", filters.status);
   if (filters.archived) search.set("archived", "true");
   if (filters.sort && filters.sort !== DEFAULT_GALLERY_SORT) search.set("sort", filters.sort);
-  if (filters.folderId) search.set("folder", filters.folderId);
+  if (filters.folderId === null) search.set("folder", "all");
+  else if (filters.folderId && filters.folderId !== ROOT_FOLDER_ID)
+    search.set("folder", filters.folderId);
   for (const tagId of filters.tagIds ?? []) search.append("tag", tagId);
   return search.size === 0 ? "/" : `/?${search}`;
 }

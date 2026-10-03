@@ -7,7 +7,10 @@ export function organizationRoutes(service: OrganizationService): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
 
   routes.get("/folders", requireUser, (c) =>
-    c.json({ folders: service.folders(currentUser(c).id) }),
+    c.json({
+      folders: service.folders(currentUser(c).id),
+      rootArtifactCount: service.rootArtifactCount(currentUser(c).id),
+    }),
   );
 
   routes.post("/folders", requireUser, async (c) => {

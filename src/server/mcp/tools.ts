@@ -210,7 +210,9 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         folderId: z
           .string()
           .optional()
-          .describe("Filter to artifacts filed directly in this folder."),
+          .describe(
+            'Filter to artifacts filed directly in this folder. "root" lists artifacts in no folder.',
+          ),
         tagIds: z.array(z.string()).max(20).optional().describe("Filter by selected tag ids."),
         tagMatch: z
           .enum(["all", "any"])
