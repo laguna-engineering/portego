@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ArtifactCard } from "./ArtifactCard.tsx";
 import { ApiError, type Artifact, fetchArtifacts } from "./api.ts";
+import { CloseIcon, FolderIcon, TagIcon } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
+import { FolderPicker, TagPicker } from "./Organize.tsx";
 import { GALLERY_SORTS, type GalleryFilters, type GallerySort, ROOT_FOLDER_ID } from "./router.ts";
 
 export type GalleryProps = {
@@ -41,12 +43,19 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
   const [moreProblem, setMoreProblem] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [stale, setStale] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [organizing, setOrganizing] = useState<"folder" | "tags" | null>(null);
+  const moved = useRef(false);
   const request = useRef(0);
 
   const loadFirstPage = useCallback(
     async (quiet = false) => {
       const attempt = ++request.current;
-      if (!quiet) setLoad({ status: "loading" });
+      if (!quiet) {
+        setLoad({ status: "loading" });
+        // A selection belongs to the view it was made in.
+        setSelectedIds([]);
+      }
       try {
         const page = await fetchArtifacts({
           query,
@@ -59,6 +68,9 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
         // A slower earlier request must not overwrite a later one.
         if (attempt !== request.current) return;
         setItems(page.items);
+        setSelectedIds((current) =>
+          current.filter((id) => page.items.some((item) => item.id === id)),
+        );
         setCursor(page.nextCursor);
         setExpanded(false);
         setStale(false);
@@ -98,6 +110,38 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
     return () => window.clearTimeout(timer);
   }, [loadFirstPage, query]);
 
+  const selected = selectedIds.flatMap((id) => items.find((item) => item.id === id) ?? []);
+  const selecting = selected.length > 0;
+
+  useEffect(() => {
+    if (!selecting) setOrganizing(null);
+  }, [selecting]);
+
+  useEffect(() => {
+    if (!selecting || organizing) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedIds([]);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [selecting, organizing]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((other) => other !== id) : [...current, id],
+    );
+  }
+
+  function replaceItem(changed: Artifact) {
+    setItems((current) => current.map((item) => (item.id === changed.id ? changed : item)));
+  }
+
+  function closeOrganizing() {
+    setOrganizing(null);
+    if (moved.current) setSelectedIds([]);
+    moved.current = false;
+  }
+
   async function loadMore() {
     if (!cursor) return;
     setLoadingMore(true);
@@ -124,7 +168,7 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
   }
 
   return (
-    <section className="gallery">
+    <section className={selecting ? "gallery selecting" : "gallery"}>
       <div className="gallery-controls">
         <div className="search">
           <label htmlFor={searchId}>Search artifacts</label>
@@ -246,9 +290,63 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
       {items.length > 0 ? (
         <ul className="cards" aria-busy={load.status === "loading"}>
           {items.map((artifact) => (
-            <ArtifactCard key={artifact.id} artifact={artifact} onOpen={onOpen} />
+            <ArtifactCard
+              key={artifact.id}
+              artifact={artifact}
+              onOpen={onOpen}
+              selection={selectedIds}
+              onToggleSelected={toggleSelected}
+              onSelectionMoved={() => setSelectedIds([])}
+            />
           ))}
         </ul>
+      ) : null}
+
+      {selecting ? (
+        <div className="selection-bar" role="toolbar" aria-label="Selected artifacts">
+          <button
+            type="button"
+            className="icon-button icon-only"
+            onClick={() => setSelectedIds([])}
+          >
+            <CloseIcon />
+            <span>Clear selection</span>
+          </button>
+          <p className="selection-count" aria-live="polite">
+            {selected.length} selected
+          </p>
+          <button
+            type="button"
+            className="icon-button"
+            aria-pressed={organizing === "folder"}
+            onClick={() => setOrganizing(organizing === "folder" ? null : "folder")}
+          >
+            <FolderIcon />
+            <span>Move to folder</span>
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            aria-pressed={organizing === "tags"}
+            onClick={() => setOrganizing(organizing === "tags" ? null : "tags")}
+          >
+            <TagIcon />
+            <span>Tags</span>
+          </button>
+          {organizing === "folder" ? (
+            <FolderPicker
+              artifacts={selected}
+              onChanged={(changed) => {
+                moved.current = true;
+                replaceItem(changed);
+              }}
+              onClose={closeOrganizing}
+            />
+          ) : null}
+          {organizing === "tags" ? (
+            <TagPicker artifacts={selected} onChanged={replaceItem} onClose={closeOrganizing} />
+          ) : null}
+        </div>
       ) : null}
 
       {moreProblem ? (

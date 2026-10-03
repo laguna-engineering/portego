@@ -616,10 +616,10 @@ export function ArtifactFull({
         ))}
       </div>
       {organizing === "tags" ? (
-        <TagPicker artifact={artifact} onChanged={setArtifact} onClose={closeOrganizing} />
+        <TagPicker artifacts={[artifact]} onChanged={setArtifact} onClose={closeOrganizing} />
       ) : null}
       {organizing === "folder" ? (
-        <FolderPicker artifact={artifact} onChanged={setArtifact} onClose={closeOrganizing} />
+        <FolderPicker artifacts={[artifact]} onChanged={setArtifact} onClose={closeOrganizing} />
       ) : null}
       {problem ? (
         <p className="problem" role="alert">

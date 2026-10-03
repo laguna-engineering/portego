@@ -328,14 +328,22 @@ export function Library({ appName, folderId, tagIds, onFilter }: LibraryProps) {
     setDrop(null);
   }
 
-  async function moveArtifact(artifactId: string, folderId: string | null) {
+  async function moveArtifacts(artifactIds: string[], folderId: string | null) {
     setMoveProblem(null);
-    try {
-      await setArtifactOrganization(artifactId, { folderId });
-      await refresh(true);
-    } catch (error) {
-      setMoveProblem(error instanceof ApiError ? error.message : "Could not move the artifact.");
+    const results = await Promise.allSettled(
+      artifactIds.map((id) => setArtifactOrganization(id, { folderId })),
+    );
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure) {
+      setMoveProblem(
+        failure.reason instanceof ApiError
+          ? failure.reason.message
+          : artifactIds.length === 1
+            ? "Could not move the artifact."
+            : "Could not move every artifact.",
+      );
     }
+    if (results.some((result) => result.status === "fulfilled")) await refresh(true);
   }
 
   async function moveFolder(id: string, parentId: string | null) {
@@ -420,9 +428,9 @@ export function Library({ appName, folderId, tagIds, onFilter }: LibraryProps) {
                   const target = dropRef.current;
                   endDrag();
                   if (!target) return;
-                  const artifactId = event.dataTransfer.getData(ARTIFACT_DRAG_TYPE);
+                  const artifactIds = event.dataTransfer.getData(ARTIFACT_DRAG_TYPE);
                   const movedFolderId = event.dataTransfer.getData(FOLDER_DRAG_TYPE);
-                  if (artifactId) void moveArtifact(artifactId, target.folderId);
+                  if (artifactIds) void moveArtifacts(artifactIds.split(","), target.folderId);
                   else if (movedFolderId) void moveFolder(movedFolderId, target.folderId);
                 }}
               >
