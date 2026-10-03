@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ARTIFACT_DRAG_TYPE } from "./ArtifactCard.tsx";
+import { ARTIFACT_DRAG_TYPE, LONG_PRESS_MS } from "./ArtifactCard.tsx";
 import { Gallery } from "./Gallery.tsx";
 import type { GalleryFilters, GallerySort } from "./router.ts";
 import { artifact, restoreFetch, StubEventSource, stubFetch, stubFetchWith } from "./testing.ts";
@@ -27,6 +27,7 @@ function renderGallery(
     folderId?: string | null;
     tagIds?: string[];
     onFilter?: (filters: Partial<GalleryFilters>) => void;
+    onOpen?: (id: string) => void;
   } = {},
 ) {
   return render(
@@ -40,7 +41,7 @@ function renderGallery(
         tagIds: options.tagIds ?? [],
       }}
       onFilter={options.onFilter ?? (() => {})}
-      onOpen={() => {}}
+      onOpen={options.onOpen ?? (() => {})}
       onUpload={() => {}}
     />,
   );
@@ -469,9 +470,225 @@ describe("dragging", () => {
 
     const data = new Map<string, string>();
     fireEvent.dragStart(await screen.findByRole("link", { name: /Sales chart/ }), {
-      dataTransfer: { setData: (type: string, value: string) => data.set(type, value) },
+      dataTransfer: {
+        setData: (type: string, value: string) => data.set(type, value),
+        setDragImage: () => {},
+      },
     });
 
     expect(data.get(ARTIFACT_DRAG_TYPE)).toBe("a1");
+  });
+});
+
+describe("selecting", () => {
+  /** Serves the artifacts and records each organization change. */
+  function stubSelection(
+    items = ["Alpha", "Beta", "Gamma"].map((title) => artifact({ id: title.toLowerCase(), title })),
+  ) {
+    const changes: { id: string; body: Record<string, unknown> }[] = [];
+    stubFetch((path, init) => {
+      const change = path.match(/^\/api\/artifacts\/([^/]+)\/organization$/);
+      if (change?.[1] && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        changes.push({ id: change[1], body });
+        const current = items.find((item) => item.id === change[1]);
+        return {
+          body: {
+            artifact: {
+              ...current,
+              ...("tagIds" in body
+                ? { tags: (body.tagIds as string[]).map((id) => ({ id, name: id })) }
+                : {}),
+              ...("folderId" in body ? { folder: { id: body.folderId, name: "Lampo" } } : {}),
+            },
+          },
+        };
+      }
+      if (path === "/api/folders") {
+        return {
+          body: { folders: [{ id: "lampo", name: "Lampo", parentId: null, artifactCount: 0 }] },
+        };
+      }
+      if (path === "/api/tags") return { body: { tags: [{ id: "review", name: "review" }] } };
+      return { body: { items, nextCursor: null } };
+    });
+    return changes;
+  }
+
+  function card(title: string): HTMLElement {
+    return screen.getByRole("link", { name: new RegExp(`^${title}`) });
+  }
+
+  /** Holds a card down long enough to select it, then lets go. */
+  async function longPress(title: string) {
+    const link = card(title);
+    fireEvent.pointerDown(link, { button: 0, clientX: 10, clientY: 10 });
+    await act(() => new Promise((resolve) => setTimeout(resolve, LONG_PRESS_MS + 50)));
+    fireEvent.pointerUp(link);
+    fireEvent.click(link);
+  }
+
+  /** Waits for the copy of the card used as the drag image to be removed. */
+  async function dropDragImage() {
+    await act(() => new Promise((resolve) => setTimeout(resolve)));
+  }
+
+  function dragData() {
+    const data = new Map<string, string>();
+    const images: HTMLElement[] = [];
+    return {
+      data,
+      images,
+      dataTransfer: {
+        dropEffect: "none",
+        setData: (type: string, value: string) => data.set(type, value),
+        setDragImage: (image: HTMLElement) => images.push(image),
+      },
+    };
+  }
+
+  test("a long press selects a card without opening it, and later clicks add or remove cards", async () => {
+    stubSelection();
+    const opened: string[] = [];
+    renderGallery({ onOpen: (id) => opened.push(id) });
+    await screen.findByText("Alpha");
+
+    await longPress("Alpha");
+    expect(opened).toEqual([]);
+    expect(screen.getByText("1 selected")).toBeDefined();
+    expect(card("Alpha").textContent).toContain("selected");
+
+    await userEvent.click(card("Gamma"));
+    expect(screen.getByText("2 selected")).toBeDefined();
+
+    await userEvent.click(card("Alpha"));
+    expect(screen.getByText("1 selected")).toBeDefined();
+
+    // With the last card removed, a click opens an artifact again.
+    await userEvent.click(card("Gamma"));
+    expect(screen.queryByRole("toolbar", { name: "Selected artifacts" })).toBeNull();
+    await userEvent.click(card("Beta"));
+    expect(opened).toEqual(["beta"]);
+  });
+
+  test("a press that moves, as a scroll does, selects nothing", async () => {
+    stubSelection();
+    renderGallery();
+    await screen.findByText("Alpha");
+
+    const link = card("Alpha");
+    fireEvent.pointerDown(link, { button: 0, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(link, { clientX: 10, clientY: 40 });
+    await act(() => new Promise((resolve) => setTimeout(resolve, LONG_PRESS_MS + 50)));
+
+    expect(screen.queryByRole("toolbar", { name: "Selected artifacts" })).toBeNull();
+  });
+
+  test("Escape and the clear button end the selection", async () => {
+    stubSelection();
+    renderGallery();
+    await screen.findByText("Alpha");
+
+    await longPress("Alpha");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByText("1 selected")).toBeNull();
+
+    await longPress("Beta");
+    await userEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+    expect(screen.queryByText("1 selected")).toBeNull();
+  });
+
+  test("dragging a selected card carries every selected artifact and says how many others come along", async () => {
+    stubSelection();
+    renderGallery();
+    await screen.findByText("Alpha");
+    await longPress("Alpha");
+    await userEvent.click(card("Gamma"));
+
+    const drag = dragData();
+    fireEvent.dragStart(card("Gamma"), { dataTransfer: drag.dataTransfer });
+
+    // The card under the pointer comes first.
+    expect(drag.data.get(ARTIFACT_DRAG_TYPE)).toBe("gamma,alpha");
+    expect(drag.images[0]?.textContent).toContain("+ 1 other");
+    await dropDragImage();
+    expect(drag.images[0]?.isConnected).toBe(false);
+  });
+
+  test("dragging a card outside the selection carries only that card", async () => {
+    stubSelection();
+    renderGallery();
+    await screen.findByText("Alpha");
+    await longPress("Alpha");
+
+    const drag = dragData();
+    fireEvent.dragStart(card("Beta"), { dataTransfer: drag.dataTransfer });
+
+    expect(drag.data.get(ARTIFACT_DRAG_TYPE)).toBe("beta");
+    expect(drag.images).toEqual([]);
+  });
+
+  test("a dropped selection ends the selection, and a cancelled drag keeps it", async () => {
+    stubSelection();
+    renderGallery();
+    await screen.findByText("Alpha");
+    await longPress("Alpha");
+    await userEvent.click(card("Beta"));
+
+    fireEvent.dragStart(card("Alpha"), { dataTransfer: dragData().dataTransfer });
+    await dropDragImage();
+    fireEvent.dragEnd(card("Alpha"), { dataTransfer: { dropEffect: "none" } });
+    expect(screen.getByText("2 selected")).toBeDefined();
+
+    fireEvent.dragStart(card("Alpha"), { dataTransfer: dragData().dataTransfer });
+    await dropDragImage();
+    fireEvent.dragEnd(card("Alpha"), { dataTransfer: { dropEffect: "move" } });
+    expect(screen.queryByText("2 selected")).toBeNull();
+  });
+
+  test("moves every selected artifact to the chosen folder, then ends the selection", async () => {
+    const changes = stubSelection();
+    renderGallery();
+    await screen.findByText("Alpha");
+    await longPress("Alpha");
+    await userEvent.click(card("Gamma"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Move to folder" }));
+    const dialog = await screen.findByRole("dialog", { name: "Move to folder" });
+    await userEvent.click(await within(dialog).findByRole("button", { name: "Lampo" }));
+
+    await waitFor(() => expect(screen.queryByText("2 selected")).toBeNull());
+    expect(changes.sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+      { id: "alpha", body: { folderId: "lampo" } },
+      { id: "gamma", body: { folderId: "lampo" } },
+    ]);
+  });
+
+  test("a tag on some of the selection is marked mixed, and choosing it adds it to the rest", async () => {
+    const changes = stubSelection([
+      artifact({ id: "alpha", title: "Alpha", tags: [{ id: "review", name: "review" }] }),
+      artifact({ id: "beta", title: "Beta" }),
+    ]);
+    renderGallery();
+    await screen.findByText("Alpha");
+    await longPress("Alpha");
+    await userEvent.click(card("Beta"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Tags" }));
+    const dialog = await screen.findByRole("dialog", { name: "Tags" });
+    const review = await within(dialog).findByRole("button", { name: "review" });
+    expect(review.getAttribute("aria-pressed")).toBe("mixed");
+
+    await userEvent.click(review);
+    await waitFor(() => expect(review.getAttribute("aria-pressed")).toBe("true"));
+    expect(changes).toEqual([{ id: "beta", body: { tagIds: ["review"] } }]);
+
+    // Once every selected artifact has the tag, choosing it takes it off all of them.
+    await userEvent.click(review);
+    await waitFor(() => expect(review.getAttribute("aria-pressed")).toBe("false"));
+    expect(changes.slice(1).sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+      { id: "alpha", body: { tagIds: [] } },
+      { id: "beta", body: { tagIds: [] } },
+    ]);
   });
 });

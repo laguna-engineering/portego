@@ -1729,3 +1729,109 @@ button.link {
     width: auto;
   }
 }
+
+/* Selection --------------------------------------------------------------- */
+
+.card.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.card.selected .card-mark {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* A long touch would otherwise open the link's callout or select its text. */
+.card-link {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.card-selected {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* Rendered off screen only long enough for the browser to take the drag image. */
+.card-drag-image {
+  position: fixed;
+  top: -1000px;
+  left: 0;
+  list-style: none;
+  /* Leaves room for the count, which sits over the card's corner. */
+  margin: 0.6rem;
+}
+
+.card-drag-count {
+  position: absolute;
+  top: -0.6rem;
+  right: -0.6rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Keeps the last cards and Load more clear of the bar. */
+.gallery.selecting {
+  padding-bottom: 5rem;
+}
+
+.selection-bar {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+}
+
+.selection-count {
+  margin: 0 0.5rem 0 0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The bar sits at the bottom of the window, so its panel and tooltip open upward. */
+.selection-bar .popover {
+  top: auto;
+  bottom: calc(100% + 0.4rem);
+}
+
+.selection-bar .icon-button.icon-only span {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.popover-option[aria-pressed="mixed"] {
+  border-color: var(--line);
+  border-style: dashed;
+  color: var(--ink);
+}
+
+@media (max-width: 34rem) {
+  .selection-bar {
+    left: 0.75rem;
+    right: 0.75rem;
+    transform: none;
+  }
+
+  .selection-count {
+    flex: 1;
+  }
+}

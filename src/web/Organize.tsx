@@ -22,7 +22,8 @@ import { folderPath, folderRows, sameName } from "./folders.ts";
 import { TickIcon } from "./Icons.tsx";
 
 type PickerProps = {
-  artifact: Artifact;
+  artifacts: Artifact[];
+  /** Called once for each artifact that changed. */
   onChanged: (artifact: Artifact) => void;
   onClose: () => void;
 };
@@ -128,7 +129,8 @@ function Option({
   onSelect,
   children,
 }: {
-  selected: boolean;
+  /** "mixed" when only some of the artifacts have this option. */
+  selected: boolean | "mixed";
   disabled: boolean;
   indent?: number;
   onSelect: () => void;
@@ -148,16 +150,18 @@ function Option({
       onClick={onSelect}
     >
       <span className="popover-option-name">{children}</span>
-      {selected ? <TickIcon /> : null}
+      {selected === true ? <TickIcon /> : null}
     </button>
   );
 }
 
-export function FolderPicker({ artifact, onChanged, onClose }: PickerProps) {
+export function FolderPicker({ artifacts, onChanged, onClose }: PickerProps) {
   const [folders, setFolders] = useState<Folder[] | null>(null);
   const [query, setQuery] = useState("");
   const { busy, problem, run } = useAction();
-  const currentId = artifact.folder?.id ?? null;
+  const folderIds = new Set(artifacts.map((artifact) => artifact.folder?.id ?? null));
+  // Artifacts in different folders mark none of them.
+  const currentId = folderIds.size === 1 ? [...folderIds][0] : undefined;
 
   useEffect(() => {
     void run(async () => setFolders(await fetchFolders()));
@@ -179,13 +183,23 @@ export function FolderPicker({ artifact, onChanged, onClose }: PickerProps) {
     name !== "" &&
     !folders.some((folder) => folder.parentId === null && sameName(folder.name, name));
 
+  async function file(folderId: string | null) {
+    await Promise.all(
+      artifacts
+        .filter((artifact) => (artifact.folder?.id ?? null) !== folderId)
+        .map(async (artifact) => {
+          onChanged(await setArtifactOrganization(artifact.id, { folderId }));
+        }),
+    );
+  }
+
   function move(folderId: string | null) {
     if (folderId === currentId) {
       onClose();
       return;
     }
     void run(async () => {
-      onChanged(await setArtifactOrganization(artifact.id, { folderId }));
+      await file(folderId);
       onClose();
     });
   }
@@ -194,7 +208,7 @@ export function FolderPicker({ artifact, onChanged, onClose }: PickerProps) {
     void run(async () => {
       const folder = await createFolder(name);
       setFolders((current) => [...(current ?? []), folder]);
-      onChanged(await setArtifactOrganization(artifact.id, { folderId: folder.id }));
+      await file(folder.id);
       onClose();
     });
   }
@@ -243,11 +257,19 @@ export function FolderPicker({ artifact, onChanged, onClose }: PickerProps) {
   );
 }
 
-export function TagPicker({ artifact, onChanged, onClose }: PickerProps) {
+export function TagPicker({ artifacts, onChanged, onClose }: PickerProps) {
   const [tags, setTags] = useState<Tag[] | null>(null);
   const [query, setQuery] = useState("");
   const { busy, problem, run } = useAction();
-  const applied = artifact.tags.map((tag) => tag.id);
+
+  function carriers(tagId: string): Artifact[] {
+    return artifacts.filter((artifact) => artifact.tags.some((tag) => tag.id === tagId));
+  }
+
+  function state(tagId: string): boolean | "mixed" {
+    const count = carriers(tagId).length;
+    return count === artifacts.length ? true : count > 0 ? "mixed" : false;
+  }
 
   useEffect(() => {
     void run(async () => setTags(await fetchTags()));
@@ -258,12 +280,23 @@ export function TagPicker({ artifact, onChanged, onClose }: PickerProps) {
   const shown = (tags ?? []).filter((tag) => tag.name.toLocaleLowerCase().includes(needle));
   const canCreate = tags !== null && name !== "" && !tags.some((tag) => sameName(tag.name, name));
 
+  /** Adds the tag to the artifacts that lack it, or removes it from all of them. */
+  async function apply(tagId: string, add: boolean) {
+    const changing = add
+      ? artifacts.filter((artifact) => !artifact.tags.some((tag) => tag.id === tagId))
+      : carriers(tagId);
+    await Promise.all(
+      changing.map(async (artifact) => {
+        const ids = artifact.tags.map((tag) => tag.id);
+        const tagIds = add ? [...ids, tagId] : ids.filter((id) => id !== tagId);
+        onChanged(await setArtifactOrganization(artifact.id, { tagIds }));
+      }),
+    );
+  }
+
   // The panel stays open, so several tags can be changed in one visit.
   function toggle(tagId: string) {
-    const tagIds = applied.includes(tagId)
-      ? applied.filter((id) => id !== tagId)
-      : [...applied, tagId];
-    void run(async () => onChanged(await setArtifactOrganization(artifact.id, { tagIds })));
+    void run(() => apply(tagId, state(tagId) !== true));
   }
 
   function create() {
@@ -271,7 +304,7 @@ export function TagPicker({ artifact, onChanged, onClose }: PickerProps) {
       const tag = await createTag(name);
       setTags((current) => [...(current ?? []), tag].sort((a, b) => a.name.localeCompare(b.name)));
       setQuery("");
-      onChanged(await setArtifactOrganization(artifact.id, { tagIds: [...applied, tag.id] }));
+      await apply(tag.id, true);
     });
   }
 
@@ -293,7 +326,7 @@ export function TagPicker({ artifact, onChanged, onClose }: PickerProps) {
           {shown.map((tag) => (
             <Option
               key={tag.id}
-              selected={applied.includes(tag.id)}
+              selected={state(tag.id)}
               disabled={busy}
               onSelect={() => toggle(tag.id)}
             >

@@ -421,6 +421,21 @@ describe("dropping artifacts and folders", () => {
     );
   });
 
+  test("files every artifact of a dragged selection in the folder", async () => {
+    const moves = stubMoves([folder("portego", "Portego")]);
+    renderLibrary();
+    await screen.findByText("Portego");
+
+    dropOn(row("Portego"), "a1,a2");
+
+    await waitFor(() =>
+      expect(moves).toEqual([
+        { artifactId: "a1", body: { folderId: "portego" } },
+        { artifactId: "a2", body: { folderId: "portego" } },
+      ]),
+    );
+  });
+
   test("opens a collapsed folder held under the artifact, so its subfolders can be reached", async () => {
     stubMoves([folder("lampo", "Lampo"), folder("launch", "Launch", "lampo")]);
     renderLibrary();
