@@ -20,6 +20,8 @@ function describe(item: ActivityItem): string {
       return item.change === "solved"
         ? `marked ${artifact.title} solved`
         : `${item.change} ${artifact.title}`;
+    case "entry.changed":
+      return `wrote ${item.key} on ${artifact.title}`;
   }
 }
 
@@ -69,6 +71,7 @@ export function NotificationBell({
       event.type === "artifact.created" ||
       event.type === "artifact.changed" ||
       event.type === "comment.changed" ||
+      (event.type === "entry.changed" && event.activity) ||
       event.type === "reconnected"
     ) {
       void load();

@@ -13,8 +13,18 @@ export type EntryStore = {
   /** Oldest change first. */
   list: (artifactId: string) => Entry[];
   get: (artifactId: string, authorId: string, key: string) => Entry | null;
-  /** Creates or replaces this author's value for the key. `value` is JSON text. */
-  set: (input: { artifactId: string; authorId: string; key: string; value: string }) => Entry;
+  /**
+   * Creates or replaces this author's value for the key. `value` is JSON text.
+   * With `notify`, the write shows in the activity feed from now on, under a new id.
+   */
+  set: (input: {
+    artifactId: string;
+    authorId: string;
+    key: string;
+    value: string;
+    notify: boolean;
+    inApp: boolean;
+  }) => Entry;
   /** Returns false when the author had no value for the key. */
   remove: (artifactId: string, authorId: string, key: string) => boolean;
   /** How many keys this author holds on the artifact. */
@@ -82,14 +92,28 @@ export function createEntryStore(options: { database: Database }): EntryStore {
     },
 
     set(input) {
+      const now = Date.now();
       database
         .query(
-          `insert into artifactEntries (artifactId, authorId, key, value, updatedAt)
-           values (?, ?, ?, ?, ?)
+          `insert into artifactEntries (artifactId, authorId, key, value, updatedAt, notifiedAt, activityId,
+             inApp)
+           values (?, ?, ?, ?, ?, ?, ?, ?)
            on conflict (artifactId, authorId, key)
-           do update set value = excluded.value, updatedAt = excluded.updatedAt`,
+           do update set value = excluded.value, updatedAt = excluded.updatedAt,
+             notifiedAt = coalesce(excluded.notifiedAt, artifactEntries.notifiedAt),
+             activityId = coalesce(excluded.activityId, artifactEntries.activityId),
+             inApp = iif(excluded.notifiedAt is null, artifactEntries.inApp, excluded.inApp)`,
         )
-        .run(input.artifactId, input.authorId, input.key, input.value, Date.now());
+        .run(
+          input.artifactId,
+          input.authorId,
+          input.key,
+          input.value,
+          now,
+          input.notify ? now : null,
+          input.notify ? Bun.randomUUIDv7() : null,
+          input.inApp ? 1 : 0,
+        );
       const entry = get(input.artifactId, input.authorId, input.key);
       if (!entry) throw new Error(`Entry ${input.key} disappeared right after it was written`);
       return entry;

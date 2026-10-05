@@ -21,7 +21,8 @@ people.
 - A person can clear only their own values. Clearing a key they never set does
   nothing.
 
-Every change is announced as `entry.changed` on `GET /api/events`.
+Every change is announced as `entry.changed` on `GET /api/events`. A change
+that shows in the notifications also carries `"activity": true`.
 
 ## In the page
 
@@ -112,7 +113,8 @@ any well-formed key and value is accepted.
   other than `:`, and two placeholders need literal text between them. A key
   takes the first template it matches.
 - Each rule may have a `description`, `params` (a rule for each placeholder,
-  checked against the matched text), and `value` (a rule for the value).
+  checked against the matched text), `value` (a rule for the value), and
+  `notify` (see [Notifications](#notifications)).
 - A rule supports `description`, `type`, `enum`, `const`, `minLength`,
   `maxLength`, `minimum`, `maximum`, `properties`, `required`,
   `additionalProperties` (`true` or `false`), `items`, `minItems`, and
@@ -129,6 +131,30 @@ any well-formed key and value is accepted.
   minutes on a short input. Use `enum` or length limits instead.
 - The schema is at most 16 KiB, with at most 100 key templates. A page
   declares at most one schema block.
+
+### Notifications
+
+An entry whose key notifies shows in the notifications of everyone who can see
+the artifact, as "A Person wrote `key` on Title". A key notifies when its rule
+has `"notify": true`, or when its rule has no `notify` and its whole value has
+`"format": "comment"`. `"notify": false` keeps a comment-like key out of the
+notifications. A key in an artifact with no schema never notifies.
+
+```json
+{ "keys": {
+  "note:{item}": { "value": { "type": "string", "format": "comment" } },
+  "pick:{item}": { "notify": true, "value": { "enum": ["A", "B"] } },
+  "vote:{item}": { "value": { "const": true } }
+} }
+```
+
+Here a note or a pick notifies and a vote does not.
+
+- Each person's key is one notification. A new value moves it to the top
+  again. Writing the same value again changes nothing.
+- Clearing the key removes the notification.
+- What a person writes in the page is left out of their own notifications;
+  what their agent writes through the MCP is listed, as for comments.
 
 The upload checks the schema. A schema that is not valid JSON, uses a keyword
 outside the list, or breaks a template rule refuses the upload with a message

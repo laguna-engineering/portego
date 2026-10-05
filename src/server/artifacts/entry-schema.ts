@@ -67,6 +67,7 @@ type KeyRule = {
   placeholders: string[];
   params: Record<string, ValueSchema>;
   value: ValueSchema | null;
+  notify: boolean | null;
 };
 
 export type EntrySchema = { rules: KeyRule[] };
@@ -174,12 +175,15 @@ function keyRule(template: string, definition: unknown): KeyRule {
 
   if (!isRecord(definition)) throw new EntrySchemaError(`${where} is an object.`);
   for (const field of Object.keys(definition)) {
-    if (!["description", "params", "value"].includes(field)) {
+    if (!["description", "params", "value", "notify"].includes(field)) {
       throw new EntrySchemaError(`${where}: unknown field "${field}".`);
     }
   }
   if (definition.description !== undefined && typeof definition.description !== "string") {
     throw new EntrySchemaError(`${where}.description is a string.`);
+  }
+  if (definition.notify !== undefined && typeof definition.notify !== "boolean") {
+    throw new EntrySchemaError(`${where}.notify is true or false.`);
   }
   const params: Record<string, ValueSchema> = {};
   if (definition.params !== undefined) {
@@ -193,7 +197,14 @@ function keyRule(template: string, definition: unknown): KeyRule {
   }
   const value =
     definition.value === undefined ? null : valueSchema(definition.value, `${where}.value`, 0);
-  return { template, matcher: new RegExp(`${source}$`), placeholders, params, value };
+  return {
+    template,
+    matcher: new RegExp(`${source}$`),
+    placeholders,
+    params,
+    value,
+    notify: (definition.notify as boolean | undefined) ?? null,
+  };
 }
 
 function valueSchema(schema: unknown, where: string, depth: number): ValueSchema {
@@ -305,6 +316,15 @@ export function checkEntry(schema: EntrySchema, key: string, value: unknown): st
 export function isCommentKey(schema: EntrySchema, key: string): boolean {
   const rule = schema.rules.find((candidate) => candidate.matcher.test(key));
   return rule?.value?.format === "comment";
+}
+
+/**
+ * Whether a change to this key shows in the notifications. A rule's `notify`
+ * decides; without it, text formatted like a comment notifies and nothing else does.
+ */
+export function notifiesKey(schema: EntrySchema, key: string): boolean {
+  const rule = schema.rules.find((candidate) => candidate.matcher.test(key));
+  return rule?.notify ?? rule?.value?.format === "comment";
 }
 
 function checkValue(value: unknown, schema: ValueSchema, where: string): string | null {

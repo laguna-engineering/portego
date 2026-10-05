@@ -6,6 +6,7 @@ import {
   extractEntrySchema,
   isCommentKey,
   isEntryKey,
+  notifiesKey,
   parseEntrySchema,
 } from "./entry-schema.ts";
 
@@ -167,6 +168,32 @@ describe("comment format", () => {
     expect(refusal({ keys: { note: { value: { type: "string", format: "email" } } } })).toContain(
       'format is "comment"',
     );
+  });
+});
+
+describe("notify", () => {
+  test("defaults to on for text written like a comment, and a rule can turn it on or off", () => {
+    const schema = parseEntrySchema(
+      JSON.stringify({
+        keys: {
+          "note:{id}": { value: { type: "string", format: "comment" } },
+          "seen:{id}": { notify: false, value: { type: "string", format: "comment" } },
+          "vote:{id}": { value: { const: true } },
+          "pick:{id}": { notify: true, value: { enum: ["A", "B"] } },
+          any: {},
+        },
+      }),
+    );
+    expect(notifiesKey(schema, "note:7")).toBe(true);
+    expect(notifiesKey(schema, "seen:7")).toBe(false);
+    expect(notifiesKey(schema, "vote:7")).toBe(false);
+    expect(notifiesKey(schema, "pick:7")).toBe(true);
+    expect(notifiesKey(schema, "any")).toBe(false);
+    expect(notifiesKey(schema, "undeclared")).toBe(false);
+  });
+
+  test("is true or false", () => {
+    expect(refusal({ keys: { note: { notify: "yes" } } })).toContain("notify is true or false");
   });
 });
 

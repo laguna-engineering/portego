@@ -7,7 +7,8 @@ export type ChangeEvent =
   | { type: "artifact.created"; id: string }
   | { type: "artifact.changed"; id: string }
   | { type: "comment.changed"; artifactId: string }
-  | { type: "entry.changed"; artifactId: string }
+  /** `activity`: the change shows in the activity feed. */
+  | { type: "entry.changed"; artifactId: string; activity?: true }
   | { type: "folder.changed"; id: string }
   | { type: "tag.changed"; id: string };
 

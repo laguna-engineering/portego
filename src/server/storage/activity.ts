@@ -4,7 +4,10 @@ import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
 
 export type StatusChange = "solved" | "reopened" | "archived" | "restored";
 
-/** One thing that happened to an artifact. `id` is the id of the version, comment, or change. */
+/**
+ * One thing that happened to an artifact. `id` is the id of the version,
+ * comment, change, or entry write.
+ */
 export type Activity = {
   id: string;
   createdAt: Date;
@@ -15,6 +18,7 @@ export type Activity = {
   | { kind: "version.created"; versionNumber: number }
   | { kind: "comment.created"; reply: boolean }
   | { kind: "status.changed"; change: StatusChange }
+  | { kind: "entry.changed"; key: string }
 );
 
 export type ActivityStore = {
@@ -31,7 +35,7 @@ export type ActivityStore = {
 };
 
 type Row = {
-  source: "version" | "comment" | "status";
+  source: "version" | "comment" | "status" | "entry";
   id: string;
   createdAt: number;
   actorId: string;
@@ -41,6 +45,7 @@ type Row = {
   versionNumber: number | null;
   parentId: string | null;
   change: StatusChange | null;
+  entryKey: string | null;
 };
 
 // Built from the rows that already record each change, so there is nothing
@@ -49,14 +54,17 @@ const SELECT_ACTIVITY = `
   select activity.*, artifacts.title as artifactTitle, ${USER_NAME} as actorName
   from (
     select 'version' as source, id, createdAt, createdBy as actorId, artifactId, inApp,
-      number as versionNumber, null as parentId, null as change
+      number as versionNumber, null as parentId, null as change, null as entryKey
     from artifactVersions where createdAt >= ?
     union all
-    select 'comment', id, createdAt, authorId, artifactId, inApp, null, parentId, null
+    select 'comment', id, createdAt, authorId, artifactId, inApp, null, parentId, null, null
     from artifactComments where createdAt >= ?
     union all
-    select 'status', id, createdAt, actorId, artifactId, inApp, null, null, change
+    select 'status', id, createdAt, actorId, artifactId, inApp, null, null, change, null
     from artifactStatusChanges where createdAt >= ?
+    union all
+    select 'entry', activityId, notifiedAt, authorId, artifactId, inApp, null, null, null, key
+    from artifactEntries where notifiedAt >= ?
   ) activity
     join artifacts on artifacts.id = activity.artifactId
     join "user" on "user".id = activity.actorId
@@ -78,6 +86,8 @@ function toActivity(row: Row): Activity {
   if (row.source === "status") {
     return { ...base, kind: "status.changed", change: row.change as StatusChange };
   }
+  if (row.source === "entry")
+    return { ...base, kind: "entry.changed", key: row.entryKey as string };
   if (row.versionNumber === 1) return { ...base, kind: "artifact.created" };
   return { ...base, kind: "version.created", versionNumber: row.versionNumber as number };
 }
@@ -96,7 +106,7 @@ export function createActivityStore(options: { database: Database }): ActivitySt
     list({ since, limit, userId }) {
       const rows = database
         .query(SELECT_ACTIVITY)
-        .all(since, since, since, userId, userId, limit) as Row[];
+        .all(since, since, since, since, userId, userId, limit) as Row[];
       return rows.map(toActivity);
     },
 
