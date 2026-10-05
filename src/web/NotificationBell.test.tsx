@@ -121,7 +121,7 @@ describe("list", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Notifications, unread" }));
 
     const rows = within(screen.getByRole("dialog", { name: "Notifications" })).getAllByRole(
-      "button",
+      "listitem",
     );
     expect(rows.map((row) => row.querySelector("span")?.textContent)).toEqual([
       "B Person marked Plan solved",
@@ -139,6 +139,25 @@ describe("list", () => {
       true,
       false,
     ]);
+  });
+
+  test("links the actor's name to their profile, apart from the row that opens the artifact", async () => {
+    stubServer({ items: [item({ id: "c", kind: "comment.created", reply: false })], readAt: READ });
+    const opened: string[] = [];
+    renderBell((id) => opened.push(id));
+    await userEvent.click(await screen.findByRole("button", { name: "Notifications, unread" }));
+
+    const name = screen.getByRole("link", { name: "B Person" });
+    expect(name.getAttribute("href")).toBe("/u/user-2");
+    // A link inside the row's button would be invalid markup and unreachable by keyboard.
+    expect(name.closest("button")).toBeNull();
+    expect(screen.getByRole("button", { name: "B Person commented on Plan" })).toBeDefined();
+
+    await userEvent.click(name);
+    expect(window.location.pathname).toBe("/u/user-2");
+    expect(opened).toEqual([]);
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
+    window.history.replaceState(null, "", "/");
   });
 
   test("opening it clears the dot and tells the server", async () => {

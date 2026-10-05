@@ -231,6 +231,15 @@ export const migrations: readonly Migration[] = [
       create index artifactComments_author on artifactComments (authorId, createdAt);
     `,
   },
+  {
+    id: "013-user-display-names",
+    sql: `
+      create table userDisplayNames (
+        userId text not null primary key references "user" ("id") on delete cascade,
+        name text not null
+      );
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

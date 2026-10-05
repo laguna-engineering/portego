@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { VISIBLE } from "./artifacts.ts";
+import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
 
 export type StatusChange = "solved" | "reopened" | "archived" | "restored";
 
@@ -45,7 +46,7 @@ type Row = {
 // Built from the rows that already record each change, so there is nothing
 // to keep in step. Version 1 is the upload that created the artifact.
 const SELECT_ACTIVITY = `
-  select activity.*, artifacts.title as artifactTitle, "user".name as actorName
+  select activity.*, artifacts.title as artifactTitle, ${USER_NAME} as actorName
   from (
     select 'version' as source, id, createdAt, createdBy as actorId, artifactId, inApp,
       number as versionNumber, null as parentId, null as change
@@ -59,6 +60,7 @@ const SELECT_ACTIVITY = `
   ) activity
     join artifacts on artifacts.id = activity.artifactId
     join "user" on "user".id = activity.actorId
+    ${JOIN_DISPLAY_NAME}
   where not (activity.actorId = ? and activity.inApp = 1) and ${VISIBLE}
   order by activity.createdAt desc, activity.id desc
   limit ?`;

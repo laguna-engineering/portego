@@ -8,6 +8,7 @@ import {
   fetchComments,
 } from "./api.ts";
 import { useLiveEvents } from "./live.ts";
+import { MemberLink } from "./Member.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
 
 export type CommentsProps = {
@@ -220,7 +221,8 @@ export function Comments({
               </button>
             ) : null}
             <p className="comment-meta">
-              {root.author.name} · <RelativeTime iso={root.createdAt} />
+              <MemberLink id={root.author.id}>{root.author.name}</MemberLink> ·{" "}
+              <RelativeTime iso={root.createdAt} />
               {viewedVersionNumber != null && root.versionNumber !== viewedVersionNumber ? (
                 <span className="badge version-badge">v{root.versionNumber}</span>
               ) : null}
@@ -237,7 +239,8 @@ export function Comments({
                 {replies.map((reply) => (
                   <li key={reply.id} className="comment reply">
                     <p className="comment-meta">
-                      {reply.author.name} · <RelativeTime iso={reply.createdAt} />
+                      <MemberLink id={reply.author.id}>{reply.author.name}</MemberLink> ·{" "}
+                      <RelativeTime iso={reply.createdAt} />
                       {viewedVersionNumber != null &&
                       reply.versionNumber !== viewedVersionNumber ? (
                         <span className="badge version-badge">v{reply.versionNumber}</span>

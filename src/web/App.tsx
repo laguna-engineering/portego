@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArtifactFull } from "./ArtifactFull.tsx";
-import type { Provider } from "./api.ts";
+import type { DisplayName, Provider } from "./api.ts";
 import {
   ApiError,
   fetchProviders,
@@ -16,6 +16,7 @@ import { useLiveEvents } from "./live.ts";
 import { Masthead } from "./Masthead.tsx";
 import { McpConsent } from "./McpConsent.tsx";
 import { McpLogin } from "./McpLogin.tsx";
+import { MemberProfile } from "./Member.tsx";
 import { Profile } from "./Profile.tsx";
 import { artifactPath, galleryPath, ROOT_FOLDER_ID, useRoute } from "./router.ts";
 import { SignIn } from "./SignIn.tsx";
@@ -128,6 +129,9 @@ export function App() {
   const setAvatar = (avatar: string | null) =>
     setState({ status: "signed-in", session: { ...session, user: { ...session.user, avatar } } });
 
+  const setNames = (names: DisplayName) =>
+    setState({ status: "signed-in", session: { ...session, user: { ...session.user, ...names } } });
+
   const masthead = (
     <Masthead
       email={session.user.email}
@@ -210,10 +214,23 @@ export function App() {
 
         {route.name === "profile" ? (
           <Profile
+            userId={session.user.id}
             email={session.user.email}
+            displayName={session.user.displayName}
+            defaultName={session.user.defaultName}
             avatar={session.user.avatar}
             onAvatarChange={setAvatar}
+            onDisplayNameChange={setNames}
             onSignOut={handleSignOut}
+            onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
+          />
+        ) : null}
+
+        {route.name === "member" ? (
+          <MemberProfile
+            key={route.id}
+            userId={route.id}
+            onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
           />
         ) : null}
 

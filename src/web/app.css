@@ -1627,6 +1627,7 @@ button.link {
 }
 
 .version-row {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1640,8 +1641,44 @@ button.link {
   text-align: left;
 }
 
+.version-row:hover {
+  border-color: var(--ink-muted);
+}
+
 .version-row.selected {
   border-color: var(--accent);
+}
+
+/* Selects a whole row whose own links cannot sit inside a button. It
+   stretches over the row, which must be positioned, and member links sit
+   above it. */
+.row-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: start;
+}
+
+.row-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.row-button:focus-visible {
+  outline: none;
+}
+
+.row-button:focus-visible::after {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.version-select {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .version-number {
@@ -1734,6 +1771,7 @@ button.link {
 }
 
 .activity-item {
+  position: relative;
   display: grid;
   gap: 0.15rem;
   width: 100%;
@@ -2144,4 +2182,175 @@ button.link {
 
 .avatar-crop .problem {
   margin-bottom: 1rem;
+}
+
+/* Member profile ----------------------------------------------------------- */
+
+.member {
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.member-head {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  margin-bottom: 2rem;
+}
+
+.member-head h1 {
+  margin: 0;
+}
+
+.member-head p {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+}
+
+.member-link {
+  position: relative;
+  z-index: 1;
+  color: inherit;
+}
+
+.member-link:hover {
+  color: var(--accent);
+}
+
+.history-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.history-bar h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.history-bar .chips {
+  flex-wrap: wrap;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.history-list li {
+  display: grid;
+  grid-template-columns: 7.5rem 8.5rem minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.8rem 1.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.history-list li:first-child {
+  border-top: 0;
+}
+
+.history-list time,
+.history-kind {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-kind.kind-created {
+  color: var(--accent);
+}
+
+.history-title {
+  font-weight: 500;
+  color: var(--ink);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-title:hover {
+  color: var(--accent);
+}
+
+.history-file {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.history-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.85rem;
+}
+
+.history-pager .hint {
+  font-size: 0.85rem;
+}
+
+@media (max-width: 40rem) {
+  .history-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .history-list time {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .history-kind {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .history-title {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+
+  .history-file {
+    display: none;
+  }
+}
+
+.profile-name {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.profile-name label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  margin-bottom: 0.35rem;
+}
+
+.profile-name-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.profile-name-row input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.profile-name .problem,
+.profile-name .profile-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
 }

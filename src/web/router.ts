@@ -38,6 +38,8 @@ export type Route =
   /** One artifact filling the viewport under the masthead, optionally opened on a version or comment. */
   | { name: "artifact"; id: string; versionId: string | null; commentId: string | null }
   | { name: "profile" }
+  /** Another member's profile, or the user's own as others see it. */
+  | { name: "member"; id: string }
   /** The MCP authorization pages. They carry the signed OAuth query through. */
   | { name: "mcp-login"; query: string }
   | { name: "mcp-consent"; query: string }
@@ -57,6 +59,8 @@ export function readRoute(url: URL): Route {
     };
   }
   if (url.pathname === "/profile") return { name: "profile" };
+  const member = url.pathname.match(/^\/u\/([^/]+)\/?$/);
+  if (member?.[1]) return { name: "member", id: decodeURIComponent(member[1]) };
   if (url.pathname === "/mcp/login") return { name: "mcp-login", query: url.search };
   if (url.pathname === "/mcp/consent") return { name: "mcp-consent", query: url.search };
   if (url.pathname === "/") {
@@ -94,6 +98,10 @@ export function galleryPath(filters: Partial<GalleryFilters>): string {
     search.set("folder", filters.folderId);
   for (const tagId of filters.tagIds ?? []) search.append("tag", tagId);
   return search.size === 0 ? "/" : `/?${search}`;
+}
+
+export function memberPath(id: string): string {
+  return `/u/${encodeURIComponent(id)}`;
 }
 
 /** What in an artifact a link opens the panel on. */

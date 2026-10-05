@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
 
 export type Entry = {
   artifactId: string;
@@ -35,8 +36,9 @@ type Row = {
 };
 
 const SELECT_ENTRY = `
-  select artifactEntries.*, "user".name as authorName, "user".email as authorEmail
-  from artifactEntries join "user" on "user".id = artifactEntries.authorId`;
+  select artifactEntries.*, ${USER_NAME} as authorName, "user".email as authorEmail
+  from artifactEntries join "user" on "user".id = artifactEntries.authorId
+    ${JOIN_DISPLAY_NAME}`;
 
 function toEntry(row: Row): Entry {
   return {

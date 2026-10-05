@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, clearEntry, type Entry, fetchEntries } from "./api.ts";
 import { useLiveEvents } from "./live.ts";
+import { MemberLink } from "./Member.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
 
 const VALUE_PREVIEW_LIMIT = 80;
@@ -80,7 +81,8 @@ export function Entries({ artifactId, currentUserId, onEntries }: EntriesProps) 
               <code>{entry.key}</code> {describeValue(entry.value)}
             </p>
             <p className="comment-meta">
-              {entry.author.name} · <RelativeTime iso={entry.updatedAt} />
+              <MemberLink id={entry.author.id}>{entry.author.name}</MemberLink> ·{" "}
+              <RelativeTime iso={entry.updatedAt} />
               {entry.author.id === currentUserId ? (
                 <button type="button" className="link" onClick={() => void remove(entry.key)}>
                   Remove
