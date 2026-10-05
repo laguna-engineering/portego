@@ -270,6 +270,11 @@ button:disabled {
   opacity: 1;
 }
 
+.icon-button[data-active] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .icon-button.icon-only[data-dot]::after {
   content: "";
   position: absolute;
@@ -321,6 +326,39 @@ label {
 
 .search {
   flex: 1;
+}
+
+.gallery-controls.in-folder .search {
+  flex: 0 1 18rem;
+}
+
+.folder-watch {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.folder-watch-name {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1.15rem;
+}
+
+.folder-watch-parents {
+  color: var(--ink-muted);
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.folder-watch-control {
+  position: relative;
+  flex: none;
 }
 
 .hint {
@@ -578,6 +616,23 @@ label {
   /* Upload is in the masthead menu. */
   .gallery-controls > button {
     display: none;
+  }
+
+  .gallery-controls.in-folder {
+    flex-wrap: wrap;
+  }
+
+  /* The levels hang from the folder's row, as wide as the screen allows. */
+  .folder-watch {
+    position: relative;
+  }
+
+  .gallery-controls.in-folder .search {
+    flex: 1 1 100%;
+  }
+
+  .folder-watch-control {
+    position: static;
   }
 
   .filters {
@@ -1765,9 +1820,22 @@ button.link {
   padding: 0.5rem 0;
 }
 
+.activity-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0.75rem 0.25rem;
+}
+
 .activity h2 {
-  margin: 0 0.75rem;
+  flex: 1;
+  margin: 0;
   font-size: 0.85rem;
+}
+
+.activity-heading .chip {
+  padding: 0.1rem 0.6rem;
+  font-size: 0.72rem;
 }
 
 .activity .hint {
@@ -1806,6 +1874,54 @@ button.link {
 .activity-item time {
   font-size: 0.75rem;
   color: var(--ink-muted);
+}
+
+.activity-why {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+/* Above the row's own button, which covers the whole row. */
+.activity-why button {
+  position: relative;
+  z-index: 1;
+}
+
+.popover.watch {
+  width: 19rem;
+}
+
+.watch-option {
+  align-items: flex-start;
+  padding: 0.4rem 0.5rem;
+  white-space: normal;
+}
+
+.watch-option-text {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.watch-option .hint {
+  font-size: 0.72rem;
+  font-weight: 400;
+}
+
+/* Opens toward the gallery, away from the folder tree. */
+.folder-watch-control .popover {
+  left: 0;
+  right: auto;
+}
+
+@media (max-width: 34rem) {
+  .folder-watch-control .popover {
+    right: 0;
+    width: auto;
+  }
 }
 
 /* On a phone the panel hangs from the masthead, like every other popover. */

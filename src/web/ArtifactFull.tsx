@@ -25,6 +25,7 @@ import {
   ChevronRightIcon,
   CommentIcon,
   DownloadIcon,
+  EyeIcon,
   FolderIcon,
   LinkIcon,
   LockIcon,
@@ -51,6 +52,7 @@ import {
 } from "./preview-bridge.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
 import { type ArtifactTarget, artifactPath } from "./router.ts";
+import { effectiveLevel, useSubscription, WatchPopover, watchLabel } from "./Watch.tsx";
 
 export type ArtifactFullProps = {
   id: string;
@@ -85,6 +87,8 @@ type HeaderAction = {
   keepsMenuOpen?: boolean;
   /** Puts a dot on the header button, e.g. when the artifact has tags. */
   dot?: boolean;
+  /** Colours the header button, e.g. while the reader watches the artifact. */
+  active?: boolean;
 };
 
 function HeaderControl({
@@ -117,6 +121,7 @@ function HeaderControl({
       aria-pressed={action.pressed}
       aria-expanded={action.expanded}
       data-dot={action.dot || undefined}
+      data-active={action.active || undefined}
       onClick={() => {
         action.onSelect?.();
         onDone?.();
@@ -156,7 +161,7 @@ export function ArtifactFull({
   const [changing, setChanging] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [organizing, setOrganizing] = useState<"tags" | "folder" | null>(null);
+  const [organizing, setOrganizing] = useState<"tags" | "folder" | "watch" | null>(null);
   const [selection, setSelection] = useState<CommentAnchor | null>(null);
   /** What is selected in the artifact right now, and where, for the overlay. */
   const [live, setLive] = useState<{ anchor: CommentAnchor; rect: SelectionRect } | null>(null);
@@ -482,6 +487,14 @@ export function ArtifactFull({
     }
   }
 
+  // Commenting or uploading a version can follow the artifact again, and
+  // moving it changes the folder it inherits a level from.
+  const { subscription, choose: chooseLevel } = useSubscription(
+    artifact ? { kind: "artifacts", id: artifact.id } : null,
+    `${artifact?.folder?.id}:${comments.length}:${versions.length}`,
+  );
+  const watching = effectiveLevel(subscription);
+
   const actions: HeaderAction[] = artifact
     ? [
         {
@@ -558,6 +571,15 @@ export function ArtifactFull({
           expanded: organizing === "folder",
           onSelect: () => setOrganizing(organizing === "folder" ? null : "folder"),
         },
+        {
+          id: "watch",
+          label: watchLabel(watching),
+          icon: <EyeIcon />,
+          pressed: organizing === "watch",
+          expanded: organizing === "watch",
+          active: watching !== "none",
+          onSelect: () => setOrganizing(organizing === "watch" ? null : "watch"),
+        },
       ]
     : [];
 
@@ -627,6 +649,14 @@ export function ArtifactFull({
       ) : null}
       {organizing === "folder" ? (
         <FolderPicker artifacts={[artifact]} onChanged={setArtifact} onClose={closeOrganizing} />
+      ) : null}
+      {organizing === "watch" ? (
+        <WatchPopover
+          label="Watch"
+          subscription={subscription}
+          onChoose={chooseLevel}
+          onClose={closeOrganizing}
+        />
       ) : null}
       {problem ? (
         <p className="problem" role="alert">

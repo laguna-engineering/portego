@@ -330,6 +330,8 @@ export type ActivityItem = {
   createdAt: string;
   actor: { id: string; name: string };
   artifact: { id: string; title: string };
+  /** Why the item reaches the reader's bell. Null when it does not. */
+  reason: ActivityReason | null;
 } & (
   | { kind: "artifact.created" }
   | { kind: "version.created"; versionNumber: number }
@@ -341,8 +343,49 @@ export type ActivityItem = {
 /** The last seven days, newest first. `readAt` is when the reader last opened the list. */
 export type ActivityFeed = { items: ActivityItem[]; readAt: string | null };
 
-export function fetchActivity(): Promise<ActivityFeed> {
-  return request<ActivityFeed>("/api/activity");
+export type ActivityReason =
+  | { kind: "uploaded" | "commented" | "chosen" | "reply" }
+  | { kind: "folder"; folder: { id: string; name: string } };
+
+/** "following" is what reaches the bell. "everyone" is everything the reader can see. */
+export function fetchActivity(
+  scope: "following" | "everyone" = "following",
+): Promise<ActivityFeed> {
+  return request<ActivityFeed>(
+    scope === "everyone" ? "/api/activity?scope=everyone" : "/api/activity",
+  );
+}
+
+export type SubscriptionLevel = "all" | "versions" | "none";
+
+/** `inherited` is the nearest folder above with a level. It applies when `level` is null. */
+export type Subscription = {
+  level: SubscriptionLevel | null;
+  reason: "uploaded" | "commented" | "chosen" | null;
+  inherited: { folder: { id: string; name: string }; level: SubscriptionLevel } | null;
+};
+
+export type SubscriptionTarget = { kind: "artifacts" | "folders"; id: string };
+
+function subscriptionPath(target: SubscriptionTarget): string {
+  return `/api/activity/subscriptions/${target.kind}/${encodeURIComponent(target.id)}`;
+}
+
+export function fetchSubscription(target: SubscriptionTarget): Promise<Subscription> {
+  return request<{ subscription: Subscription }>(subscriptionPath(target)).then(
+    (body) => body.subscription,
+  );
+}
+
+export function setSubscription(
+  target: SubscriptionTarget,
+  level: SubscriptionLevel,
+): Promise<Subscription> {
+  return request<{ subscription: Subscription }>(subscriptionPath(target), {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ level }),
+  }).then((body) => body.subscription);
 }
 
 export function markActivityRead(): Promise<{ readAt: string }> {

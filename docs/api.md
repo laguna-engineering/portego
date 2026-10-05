@@ -284,13 +284,15 @@ person's account, so this is what tells the two apart.
 ### Activity
 
 `GET /api/activity` lists what happened in the last seven days, newest first,
-at most 100 items. It covers new artifacts, new versions, comments and replies,
-status changes (solved, reopened, archived, restored), and entries whose key
-notifies (see [entries.md](entries.md#notifications)), by anyone, on the
-artifacts the caller can see. What the
-caller did in the web app is left out; what they did through MCP or an upload
-ticket, such as an agent working under their account, is listed. A removed
-comment or cleared entry is no longer listed.
+at most 100 items, that reaches the caller's bell. It covers new artifacts, new
+versions, comments and replies, status changes (solved, reopened, archived,
+restored), and entries whose key notifies (see
+[entries.md](entries.md#notifications)), by anyone, on the artifacts the
+caller can see and watches. `GET /api/activity?scope=everyone` lists the same
+kinds of item on every artifact the caller can see, whatever they watch. What
+the caller did in the web app is left out of both; what they did through MCP or
+an upload ticket, such as an agent working under their account, is listed. A
+removed comment or cleared entry is no longer listed.
 
 ```json
 {
@@ -301,7 +303,8 @@ comment or cleared entry is no longer listed.
       "versionNumber": 2,
       "createdAt": "2026-09-28T12:00:00.000Z",
       "actor": { "id": "…", "name": "A Person" },
-      "artifact": { "id": "…", "title": "Plan" }
+      "artifact": { "id": "…", "title": "Plan" },
+      "reason": { "kind": "commented" }
     }
   ],
   "readAt": "2026-09-28T11:00:00.000Z"
@@ -314,6 +317,49 @@ comment or cleared entry is no longer listed.
 change, or entry write. An entry gets a new `id` each time its value changes. `readAt` is when the caller
 last called `POST /api/activity/read`, or null if never; items after it are
 unread. The read marker is per user and only moves forward.
+
+`reason` says why an item reaches the caller: `uploaded`, `commented`, or
+`chosen` for a level set on the artifact, `folder` (with `folder`, the watched
+folder) for a level set on a folder above it, or `reply` for a reply to the
+caller's comment. It is null on an item that does not reach them, which only
+`scope=everyone` lists.
+
+#### Watching
+
+Each person watches an artifact or a folder at one of three levels:
+
+- `all`: every kind of item above.
+- `versions`: new artifacts and new versions only.
+- `none`: nothing, except replies to the person's own comments, which always
+  reach them.
+
+Uploading an artifact or a version, or commenting, sets the person's level on
+that artifact to `all`. It does so through MCP and upload tickets too. When the
+person had set `none`, it sets `all` again; a `versions` level they chose stays.
+
+A level on a folder covers its subfolders, and artifacts filed in any of them
+later, down to the next folder with its own level. A level on an artifact wins
+over its folder's.
+
+`GET /api/activity/subscriptions/artifacts/:id` and
+`GET /api/activity/subscriptions/folders/:id` return the caller's level:
+
+```json
+{
+  "subscription": {
+    "level": null,
+    "reason": null,
+    "inherited": { "folder": { "id": "…", "name": "Research" }, "level": "all" }
+  }
+}
+```
+
+`level` is the one set on the artifact or folder itself, null when none is.
+`reason` (artifacts only) is `uploaded`, `commented`, or `chosen`. `inherited`
+is the nearest folder above with a level; it applies when `level` is null.
+`PUT` on the same paths with `{ "level": "all" | "versions" | "none" }` sets
+the level and returns the same shape. Another person's private artifact and a
+missing folder give `NOT_FOUND`; any other level gives `INVALID_INPUT`.
 
 ### Entries
 

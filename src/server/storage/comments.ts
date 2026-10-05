@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
+import { follow } from "./subscriptions.ts";
 
 /**
  * Points a comment at a passage of the artifact's rendered text. `quote` is
@@ -109,27 +110,36 @@ export function createCommentStore(options: { database: Database }): CommentStor
 
     add(input) {
       const id = Bun.randomUUIDv7();
+      const now = Date.now();
       const anchor = input.anchor ?? null;
       const anchorJson = anchor
         ? JSON.stringify({ quote: anchor.quote, prefix: anchor.prefix, suffix: anchor.suffix })
         : null;
-      database
-        .query(
-          `insert into artifactComments
-             (id, artifactId, versionId, authorId, body, createdAt, anchor, parentId, inApp)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          id,
-          input.artifactId,
-          input.versionId,
-          input.authorId,
-          input.body,
-          Date.now(),
-          anchorJson,
-          input.parentId ?? null,
-          input.inApp ? 1 : 0,
-        );
+      database.transaction(() => {
+        database
+          .query(
+            `insert into artifactComments
+               (id, artifactId, versionId, authorId, body, createdAt, anchor, parentId, inApp)
+             values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            id,
+            input.artifactId,
+            input.versionId,
+            input.authorId,
+            input.body,
+            now,
+            anchorJson,
+            input.parentId ?? null,
+            input.inApp ? 1 : 0,
+          );
+        follow(database, {
+          userId: input.authorId,
+          artifactId: input.artifactId,
+          reason: "commented",
+          at: now,
+        });
+      })();
       const comment = get(id);
       if (!comment) throw new Error(`Comment ${id} disappeared right after it was written`);
       return comment;

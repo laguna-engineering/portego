@@ -130,7 +130,8 @@ describe("filters", () => {
   test("asks the server for the selected folder and every selected tag, on later pages too", async () => {
     const requested: string[] = [];
     stubFetch((path) => {
-      requested.push(path);
+      // The folder's name and watch level load alongside.
+      if (path.startsWith("/api/artifacts")) requested.push(path);
       return {
         body: path.includes("cursor=")
           ? { items: [], nextCursor: null }
@@ -690,5 +691,69 @@ describe("selecting", () => {
       { id: "alpha", body: { tagIds: [] } },
       { id: "beta", body: { tagIds: [] } },
     ]);
+  });
+});
+
+describe("watching a folder", () => {
+  const FOLDERS = [
+    { id: "research", name: "Research", parentId: null, artifactCount: 2 },
+    { id: "pricing", name: "Pricing", parentId: "research", artifactCount: 3 },
+    { id: "q3", name: "Q3", parentId: "pricing", artifactCount: 2 },
+    { id: "design", name: "Design", parentId: null, artifactCount: 4 },
+  ];
+
+  test("names the open folder with its parents and watches it with everything below it", async () => {
+    const sent: [string, unknown][] = [];
+    stubFetch((path, init) => {
+      if (path === "/api/folders") return { body: { folders: FOLDERS, rootArtifactCount: 0 } };
+      if (path.startsWith("/api/activity/subscriptions/")) {
+        const level = init?.method === "PUT" ? JSON.parse(String(init.body)).level : null;
+        if (level) sent.push([path, { level }]);
+        return { body: { subscription: { level, reason: null, inherited: null } } };
+      }
+      return { body: { items: [], nextCursor: null } };
+    });
+    renderGallery({ folderId: "pricing" });
+
+    const heading = await screen.findByRole("heading", { name: /Pricing/ });
+    expect(heading.textContent).toBe("Research › Pricing");
+    await userEvent.click(screen.getByRole("button", { name: "Watch folder" }));
+    const dialog = screen.getByRole("dialog", { name: "Watch folder" });
+    // Pricing and Q3, and not its parent or Design.
+    expect(
+      within(dialog).getByText(
+        "Covers 5 artifacts in Pricing and its 1 subfolder, and anything added later.",
+      ),
+    ).toBeDefined();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: /^All activity/ }));
+
+    expect(sent).toEqual([["/api/activity/subscriptions/folders/pricing", { level: "all" }]]);
+    expect(await screen.findByRole("button", { name: "Watching" })).toBeDefined();
+  });
+
+  test("shows no folder control for all artifacts or the root", async () => {
+    stubFetch(() => ({ body: { items: [], nextCursor: null } }));
+    const { rerender } = renderGallery();
+    await screen.findByText("No artifacts yet.");
+    expect(screen.queryByRole("button", { name: "Watch folder" })).toBeNull();
+
+    rerender(
+      <Gallery
+        filters={{
+          query: "",
+          status: null,
+          archived: false,
+          sort: "updated-desc",
+          folderId: "root",
+          tagIds: [],
+        }}
+        onFilter={() => {}}
+        onOpen={() => {}}
+        onUpload={() => {}}
+      />,
+    );
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: "Watch folder" })).toBeNull();
   });
 });
