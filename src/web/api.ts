@@ -1,6 +1,13 @@
 import { DEFAULT_GALLERY_SORT, type GallerySort } from "./router.ts";
 
-export type User = { id: string; name: string; email: string; image: string | null };
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  /** The URL of the avatar the user uploaded, or null if they have none. */
+  avatar: string | null;
+};
 
 export type Provider = { id: string; label: string };
 
@@ -331,6 +338,26 @@ export function fetchActivity(): Promise<ActivityFeed> {
 
 export function markActivityRead(): Promise<{ readAt: string }> {
   return request<{ readAt: string }>("/api/activity/read", { method: "POST" });
+}
+
+/** When each of the user's own actions happened in the last 53 weeks, in epoch ms. */
+export type ProfileActivity = { uploads: number[]; versions: number[]; comments: number[] };
+
+export function fetchProfileActivity(): Promise<ProfileActivity> {
+  return request<ProfileActivity>("/api/me/activity");
+}
+
+/** Returns the new avatar's URL. */
+export function uploadAvatar(image: Blob): Promise<string> {
+  return request<{ avatar: string }>("/api/me/avatar", {
+    method: "PUT",
+    headers: { "content-type": image.type || "application/octet-stream" },
+    body: image,
+  }).then((body) => body.avatar);
+}
+
+export async function removeAvatar(): Promise<void> {
+  await request<{ avatar: null }>("/api/me/avatar", { method: "DELETE" });
 }
 
 export function fetchComments(id: string): Promise<Comment[]> {

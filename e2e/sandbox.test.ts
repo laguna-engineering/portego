@@ -264,7 +264,7 @@ describe("opening an artifact full screen", () => {
     await frame.locator("#root").waitFor();
     expect(await frame.locator("#root").textContent()).toBe("rendered");
     // The masthead is on the page, outside the frame the artifact runs in.
-    expect(await page.getByRole("button", { name: "Sign out" }).count()).toBe(1);
+    expect(await page.getByRole("button", { name: "Profile" }).count()).toBe(1);
   });
 
   test("gives the artifact no handle on the tab that opened it", async () => {

@@ -22,6 +22,7 @@ import { createCommentStore } from "./storage/comments.ts";
 import { createEntryStore } from "./storage/entries.ts";
 import { applyMigrations } from "./storage/migrations.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
+import { createProfileStore } from "./storage/profiles.ts";
 
 /** A different host from TEST_BASE_URL, which is what isolates a preview. */
 export const TEST_CONTENT_ORIGIN = "http://127.0.0.1:5173";
@@ -100,6 +101,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     signingSecret: config.secret,
     events,
     activity: createActivityStore({ database }),
+    profiles: createProfileStore({ database }),
   });
 
   return {

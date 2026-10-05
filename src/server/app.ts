@@ -21,8 +21,10 @@ import { organizationRoutes } from "./organization/routes.ts";
 import type { OrganizationService } from "./organization/service.ts";
 import { previewRoutes } from "./preview/routes.ts";
 import { createPreviewIssuer } from "./preview/tokens.ts";
+import { avatarUrl, profileRoutes } from "./profile/routes.ts";
 import { pageMeta, withSocialTags } from "./social.ts";
 import type { ActivityStore } from "./storage/activity.ts";
+import type { ProfileStore } from "./storage/profiles.ts";
 
 export type AppOptions = {
   /** Serve the built Vite client from disk. Off in development, where Vite serves it. */
@@ -39,6 +41,7 @@ export type AppOptions = {
   /** Announces committed changes to connected clients. */
   events: EventBus;
   activity: ActivityStore;
+  profiles: ProfileStore;
 };
 
 /** The application page's policy: frames may show previews and nothing else. */
@@ -114,12 +117,13 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   app.get("/api/me", requireUser, (c) => {
     const { id, name, email, image } = currentUser(c);
     return c.json({
-      user: { id, name, email, image: image ?? null },
+      user: { id, name, email, image: image ?? null, avatar: avatarUrl(options.profiles, id) },
       limits: { maxUploadBytes: options.artifacts.maxUploadBytes },
       features: { privateArtifacts: options.artifacts.privateArtifacts },
       appName: options.authConfig.appName,
     });
   });
+  app.route("/api/me", profileRoutes(options.profiles));
 
   // Upload by ticket rather than by session. It is registered outside the
   // artifact routes because every route in there requires a session, and the

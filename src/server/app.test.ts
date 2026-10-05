@@ -14,6 +14,7 @@ import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
 import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
+import { createProfileStore } from "./storage/profiles.ts";
 import { createTestServer, htmlFile, TEST_CONTENT_ORIGIN, WORKSPACE_USER } from "./testing.ts";
 
 const cleanups: (() => void)[] = [];
@@ -49,6 +50,7 @@ async function createTestApp(options?: { serveClient: boolean; clientDist: strin
     signingSecret: config.secret,
     events,
     activity: createActivityStore({ database }),
+    profiles: createProfileStore({ database }),
   });
 }
 

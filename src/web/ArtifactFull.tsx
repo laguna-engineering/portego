@@ -54,12 +54,14 @@ import { type ArtifactTarget, artifactPath } from "./router.ts";
 export type ArtifactFullProps = {
   id: string;
   email: string;
+  /** The URL of the user's avatar, or null for their initial. */
+  avatar: string | null;
   currentUserId: string;
   /** False when the deployment has no private artifacts. */
   privateArtifacts: boolean;
   onHome: () => void;
   onOpenFolder: (folderId: string) => void;
-  onSignOut: () => void;
+  onProfile: () => void;
   onOpenArtifact: (id: string, target?: ArtifactTarget) => void;
   /** A version to open the panel on, e.g. from a notification. */
   versionId?: string | null;
@@ -133,11 +135,12 @@ function HeaderControl({
 export function ArtifactFull({
   id,
   email,
+  avatar,
   currentUserId,
   privateArtifacts,
   onHome,
   onOpenFolder,
-  onSignOut,
+  onProfile,
   onOpenArtifact,
   versionId = null,
   commentId = null,
@@ -718,8 +721,9 @@ export function ArtifactFull({
     <div className="full">
       <Masthead
         email={email}
+        avatar={avatar}
         onHome={onHome}
-        onSignOut={onSignOut}
+        onProfile={onProfile}
         onOpenArtifact={onOpenArtifact}
         trailing={commentsToggle}
         menu={menu}

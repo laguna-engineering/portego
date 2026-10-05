@@ -16,6 +16,7 @@ import { useLiveEvents } from "./live.ts";
 import { Masthead } from "./Masthead.tsx";
 import { McpConsent } from "./McpConsent.tsx";
 import { McpLogin } from "./McpLogin.tsx";
+import { Profile } from "./Profile.tsx";
 import { artifactPath, galleryPath, ROOT_FOLDER_ID, useRoute } from "./router.ts";
 import { SignIn } from "./SignIn.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
@@ -124,12 +125,17 @@ export function App() {
     navigate("/");
   };
 
+  const setAvatar = (avatar: string | null) =>
+    setState({ status: "signed-in", session: { ...session, user: { ...session.user, avatar } } });
+
   const masthead = (
     <Masthead
       email={session.user.email}
+      avatar={session.user.avatar}
       onHome={() => navigate("/")}
+      onProfile={() => navigate("/profile")}
+      onProfilePage={route.name === "profile"}
       onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
-      onSignOut={handleSignOut}
       menu={
         route.name === "gallery"
           ? (close) => (
@@ -162,12 +168,13 @@ export function App() {
         commentId={route.commentId}
         onLinkShown={() => navigate(artifactPath(route.id), { replace: true })}
         email={session.user.email}
+        avatar={session.user.avatar}
         currentUserId={session.user.id}
         privateArtifacts={session.features.privateArtifacts}
         onHome={() => navigate("/")}
         onOpenFolder={(folderId) => navigate(galleryPath({ folderId }))}
         onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
-        onSignOut={handleSignOut}
+        onProfile={() => navigate("/profile")}
       />
     );
   }
@@ -199,6 +206,15 @@ export function App() {
               onUpload={() => setUploading(true)}
             />
           </div>
+        ) : null}
+
+        {route.name === "profile" ? (
+          <Profile
+            email={session.user.email}
+            avatar={session.user.avatar}
+            onAvatarChange={setAvatar}
+            onSignOut={handleSignOut}
+          />
         ) : null}
 
         {route.name === "mcp-login" ? <McpLogin query={route.query} /> : null}

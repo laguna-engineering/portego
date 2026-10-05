@@ -9,6 +9,7 @@ import {
 } from "./api.ts";
 import { folderPath, folderRows, sameName } from "./folders.ts";
 import { formatBytes } from "./format.ts";
+import { useModal } from "./modal.ts";
 
 export type UploadDialogProps = {
   maxUploadBytes: number;
@@ -78,45 +79,7 @@ export function UploadDialog({
       });
   }, []);
 
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    // Focus lands on the dialog itself, so a screen reader announces what
-    // opened before the fields are read.
-    dialog.current?.focus();
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        onClose();
-        return;
-      }
-      if (event.key !== "Tab" || !dialog.current) return;
-
-      // Tab stays inside the dialog. Everything behind it is inert while it is
-      // open, so leaving would strand the focus ring somewhere unusable.
-      const focusable = [
-        ...dialog.current.querySelectorAll<HTMLElement>(
-          'button, input, textarea, select, a[href], [tabindex]:not([tabindex="-1"])',
-        ),
-      ].filter((element) => !element.hasAttribute("disabled"));
-      const first = focusable[0];
-      const last = focusable.at(-1);
-      if (!first || !last) return;
-
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      opener?.focus?.();
-    };
-  }, [onClose]);
+  useModal(dialog, onClose);
 
   function choose(chosen: File | null) {
     setProblem(chosen ? describeProblem(chosen, maxUploadBytes) : null);

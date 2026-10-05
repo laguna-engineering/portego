@@ -56,11 +56,12 @@ function fullProps(overrides: Partial<ArtifactFullProps> = {}): ArtifactFullProp
   return {
     id: "artifact-1",
     email: "person@acme.example",
+    avatar: null,
     currentUserId: "user-1",
     privateArtifacts: true,
     onHome: () => {},
     onOpenFolder: () => {},
-    onSignOut: () => {},
+    onProfile: () => {},
     onOpenArtifact: () => {},
     ...overrides,
   };

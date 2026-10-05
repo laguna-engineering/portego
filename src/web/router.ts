@@ -37,6 +37,7 @@ export type Route =
   | ({ name: "gallery" } & GalleryFilters)
   /** One artifact filling the viewport under the masthead, optionally opened on a version or comment. */
   | { name: "artifact"; id: string; versionId: string | null; commentId: string | null }
+  | { name: "profile" }
   /** The MCP authorization pages. They carry the signed OAuth query through. */
   | { name: "mcp-login"; query: string }
   | { name: "mcp-consent"; query: string }
@@ -55,6 +56,7 @@ export function readRoute(url: URL): Route {
       commentId: url.searchParams.get("comment") || null,
     };
   }
+  if (url.pathname === "/profile") return { name: "profile" };
   if (url.pathname === "/mcp/login") return { name: "mcp-login", query: url.search };
   if (url.pathname === "/mcp/consent") return { name: "mcp-consent", query: url.search };
   if (url.pathname === "/") {
