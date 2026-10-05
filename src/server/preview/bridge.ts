@@ -1,3 +1,5 @@
+import { parseComment, renderCommentNodes } from "../../shared/comment-format.ts";
+
 /**
  * The script every preview carries so the application can attach comments to
  * a passage. The document runs in an opaque origin, so the page that frames
@@ -18,6 +20,8 @@
  * concatenation, so what the reader selected is what is searched for later.
  */
 export const BRIDGE_SCRIPT = `(() => {
+  ${parseComment}
+  ${renderCommentNodes}
   if (window.parent === window) return;
   const parent = window.parent;
   const send = (message) => parent.postMessage(Object.assign({ portego: 1 }, message), "*");
@@ -29,6 +33,7 @@ export const BRIDGE_SCRIPT = `(() => {
     entries: [],
     set: (key, value) => send({ type: "set", key, value }),
     clear: (key) => send({ type: "clear", key }),
+    renderComment: (text, element) => renderCommentNodes(parseComment(String(text)), element),
   };
   const CONTEXT = 32;
   let mode = false;

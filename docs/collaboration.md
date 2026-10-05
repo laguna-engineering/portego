@@ -64,6 +64,24 @@ is written on its parent's version regardless of any `versionId` given.
 `list` reports each comment's `versionId` and `versionNumber`, so a reader
 can tell which version a comment was about even after later versions arrive.
 
+### Formatting
+
+The client formats comment text when it shows it. The stored text stays as
+written.
+
+- An `http://` or `https://` URL becomes a link that opens in a new tab.
+  Punctuation after it, such as a full stop, is not part of the link.
+- `` `code` `` is shown in a monospace font. Nothing inside it is formatted or
+  linked.
+- `*bold*`, `_italic_`, and `~strikethrough~`. A marker opens at the start of a
+  word and closes at the end of one, so `snake_case` and `2*3*4` stay as
+  written. Formatting does not continue onto the next line, and doubled
+  markers such as `**this**` stay as written.
+
+Text is never read as HTML. A page shows text in the same format with
+`window.portego.renderComment`, and an entry schema can mark a field that
+holds such text; see [entries.md](entries.md#the-schema).
+
 ## Artifacts can read their comments
 
 The artifact page sends the document its comments over the preview bridge,

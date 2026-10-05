@@ -456,6 +456,8 @@ export type Entry = {
   value: unknown;
   updatedAt: string;
   author: { id: string; name: string; email: string };
+  /** Set when the artifact's schema formats this value like a comment. */
+  format?: "comment";
 };
 
 /** Every person's entries, and the schema the current version declares, if any. */

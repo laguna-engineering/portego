@@ -623,7 +623,14 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
         "written on, and cannot be edited.",
       inputSchema: {
         id: z.string().describe("The artifact id."),
-        body: z.string().min(1).max(4000).describe("The comment text."),
+        body: z
+          .string()
+          .min(1)
+          .max(4000)
+          .describe(
+            "The comment text. http(s) URLs become links; `code`, *bold*, _italic_, and " +
+              "~strikethrough~ are formatted. Nothing inside `code` is formatted.",
+          ),
         anchor: z
           .object({
             quote: z.string().min(1).max(500).describe("The selected text."),

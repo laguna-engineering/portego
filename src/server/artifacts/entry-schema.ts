@@ -36,6 +36,7 @@ const KEYWORDS = new Set([
   "items",
   "minItems",
   "maxItems",
+  "format",
 ]);
 
 /** Printable ASCII without spaces, so a key reads the same everywhere it is shown. */
@@ -56,6 +57,8 @@ export type ValueSchema = {
   items?: ValueSchema;
   minItems?: number;
   maxItems?: number;
+  /** "comment": the text uses the same formatting as comments. */
+  format?: "comment";
 };
 
 type KeyRule = {
@@ -272,6 +275,13 @@ function valueSchema(schema: unknown, where: string, depth: number): ValueSchema
   }
   if (schema.items !== undefined)
     out.items = valueSchema(schema.items, `${where}.items`, depth + 1);
+  if (schema.format !== undefined) {
+    if (schema.format !== "comment") throw new EntrySchemaError(`${where}.format is "comment".`);
+    if (out.type !== "string") {
+      throw new EntrySchemaError(`${where}.format needs "type": "string".`);
+    }
+    out.format = schema.format;
+  }
   return out;
 }
 
@@ -289,6 +299,12 @@ export function checkEntry(schema: EntrySchema, key: string, value: unknown): st
   }
   const declared = schema.rules.map((rule) => rule.template).join(", ");
   return `${key} matches no key this artifact declares (${declared}).`;
+}
+
+/** Whether the value rule for this key formats its text like a comment. */
+export function isCommentKey(schema: EntrySchema, key: string): boolean {
+  const rule = schema.rules.find((candidate) => candidate.matcher.test(key));
+  return rule?.value?.format === "comment";
 }
 
 function checkValue(value: unknown, schema: ValueSchema, where: string): string | null {

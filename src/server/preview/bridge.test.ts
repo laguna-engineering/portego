@@ -23,6 +23,11 @@ describe("adding the bridge to a document", () => {
     expect(out).toBe(`<p>hi</p><script>${BRIDGE_SCRIPT}</script>`);
   });
 
+  test("still parses with the comment formatter embedded in it", () => {
+    expect(() => new Function(BRIDGE_SCRIPT)).not.toThrow();
+    expect(BRIDGE_SCRIPT).toContain("renderComment:");
+  });
+
   test("never closes itself early", () => {
     // A "</script>" inside the script would end the tag in the middle of it.
     expect(BRIDGE_SCRIPT).not.toContain("</script");
