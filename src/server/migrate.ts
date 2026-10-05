@@ -35,7 +35,8 @@ export async function migrate(): Promise<void> {
   try {
     // Better Auth owns its own tables and migrates them first, because the
     // application tables reference `user`.
-    const auth = createAuth({ config, database });
+    // Its startup schema check would report the tables created below.
+    const auth = createAuth({ config, database, validateSchema: false });
     // The auth context finishes starting in the background and reads the
     // database as it does. Closing the database under it fails the script
     // after the schema was already applied.

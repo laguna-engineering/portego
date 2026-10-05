@@ -106,7 +106,11 @@ OIDC_ISSUER_URL=http://127.0.0.1:9876
 OIDC_CLIENT_ID=test-client-id
 OIDC_CLIENT_SECRET=test-client-secret
 AUTH_ALLOW_ALL_AUTHENTICATED=true
+AUTH_ALLOWED_EMAIL_DOMAINS=
 ```
+
+`.env.example` sets `AUTH_ALLOWED_EMAIL_DOMAINS`. Clear it: the server does not
+start when both admission policies are set.
 
 `bun run dev` sees the loopback issuer URL and starts the issuer before the
 server, which reads the discovery document at startup and skips the provider

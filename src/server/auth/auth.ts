@@ -17,6 +17,7 @@ const REFRESH_TOKEN_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
 export type CreateAuthOptions = {
   config: AuthConfig;
   database: Database;
+  validateSchema?: boolean;
 };
 
 export type Auth = ReturnType<typeof createAuth>;
@@ -46,7 +47,7 @@ function requireRegisteredProviders(ids: string[]): BetterAuthPlugin {
   };
 }
 
-export function createAuth({ config, database }: CreateAuthOptions) {
+export function createAuth({ config, database, validateSchema = true }: CreateAuthOptions) {
   const socialProviders = Object.fromEntries(
     config.providers.flatMap((provider) =>
       provider.wiring.kind === "social" ? [[provider.id, provider.wiring.options]] : [],
@@ -92,6 +93,7 @@ export function createAuth({ config, database }: CreateAuthOptions) {
       // host never receives it. Better Auth adds the __Secure- prefix when
       // secure cookies are on.
       defaultCookieAttributes: { httpOnly: true, sameSite: "lax", path: "/" },
+      database: { validateSchema },
     },
     // Better Auth rejects cookie-authenticated requests whose Origin is not
     // trusted, which is the CSRF defence for its own endpoints.
