@@ -31,12 +31,13 @@ function json(body: unknown, status = 200) {
 }
 
 /**
- * Serves `server.feed` and records read requests. A read moves the marker the
+ * Serves `server.feed` and counts feed loads and read requests. A read moves the marker the
  * way the server would. Setting `hold` keeps the next feed response waiting.
  */
 function stubServer(feed: ActivityFeed, options: { failRead?: boolean } = {}) {
   const server = {
     feed,
+    loads: 0,
     reads: 0,
     held: null as (() => void) | null,
     hold: false,
@@ -50,6 +51,7 @@ function stubServer(feed: ActivityFeed, options: { failRead?: boolean } = {}) {
       server.feed = { ...server.feed, readAt: LATER };
       return Promise.resolve(json({ readAt: LATER }));
     }
+    server.loads += 1;
     const answer = json(server.feed);
     if (!server.hold) return Promise.resolve(answer);
     server.hold = false;
@@ -102,6 +104,30 @@ describe("dot", () => {
     await act(async () => {});
     expect(bell().hasAttribute("data-dot")).toBe(true);
   });
+
+  test("reloads for an entry change only when it reaches the feed, so votes do not refetch it", async () => {
+    const server = stubServer({ items: [], readAt: READ });
+    renderBell();
+    await act(async () => {});
+    expect(server.loads).toBe(1);
+
+    server.feed = { items: [item({ kind: "entry.changed", key: "note:P-01" })], readAt: READ };
+    await act(async () => {
+      StubEventSource.last?.send({ type: "entry.changed", artifactId: "artifact-1" });
+    });
+    expect(server.loads).toBe(1);
+    expect(bell().hasAttribute("data-dot")).toBe(false);
+
+    await act(async () => {
+      StubEventSource.last?.send({
+        type: "entry.changed",
+        artifactId: "artifact-1",
+        activity: true,
+      });
+    });
+    await waitFor(() => expect(bell().hasAttribute("data-dot")).toBe(true));
+    expect(server.loads).toBe(2);
+  });
 });
 
 describe("list", () => {
@@ -113,7 +139,8 @@ describe("list", () => {
         item({ id: "c", kind: "comment.created", reply: true }),
         item({ id: "d", kind: "comment.created", reply: false }),
         item({ id: "e", kind: "version.created", versionNumber: 3 }),
-        item({ id: "f", kind: "artifact.created", createdAt: EARLIER }),
+        item({ id: "f", kind: "entry.changed", key: "note:P-01" }),
+        item({ id: "g", kind: "artifact.created", createdAt: EARLIER }),
       ],
       readAt: READ,
     });
@@ -129,9 +156,11 @@ describe("list", () => {
       "B Person replied on Plan",
       "B Person commented on Plan",
       "B Person uploaded version 3 of Plan",
+      "B Person wrote note:P-01 on Plan",
       "B Person uploaded Plan",
     ]);
     expect(rows.map((row) => row.hasAttribute("data-unread"))).toEqual([
+      true,
       true,
       true,
       true,

@@ -25,6 +25,7 @@ import {
   extractEntrySchema,
   isCommentKey,
   isEntryKey,
+  notifiesKey,
   parseEntrySchema,
 } from "./entry-schema.ts";
 import { ServiceError } from "./errors.ts";
@@ -242,7 +243,16 @@ export type ArtifactService = {
     viewer: Viewer,
   ) => { entries: (Entry & { format?: "comment" })[]; schema: unknown };
   /** Sets the author's value for a key, replacing any value they had. */
-  setEntry: (id: string, input: { authorId: string; key: string; value: unknown }) => Entry;
+  setEntry: (
+    id: string,
+    input: {
+      authorId: string;
+      key: string;
+      value: unknown;
+      /** Made in the web app, not by an agent. */
+      inApp?: boolean;
+    },
+  ) => Entry;
   /** Removes the author's value for a key. Removing a key they never set is not an error. */
   clearEntry: (id: string, input: { authorId: string; key: string }) => void;
   maxUploadBytes: number;
@@ -688,13 +698,24 @@ export function createArtifactService(options: {
         );
       }
       limitWrites(id, input.authorId);
+      // A page may write the same value again on every click; that does not notify again.
+      const notify =
+        schema !== null &&
+        notifiesKey(schema, input.key) &&
+        (existing === null || JSON.stringify(existing.value) !== value);
       const entry = entryStore.set({
         artifactId: id,
         authorId: input.authorId,
         key: input.key,
         value,
+        notify,
+        inApp: input.inApp ?? false,
       });
-      publish({ type: "entry.changed", artifactId: id });
+      publish({
+        type: "entry.changed",
+        artifactId: id,
+        ...(notify && { activity: true as const }),
+      });
       return entry;
     },
 

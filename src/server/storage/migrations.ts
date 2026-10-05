@@ -240,6 +240,17 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    // An entry whose key notifies shows in the activity feed from notifiedAt,
+    // the last time its value changed, as activityId, made new at that time.
+    id: "014-entry-activity",
+    sql: `
+      alter table artifactEntries add column notifiedAt integer;
+      alter table artifactEntries add column activityId text;
+      alter table artifactEntries add column inApp integer not null default 0;
+      create index artifactEntries_notified_at on artifactEntries (notifiedAt);
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

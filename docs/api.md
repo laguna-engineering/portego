@@ -285,11 +285,12 @@ person's account, so this is what tells the two apart.
 
 `GET /api/activity` lists what happened in the last seven days, newest first,
 at most 100 items. It covers new artifacts, new versions, comments and replies,
-and status changes (solved, reopened, archived, restored), by anyone, on the
+status changes (solved, reopened, archived, restored), and entries whose key
+notifies (see [entries.md](entries.md#notifications)), by anyone, on the
 artifacts the caller can see. What the
 caller did in the web app is left out; what they did through MCP or an upload
 ticket, such as an agent working under their account, is listed. A removed
-comment is no longer listed.
+comment or cleared entry is no longer listed.
 
 ```json
 {
@@ -308,8 +309,9 @@ comment is no longer listed.
 ```
 
 `kind` is `artifact.created`, `version.created` (with `versionNumber`),
-`comment.created` (with `reply`), or `status.changed` (with `change`). `id` is
-the id of the version, comment, or status change. `readAt` is when the caller
+`comment.created` (with `reply`), `status.changed` (with `change`), or
+`entry.changed` (with `key`). `id` is the id of the version, comment, status
+change, or entry write. An entry gets a new `id` each time its value changes. `readAt` is when the caller
 last called `POST /api/activity/read`, or null if never; items after it are
 unread. The read marker is per user and only moves forward.
 

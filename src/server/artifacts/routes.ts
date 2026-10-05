@@ -246,6 +246,7 @@ export function artifactRoutes(
       authorId: currentUser(c).id,
       key: body.key,
       value: body.value,
+      inApp: true,
     });
     return c.json({ entry });
   });

@@ -321,7 +321,10 @@ export function setArtifactOrganization(
   }).then((body) => body.artifact);
 }
 
-/** Something that happened to an artifact. `id` is the version's, comment's, or change's. */
+/**
+ * Something that happened to an artifact. `id` is the version's, comment's,
+ * change's, or entry write's.
+ */
 export type ActivityItem = {
   id: string;
   createdAt: string;
@@ -332,6 +335,7 @@ export type ActivityItem = {
   | { kind: "version.created"; versionNumber: number }
   | { kind: "comment.created"; reply: boolean }
   | { kind: "status.changed"; change: "solved" | "reopened" | "archived" | "restored" }
+  | { kind: "entry.changed"; key: string }
 );
 
 /** The last seven days, newest first. `readAt` is when the reader last opened the list. */
