@@ -793,6 +793,18 @@ label {
   overflow-wrap: anywhere;
 }
 
+.comment-body a {
+  color: var(--accent);
+}
+
+.comment-body code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  padding: 0 0.2em;
+  border-radius: 3px;
+  background: var(--line);
+}
+
 .entries {
   margin-top: 1rem;
   border-top: 1px solid var(--line);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, clearEntry, type Entry, fetchEntries } from "./api.ts";
+import { CommentText } from "./CommentText.tsx";
 import { useLiveEvents } from "./live.ts";
 import { MemberLink } from "./Member.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
@@ -78,7 +79,14 @@ export function Entries({ artifactId, currentUserId, onEntries }: EntriesProps) 
         {entries.map((entry) => (
           <li key={`${entry.author.id} ${entry.key}`} className="entry">
             <p className="entry-data">
-              <code>{entry.key}</code> {describeValue(entry.value)}
+              <code>{entry.key}</code>{" "}
+              {entry.format === "comment" && typeof entry.value === "string" ? (
+                <span className="comment-body">
+                  <CommentText text={entry.value} />
+                </span>
+              ) : (
+                describeValue(entry.value)
+              )}
             </p>
             <p className="comment-meta">
               <MemberLink id={entry.author.id}>{entry.author.name}</MemberLink> ·{" "}

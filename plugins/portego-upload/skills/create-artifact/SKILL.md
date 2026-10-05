@@ -26,6 +26,7 @@ Portego gives the page `window.portego`:
 - `window.portego.entries`: every entry, as `{ key, value, authorId, author, updatedAt }`. `author` is a name; use `authorId` to tell people apart.
 - A `portego:entries` event on `window`, with the list in `event.detail`, fired after load and after every change. Render from this event; the list is empty until it first fires.
 - `window.portego.set(key, value)` and `window.portego.clear(key)`, which change the reader's own entry. Portego makes the change only while the reader's click is active, so call them from a click handler, never on load or on a timer.
+- `window.portego.renderComment(text, element)`, which fills `element` with `text` formatted like a Portego comment: http(s) links, `` `code` ``, `*bold*`, `_italic_`, and `~strikethrough~`. Use it to show free text readers wrote, such as a proposal's description, never `innerHTML`.
 
 Keys are 1 to 200 printable characters with no spaces, such as `vote:P-01`. A value is at most 4000 bytes of JSON, and all values on an artifact at most 1 MiB together. Entries suit votes, polls, and proposals. They do not prove what a reader decided, because any recent click in Portego lets the page write, so never use them for approvals or sign-offs.
 
@@ -40,7 +41,7 @@ Declare the keys the page uses, so agents can read what they mean and a mistyped
 </script>
 ```
 
-A template has up to three `{name}` placeholders, each matching text without `:`, with literal text between them. Rules support `description`, `type`, `enum`, `const`, `minLength`, `maxLength`, `minimum`, `maximum`, `properties`, `required`, `additionalProperties` (boolean), `items`, `minItems`, and `maxItems`. `pattern` and any other keyword make the upload fail; use `enum` or length limits. When the page is re-uploaded as a new version, update the schema with it, for example the `enum` of item ids.
+A template has up to three `{name}` placeholders, each matching text without `:`, with literal text between them. Rules support `description`, `type`, `enum`, `const`, `minLength`, `maxLength`, `minimum`, `maximum`, `properties`, `required`, `additionalProperties` (boolean), `items`, `minItems`, `maxItems`, and `format`. Give a free-text field that readers write, such as a note or a description, `"type": "string", "format": "comment"`, and show it with `window.portego.renderComment`. `pattern` and any other keyword make the upload fail; use `enum` or length limits. When the page is re-uploaded as a new version, update the schema with it, for example the `enum` of item ids.
 
 Agents read and change entries with `list_artifact_entries`, `set_artifact_entry`, and `clear_artifact_entry`.
 

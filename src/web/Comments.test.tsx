@@ -46,6 +46,22 @@ describe("reading", () => {
     expect(screen.getByText(/A Person/)).toBeDefined();
   });
 
+  test("formats links and emphasis in comments and replies", async () => {
+    stubFetch(() => ({
+      body: {
+        comments: [
+          comment({ body: "Spec at https://acme.example/spec" }),
+          comment({ id: "comment-2", parentId: "comment-1", body: "That is _wrong_" }),
+        ],
+      },
+    }));
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    const link = await screen.findByRole("link", { name: "https://acme.example/spec" });
+    expect(link.getAttribute("href")).toBe("https://acme.example/spec");
+    expect(screen.getByText("wrong").tagName).toBe("EM");
+  });
+
   test("says when there is nothing yet", async () => {
     stubFetch(() => ({ body: { comments: [] } }));
     render(<Comments artifactId="artifact-1" currentUserId="user-1" />);

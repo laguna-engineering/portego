@@ -4,6 +4,7 @@ import {
   ENTRY_SCHEMA_MAX_BYTES,
   EntrySchemaError,
   extractEntrySchema,
+  isCommentKey,
   isEntryKey,
   parseEntrySchema,
 } from "./entry-schema.ts";
@@ -75,7 +76,9 @@ describe("parseEntrySchema", () => {
   });
 
   test("refuses keywords it does not enforce instead of silently ignoring them", () => {
-    expect(refusal({ keys: { note: { value: { format: "email" } } } })).toContain('"format"');
+    expect(refusal({ keys: { note: { value: { uniqueItems: true } } } })).toContain(
+      '"uniqueItems"',
+    );
     expect(refusal({ keys: { note: { values: {} } } })).toContain('unknown field "values"');
     expect(refusal({ keys: {}, version: 2 })).toContain("unknown field: version");
   });
@@ -141,6 +144,29 @@ describe("checkEntry", () => {
 
   test("keeps a placeholder inside one colon-separated segment", () => {
     expect(checkEntry(backlog, "propose:a:b", {})).toContain("matches no key");
+  });
+});
+
+describe("comment format", () => {
+  test("is offered only on strings, the one kind of value comment formatting applies to", () => {
+    const schema = parseEntrySchema(
+      JSON.stringify({
+        keys: {
+          "note:{id}": { value: { type: "string", format: "comment" } },
+          title: { value: { type: "string" } },
+        },
+      }),
+    );
+    expect(isCommentKey(schema, "note:7")).toBe(true);
+    expect(isCommentKey(schema, "title")).toBe(false);
+    expect(isCommentKey(schema, "undeclared")).toBe(false);
+
+    expect(refusal({ keys: { note: { value: { format: "comment" } } } })).toContain(
+      'needs "type": "string"',
+    );
+    expect(refusal({ keys: { note: { value: { type: "string", format: "email" } } } })).toContain(
+      'format is "comment"',
+    );
   });
 });
 

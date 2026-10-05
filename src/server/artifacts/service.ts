@@ -23,6 +23,7 @@ import {
   type EntrySchema,
   EntrySchemaError,
   extractEntrySchema,
+  isCommentKey,
   isEntryKey,
   parseEntrySchema,
 } from "./entry-schema.ts";
@@ -232,8 +233,14 @@ export type ArtifactService = {
     },
   ) => Comment;
   deleteComment: (id: string, commentId: string, actorId: string) => void;
-  /** Every person's entries, and the schema the current version declares. */
-  entries: (id: string, viewer: Viewer) => { entries: Entry[]; schema: unknown };
+  /**
+   * Every person's entries, and the schema the current version declares. An
+   * entry whose value the schema formats like a comment carries `format`.
+   */
+  entries: (
+    id: string,
+    viewer: Viewer,
+  ) => { entries: (Entry & { format?: "comment" })[]; schema: unknown };
   /** Sets the author's value for a key, replacing any value they had. */
   setEntry: (id: string, input: { authorId: string; key: string; value: unknown }) => Entry;
   /** Removes the author's value for a key. Removing a key they never set is not an error. */
@@ -638,7 +645,15 @@ export function createArtifactService(options: {
     entries(id, viewer) {
       const artifact = visible(id, viewer);
       const schema = entryStore.schema(artifact.currentVersionId);
-      return { entries: entryStore.list(id), schema: schema === null ? null : JSON.parse(schema) };
+      const parsed = entrySchema(artifact.currentVersionId);
+      const entries = entryStore
+        .list(id)
+        .map((entry) =>
+          parsed && isCommentKey(parsed, entry.key)
+            ? { ...entry, format: "comment" as const }
+            : entry,
+        );
+      return { entries, schema: schema === null ? null : JSON.parse(schema) };
     },
 
     setEntry(id, input) {

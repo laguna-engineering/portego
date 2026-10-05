@@ -233,6 +233,28 @@ describe("an artifact's entry schema", () => {
     expect((await setEntry(id, "poll", "A")).status).toBe(200);
   });
 
+  test("marks the entries it formats like comments, so the app shows their links and emphasis", async () => {
+    const id = await uploaded(
+      page({
+        keys: {
+          "note:{id}": { value: { type: "string", format: "comment" } },
+          "title:{id}": { value: { type: "string" } },
+        },
+      }),
+    );
+    expect((await setEntry(id, "note:1", "See *this*")).status).toBe(200);
+    expect((await setEntry(id, "title:1", "Plain")).status).toBe(200);
+
+    const formats = (await listEntries(id)).entries.map((entry) => [
+      entry.key,
+      (entry as { format?: string }).format,
+    ]);
+    expect(formats).toEqual([
+      ["note:1", "comment"],
+      ["title:1", undefined],
+    ]);
+  });
+
   test("that is broken refuses the upload, so the author finds out before anyone writes", async () => {
     const res = await upload(
       page({ keys: { "vote:{item}": { params: { item: { pattern: "^P" } } } } }),

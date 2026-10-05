@@ -7,6 +7,7 @@ import {
   deleteComment,
   fetchComments,
 } from "./api.ts";
+import { CommentText } from "./CommentText.tsx";
 import { useLiveEvents } from "./live.ts";
 import { MemberLink } from "./Member.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
@@ -232,7 +233,9 @@ export function Comments({
                 </button>
               ) : null}
             </p>
-            <p className="comment-body">{root.body}</p>
+            <p className="comment-body">
+              <CommentText text={root.body} />
+            </p>
 
             {replies.length > 0 ? (
               <ul className="comment-replies">
@@ -255,7 +258,9 @@ export function Comments({
                         </button>
                       ) : null}
                     </p>
-                    <p className="comment-body">{reply.body}</p>
+                    <p className="comment-body">
+                      <CommentText text={reply.body} />
+                    </p>
                   </li>
                 ))}
               </ul>

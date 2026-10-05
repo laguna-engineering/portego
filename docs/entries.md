@@ -33,6 +33,7 @@ The bridge that Portego adds to every preview gives the page:
 | `portego:entries` event on `window` | Fired with the same list in `event.detail` when the page loads and after every change, by anyone. |
 | `window.portego.set(key, value)` | Asks to set the reader's value for `key`. |
 | `window.portego.clear(key)` | Asks to remove the reader's value for `key`. |
+| `window.portego.renderComment(text, element)` | Replaces the element's content with `text` formatted as Portego formats comments (see [collaboration.md](collaboration.md#formatting)). It builds text nodes and elements, never HTML, so it is safe for text a reader wrote. |
 
 The bridge script is added before `</head>`, so a script in `<body>` can use
 `window.portego` directly. The entries arrive a moment after load; render from
@@ -117,6 +118,12 @@ any well-formed key and value is accepted.
   `additionalProperties` (`true` or `false`), `items`, `minItems`, and
   `maxItems`, with their JSON Schema meaning. `type` is one of `string`,
   `number`, `integer`, `boolean`, `object`, `array`, and `null`.
+- `"format": "comment"` marks a string as text a person writes, formatted like
+  a comment. It needs `"type": "string"`, and `comment` is its only value. When
+  the rule for a key's whole value has it, the entry list in Portego shows the
+  value formatted and the entries API marks the entry with
+  `"format": "comment"`. The page shows the text with
+  `window.portego.renderComment`, which it can use for a nested field too.
 - `pattern` is not supported. The server would run a regular expression that
   an uploaded page wrote, and a backtracking one can hold the process for
   minutes on a short input. Use `enum` or length limits instead.
@@ -143,7 +150,7 @@ described in [security.md](security.md).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/artifacts/:id/entries` | `{ entries, schema }`: every entry, oldest change first, and the current version's schema or `null` |
+| `GET` | `/api/artifacts/:id/entries` | `{ entries, schema }`: every entry, oldest change first, and the current version's schema or `null`. An entry the schema formats like a comment has `"format": "comment"` |
 | `PUT` | `/api/artifacts/:id/entries` | `{ "key": "…", "value": … }` sets the caller's value and returns `{ entry }` |
 | `DELETE` | `/api/artifacts/:id/entries?key=…` | Removes the caller's value; `204` whether or not there was one |
 

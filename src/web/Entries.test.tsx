@@ -64,6 +64,24 @@ describe("data entries", () => {
     expect(screen.getByRole("link", { name: "A Person" }).getAttribute("href")).toBe("/u/user-1");
   });
 
+  test("format a value the schema declares comment-like, and show other text as written", async () => {
+    stubFetch(() => ({
+      body: {
+        entries: [
+          entry({ key: "note:1", value: "See https://acme.example *now*", format: "comment" }),
+          entry({ key: "title:1", value: "*literal*" }),
+        ],
+        schema: null,
+      },
+    }));
+    render(<Entries artifactId="artifact-1" currentUserId="user-1" />);
+
+    await userEvent.click(await screen.findByText("2 data entries"));
+    expect(screen.getByRole("link", { name: "https://acme.example" })).toBeDefined();
+    expect(screen.getByText("now").tagName).toBe("STRONG");
+    expect(screen.getByText(/\*literal\*/)).toBeDefined();
+  });
+
   test("reload when someone else records an entry", async () => {
     let entries: Entry[] = [];
     stubFetch(() => ({ body: { entries, schema: null } }));
