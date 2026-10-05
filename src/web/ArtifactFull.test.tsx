@@ -35,6 +35,9 @@ function answer(path: string) {
   // Query strings (e.g. `?version=`) leave the path itself unchanged.
   const base = path.split("?")[0] ?? path;
   if (base === "/api/activity") return { body: { items: [], readAt: null } };
+  if (base.startsWith("/api/activity/subscriptions/")) {
+    return { body: { subscription: { level: null, reason: null, inherited: null } } };
+  }
   if (base.endsWith("/preview")) return { body: { url: "http://127.0.0.1:5173/preview/token" } };
   if (base.endsWith("/comments")) return { body: { comments: [] } };
   if (base.endsWith("/entries")) return { body: { entries: [], schema: null } };
@@ -291,6 +294,54 @@ describe("someone else's private artifact", () => {
 
     expect(await screen.findByText("This artifact is private.")).toBeDefined();
     expect(screen.queryByRole("heading", { name: /Sales chart/ })).toBeNull();
+  });
+});
+
+describe("watching", () => {
+  test("shows a level inherited from a folder, and sets the artifact's own", async () => {
+    const sent: unknown[] = [];
+    const research = { id: "research", name: "Research" };
+    stubFetch((path, init) => {
+      if (path === "/api/activity/subscriptions/artifacts/artifact-1") {
+        if (init?.method === "PUT") {
+          const body = JSON.parse(String(init.body));
+          sent.push(body);
+          return {
+            body: {
+              subscription: {
+                level: body.level,
+                reason: "chosen",
+                inherited: { folder: research, level: "versions" },
+              },
+            },
+          };
+        }
+        return {
+          body: {
+            subscription: {
+              level: null,
+              reason: null,
+              inherited: { folder: research, level: "versions" },
+            },
+          },
+        };
+      }
+      return answer(path);
+    });
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Watching versions" }));
+    const dialog = screen.getByRole("dialog", { name: "Watch" });
+    expect(within(dialog).getByRole("button", { pressed: true }).textContent).toContain(
+      "New versions only",
+    );
+    expect(within(dialog).getByText("Set by the Research folder.")).toBeDefined();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: /^All activity/ }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Watch" })).toBeNull());
+    expect(sent).toEqual([{ level: "all" }]);
+    expect(screen.getByRole("button", { name: "Watching" })).toBeDefined();
   });
 });
 

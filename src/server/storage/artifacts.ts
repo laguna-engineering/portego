@@ -8,6 +8,7 @@ import {
   writeImage,
 } from "./content.ts";
 import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
+import { follow } from "./subscriptions.ts";
 
 /**
  * Workflow state. `solved` means the question the artifact was shared for has
@@ -480,6 +481,12 @@ export function createArtifactStore(options: {
             input.entrySchema ?? null,
             input.inApp ? 1 : 0,
           );
+          follow(database, {
+            userId: input.createdBy,
+            artifactId: id,
+            reason: "uploaded",
+            at: now,
+          });
           insertImages(id, images);
           if (input.providedMarkdown !== undefined) {
             insertProvidedMarkdown().run(
@@ -534,6 +541,12 @@ export function createArtifactStore(options: {
             input.entrySchema ?? null,
             input.inApp ? 1 : 0,
           );
+          follow(database, {
+            userId: input.createdBy,
+            artifactId: input.artifactId,
+            reason: "uploaded",
+            at: now,
+          });
           insertImages(id, images);
           if (input.providedMarkdown !== undefined) {
             insertProvidedMarkdown().run(
@@ -763,6 +776,12 @@ export function createArtifactStore(options: {
           )
           .run(intoId, fromId);
         database.query("delete from artifactTags where artifactId = ?").run(fromId);
+        database
+          .query(
+            `insert or ignore into artifactSubscriptions (userId, artifactId, level, reason, updatedAt)
+             select userId, ?, level, reason, updatedAt from artifactSubscriptions where artifactId = ?`,
+          )
+          .run(intoId, fromId);
         // One value per person per key survives: the one written last.
         database
           .query(

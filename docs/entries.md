@@ -135,7 +135,8 @@ any well-formed key and value is accepted.
 ### Notifications
 
 An entry whose key notifies shows in the notifications of everyone who can see
-the artifact, as "A Person wrote `key` on Title". A key notifies when its rule
+the artifact and watches it at the `all` level (see
+[api.md](api.md#watching)), as "A Person wrote `key` on Title". A key notifies when its rule
 has `"notify": true`, or when its rule has no `notify` and its whole value has
 `"format": "comment"`. `"notify": false` keeps a comment-like key out of the
 notifications. A key in an artifact with no schema never notifies.

@@ -165,3 +165,46 @@ describe("006-artifact-versions", () => {
     expect(() => insert.run("v2b", "ab/cd/v2b.html")).toThrow();
   });
 });
+
+describe("015-subscriptions", () => {
+  test("has everyone follow what they uploaded to or commented on, so the bell keeps working after the upgrade", () => {
+    const db = database();
+    appliedMigrations(db);
+    const before = migrations.findIndex((migration) => migration.id === "015-subscriptions");
+    for (const migration of migrations.slice(0, before)) {
+      db.exec(migration.sql);
+      db.query("insert into schema_migrations (id, appliedAt) values (?, ?)").run(migration.id, 1);
+    }
+    for (const id of ["owner", "editor", "commenter", "bystander"]) {
+      db.query('insert into "user" (id) values (?)').run(id);
+    }
+    db.query(
+      `insert into artifacts
+         (id, title, originalFilename, storageKey, sha256, byteSize, createdBy, createdAt, updatedAt)
+       values ('a1', 't', 'f.html', 'ab/cd/key.html', 'sha', 1, 'owner', 1, 1)`,
+    ).run();
+    const version = db.query(
+      `insert into artifactVersions
+         (id, artifactId, number, originalFilename, storageKey, sha256, byteSize, createdBy, createdAt)
+       values (?, 'a1', ?, 'f.html', ?, 'sha', 1, ?, ?)`,
+    );
+    version.run("v1", 1, "ab/cd/v1.html", "owner", 1);
+    version.run("v2", 2, "ab/cd/v2.html", "editor", 2);
+    const comment = db.query(
+      `insert into artifactComments (id, artifactId, versionId, authorId, body, createdAt)
+       values (?, 'a1', 'v1', ?, 'hi', ?)`,
+    );
+    comment.run("c1", "commenter", 3);
+    comment.run("c2", "owner", 4);
+
+    applyMigrations(db);
+
+    expect(
+      db.query("select userId, level, reason from artifactSubscriptions order by userId").all(),
+    ).toEqual([
+      { userId: "commenter", level: "all", reason: "commented" },
+      { userId: "editor", level: "all", reason: "uploaded" },
+      { userId: "owner", level: "all", reason: "uploaded" },
+    ]);
+  });
+});

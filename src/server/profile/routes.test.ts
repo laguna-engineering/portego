@@ -382,7 +382,9 @@ describe("display name", () => {
       versions: { creator: { name: string } }[];
     };
     expect(versions.versions[0]?.creator.name).toBe("Ada");
-    const activity = (await get("/api/activity")) as { items: { actor: { name: string } }[] };
+    const activity = (await get("/api/activity?scope=everyone")) as {
+      items: { actor: { name: string } }[];
+    };
     expect(activity.items.map((item) => item.actor.name)).toEqual(["Ada", "Ada"]);
     const profile = (await get(`/api/users/${(await names()).id}`)) as { user: { name: string } };
     expect(profile.user.name).toBe("Ada");

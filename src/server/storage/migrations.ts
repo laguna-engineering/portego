@@ -251,6 +251,35 @@ export const migrations: readonly Migration[] = [
       create index artifactEntries_notified_at on artifactEntries (notifiedAt);
     `,
   },
+  {
+    // A folder subscription covers its subfolders down to the next folder the
+    // person chose a level for. Everyone already follows what they uploaded
+    // to or commented on.
+    id: "015-subscriptions",
+    sql: `
+      create table artifactSubscriptions (
+        userId text not null references "user" ("id") on delete cascade,
+        artifactId text not null references artifacts (id) on delete cascade,
+        level text not null check (level in ('all', 'versions', 'none')),
+        reason text not null check (reason in ('uploaded', 'commented', 'chosen')),
+        updatedAt integer not null,
+        primary key (userId, artifactId)
+      );
+      create table folderSubscriptions (
+        userId text not null references "user" ("id") on delete cascade,
+        folderId text not null references folders (id) on delete cascade,
+        level text not null check (level in ('all', 'versions', 'none')),
+        updatedAt integer not null,
+        primary key (userId, folderId)
+      );
+      insert or ignore into artifactSubscriptions (userId, artifactId, level, reason, updatedAt)
+        select createdBy, artifactId, 'all', 'uploaded', max(createdAt)
+        from artifactVersions group by createdBy, artifactId;
+      insert or ignore into artifactSubscriptions (userId, artifactId, level, reason, updatedAt)
+        select authorId, artifactId, 'all', 'commented', max(createdAt)
+        from artifactComments group by authorId, artifactId;
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

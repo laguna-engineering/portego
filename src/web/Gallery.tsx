@@ -5,6 +5,7 @@ import { CloseIcon, FolderIcon, TagIcon } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
 import { FolderPicker, TagPicker } from "./Organize.tsx";
 import { GALLERY_SORTS, type GalleryFilters, type GallerySort, ROOT_FOLDER_ID } from "./router.ts";
+import { FolderWatch } from "./Watch.tsx";
 
 export type GalleryProps = {
   filters: GalleryFilters;
@@ -167,9 +168,14 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
     }
   }
 
+  // Kept while searching, which covers every folder, so the row does not jump.
+  const watchedFolderId =
+    filters.folderId !== null && filters.folderId !== ROOT_FOLDER_ID ? filters.folderId : null;
+
   return (
     <section className={selecting ? "gallery selecting" : "gallery"}>
-      <div className="gallery-controls">
+      <div className={watchedFolderId ? "gallery-controls in-folder" : "gallery-controls"}>
+        {watchedFolderId ? <FolderWatch folderId={watchedFolderId} /> : null}
         <div className="search">
           <label htmlFor={searchId}>Search artifacts</label>
           <input

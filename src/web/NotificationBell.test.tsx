@@ -19,6 +19,7 @@ function item(overrides: Partial<ActivityItem> & Pick<ActivityItem, "kind">): Ac
     createdAt: LATER,
     actor: { id: "user-2", name: "B Person" },
     artifact: { id: "artifact-1", title: "Plan" },
+    reason: { kind: "uploaded" },
     ...overrides,
   } as ActivityItem;
 }
@@ -238,7 +239,7 @@ describe("list", () => {
 
     await userEvent.click(bell());
 
-    expect(await screen.findByText("Nothing in the last 7 days.")).toBeDefined();
+    expect(await screen.findByText("Nothing you watch changed in the last 7 days.")).toBeDefined();
     expect(server.reads).toBe(0);
   });
 
@@ -301,5 +302,83 @@ describe("list", () => {
 
     expect(screen.queryByRole("dialog", { name: "Notifications" })).toBeNull();
     expect(document.activeElement).toBe(bell());
+  });
+});
+
+describe("watching", () => {
+  /** Serves both lists and records every subscription change. */
+  function stubLists(watching: ActivityItem[], everyone: ActivityItem[]) {
+    const server = { changes: [] as [string, unknown][], loads: [] as string[] };
+    stubFetchWith((path, init) => {
+      if (init?.method === "PUT") {
+        server.changes.push([path, JSON.parse(String(init.body))]);
+        return Promise.resolve(
+          json({ subscription: { level: "none", reason: null, inherited: null } }),
+        );
+      }
+      server.loads.push(path);
+      const items = path.includes("scope=everyone") ? everyone : watching;
+      return Promise.resolve(json({ items, readAt: READ }));
+    });
+    return server;
+  }
+
+  test("lists everything visible under Everyone, without lighting the dot for it", async () => {
+    const unwatched = item({ id: "item-2", kind: "artifact.created", reason: null });
+    const server = stubLists([], [unwatched]);
+    renderBell();
+    await act(async () => {});
+    expect(bell().hasAttribute("data-dot")).toBe(false);
+
+    await userEvent.click(bell());
+    await userEvent.click(screen.getByRole("button", { name: "Everyone" }));
+
+    const row = (await screen.findByText("Not watching")).closest("li") as HTMLElement;
+    expect(row.hasAttribute("data-unread")).toBe(false);
+    expect(server.loads).toContain("/api/activity?scope=everyone");
+    expect(bell().hasAttribute("data-dot")).toBe(false);
+  });
+
+  test("says why each item arrived and offers the change that would stop it", async () => {
+    const research = { id: "folder-1", name: "Research" };
+    const server = stubLists(
+      [
+        item({ id: "item-1", kind: "artifact.created", reason: { kind: "commented" } }),
+        item({
+          id: "item-2",
+          kind: "comment.created",
+          reply: false,
+          artifact: { id: "artifact-2", title: "Matrix" },
+          reason: { kind: "folder", folder: research },
+        }),
+      ],
+      [],
+    );
+    renderBell();
+    await userEvent.click(await screen.findByRole("button", { name: "Notifications, unread" }));
+
+    expect(screen.getByText("You commented")).toBeDefined();
+    expect(screen.getByText("Watching Research")).toBeDefined();
+    await userEvent.click(screen.getByRole("button", { name: "Stop watching Research" }));
+    await userEvent.click(screen.getByRole("button", { name: "Stop watching" }));
+
+    expect(server.changes).toEqual([
+      ["/api/activity/subscriptions/folders/folder-1", { level: "none" }],
+      ["/api/activity/subscriptions/artifacts/artifact-1", { level: "none" }],
+    ]);
+  });
+
+  test("watches an artifact from the Everyone list", async () => {
+    const server = stubLists([], [item({ kind: "artifact.created", reason: null })]);
+    renderBell();
+    await act(async () => {});
+    await userEvent.click(bell());
+    await userEvent.click(screen.getByRole("button", { name: "Everyone" }));
+
+    await userEvent.click(await screen.findByRole("button", { name: "Watch" }));
+
+    expect(server.changes).toEqual([
+      ["/api/activity/subscriptions/artifacts/artifact-1", { level: "all" }],
+    ]);
   });
 });

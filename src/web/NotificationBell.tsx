@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type ActivityFeed, type ActivityItem, fetchActivity, markActivityRead } from "./api.ts";
+import {
+  type ActivityFeed,
+  type ActivityItem,
+  fetchActivity,
+  markActivityRead,
+  type SubscriptionLevel,
+  type SubscriptionTarget,
+  setSubscription,
+} from "./api.ts";
 import { BellIcon } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
 import { MemberLink } from "./Member.tsx";
@@ -31,14 +39,49 @@ function targetOf(item: ActivityItem): ArtifactTarget | undefined {
   return undefined;
 }
 
+/** Why the item is in the list, and the change that would take it out or bring it in. */
+function why(item: ActivityItem): {
+  text: string;
+  action: { label: string; target: SubscriptionTarget; level: SubscriptionLevel };
+} {
+  const artifact: SubscriptionTarget = { kind: "artifacts", id: item.artifact.id };
+  const stop = { label: "Stop watching", target: artifact, level: "none" as const };
+  const watch = { label: "Watch", target: artifact, level: "all" as const };
+  switch (item.reason?.kind) {
+    case "uploaded":
+      return { text: "You uploaded this", action: stop };
+    case "commented":
+      return { text: "You commented", action: stop };
+    case "chosen":
+      return { text: "You watch this", action: stop };
+    case "folder": {
+      const { folder } = item.reason as { folder: { id: string; name: string } };
+      return {
+        text: `Watching ${folder.name}`,
+        action: {
+          label: `Stop watching ${folder.name}`,
+          target: { kind: "folders", id: folder.id },
+          level: "none",
+        },
+      };
+    }
+    case "reply":
+      return { text: "A reply to your comment", action: watch };
+    default:
+      return { text: "Not watching", action: watch };
+  }
+}
+
 function isAfter(item: ActivityItem, readAt: string | null): boolean {
   return readAt === null || Date.parse(item.createdAt) > Date.parse(readAt);
 }
 
 /**
- * The masthead's bell. A dot marks activity newer than the last time the
- * reader opened the list, and opening it clears the dot everywhere the reader
- * is signed in. The list follows the change stream while the page is open.
+ * The masthead's bell. A dot marks activity the reader watches that is newer
+ * than the last time they opened the list, and opening it clears the dot
+ * everywhere the reader is signed in. The Everyone tab lists everything the
+ * reader can see and never sets the dot. The lists follow the change stream
+ * while the page is open.
  */
 export function NotificationBell({
   onOpenArtifact,
@@ -46,11 +89,25 @@ export function NotificationBell({
   onOpenArtifact: (id: string, target?: ArtifactTarget) => void;
 }) {
   const [feed, setFeed] = useState<ActivityFeed | null>(null);
+  const [everyone, setEveryone] = useState<ActivityItem[] | null>(null);
+  const [tab, setTab] = useState<"watching" | "everyone">("watching");
   const [open, setOpen] = useState(false);
   /** The read marker as it was when the list opened, so what was new stays marked while it is open. */
   const [openedSince, setOpenedSince] = useState<string | null>(null);
   const request = useRef(0);
+  const everyoneRequest = useRef(0);
   const button = useRef<HTMLButtonElement>(null);
+  const showingEveryone = open && tab === "everyone";
+
+  const loadEveryone = useCallback(async () => {
+    const attempt = ++everyoneRequest.current;
+    try {
+      const found = await fetchActivity("everyone");
+      if (attempt === everyoneRequest.current) setEveryone(found.items);
+    } catch {
+      // The tab keeps what it had.
+    }
+  }, []);
 
   const load = useCallback(async () => {
     const attempt = ++request.current;
@@ -66,6 +123,10 @@ export function NotificationBell({
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (showingEveryone) void loadEveryone();
+  }, [showingEveryone, loadEveryone]);
+
   useLiveEvents((event) => {
     if (
       event.type === "artifact.created" ||
@@ -75,8 +136,22 @@ export function NotificationBell({
       event.type === "reconnected"
     ) {
       void load();
+      if (showingEveryone) void loadEveryone();
     }
   });
+
+  async function act(item: ActivityItem) {
+    const { action } = why(item);
+    try {
+      await setSubscription(action.target, action.level);
+    } catch {
+      // Nothing changed, and the row still offers the same action.
+      return;
+    }
+    await Promise.all([load(), showingEveryone ? loadEveryone() : undefined]);
+  }
+
+  const items = tab === "everyone" ? everyone : (feed?.items ?? null);
 
   useEffect(() => {
     if (!open) return;
@@ -133,16 +208,33 @@ export function NotificationBell({
             onClick={() => setOpen(false)}
           />
           <div className="popover activity" role="dialog" aria-label="Notifications">
-            <h2>Notifications</h2>
-            {feed === null || feed.items.length === 0 ? (
-              <p className="hint">Nothing in the last 7 days.</p>
+            <div className="activity-heading">
+              <h2>Notifications</h2>
+              {(["watching", "everyone"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={tab === value ? "chip selected" : "chip"}
+                  aria-pressed={tab === value}
+                  onClick={() => setTab(value)}
+                >
+                  {value === "watching" ? "Watching" : "Everyone"}
+                </button>
+              ))}
+            </div>
+            {items === null || items.length === 0 ? (
+              <p className="hint">
+                {tab === "watching"
+                  ? "Nothing you watch changed in the last 7 days."
+                  : "Nothing in the last 7 days."}
+              </p>
             ) : (
               <ul>
-                {feed.items.map((item) => (
+                {items.map((item) => (
                   <li
                     key={item.id}
                     className="activity-item"
-                    data-unread={isAfter(item, openedSince) || undefined}
+                    data-unread={(item.reason && isAfter(item, openedSince)) || undefined}
                   >
                     <span>
                       <MemberLink id={item.actor.id} onFollow={() => setOpen(false)}>
@@ -161,6 +253,12 @@ export function NotificationBell({
                     >
                       <RelativeTime iso={item.createdAt} />
                     </button>
+                    <span className="activity-why">
+                      <span>{why(item).text}</span>
+                      <button type="button" className="link" onClick={() => void act(item)}>
+                        {why(item).action.label}
+                      </button>
+                    </span>
                   </li>
                 ))}
               </ul>
