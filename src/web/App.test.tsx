@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { App } from "./App.tsx";
 import { artifact, restoreFetch, stubFetch, stubFetchWith } from "./testing.ts";
 
@@ -21,7 +21,13 @@ function captureNavigation(): string[] {
 }
 
 const SIGNED_IN = {
-  user: { id: "user-1", name: "A Person", email: "person@acme.example", image: null },
+  user: {
+    id: "user-1",
+    name: "A Person",
+    email: "person@acme.example",
+    image: null,
+    avatar: null,
+  },
   limits: { maxUploadBytes: 5 * 1024 * 1024 },
   features: { privateArtifacts: true },
   appName: "Acme",
@@ -30,6 +36,7 @@ const SIGNED_IN = {
 function signedIn(path: string) {
   if (path === "/api/me") return { body: SIGNED_IN };
   if (path === "/api/activity") return { body: { items: [], readAt: null } };
+  if (path === "/api/me/activity") return { body: { uploads: [], versions: [], comments: [] } };
   if (path === "/api/artifacts/artifact-1") return { body: { artifact: artifact() } };
   if (path.endsWith("/preview")) return { body: { url: "http://127.0.0.1:5173/preview/token" } };
   if (path.endsWith("/versions")) return { body: { versions: [] } };
@@ -120,8 +127,33 @@ describe("signed in", () => {
     stubFetch(signedIn);
     render(<App />);
 
-    expect(await screen.findByText("person@acme.example")).toBeDefined();
     expect(await screen.findByText("Sales chart")).toBeDefined();
+    // With no avatar uploaded, the account button shows the email's initial.
+    expect(screen.getByRole("button", { name: "Profile" }).textContent).toContain("P");
+  });
+
+  test("opens the profile from the account button, and signs out from there", async () => {
+    let signedOutYet = false;
+    stubFetch((path) => {
+      if (path === "/api/auth/sign-out") signedOutYet = true;
+      if (signedOutYet) return signedOut(path);
+      return signedIn(path);
+    });
+    render(<App />);
+
+    const account = await screen.findByRole("button", { name: "Profile" });
+    expect(account.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(account);
+
+    expect(await screen.findByRole("heading", { name: "Profile" })).toBeDefined();
+    expect(window.location.pathname).toBe("/profile");
+    expect(screen.getByText("person@acme.example")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Profile" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeDefined();
   });
 
   test("opens the upload dialog from the gallery", async () => {
@@ -158,10 +190,9 @@ describe("artifact", () => {
     // keeps the document from navigating the tab away.
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
     expect(frame.getAttribute("src")).toBe("http://127.0.0.1:5173/preview/token");
-    // The masthead stays, so the account the artifact was opened under and the
-    // way back out are both real application chrome, outside the frame.
-    expect(screen.getByText("person@acme.example")).toBeDefined();
-    expect(screen.getByRole("button", { name: "Sign out" })).toBeDefined();
+    // The masthead stays, so the account the artifact was opened under is real
+    // application chrome, outside the frame.
+    expect(screen.getByRole("button", { name: "Profile" })).toBeDefined();
   });
 
   test("names the tab after the artifact, which is the only label it has", async () => {

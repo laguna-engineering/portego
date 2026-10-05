@@ -218,6 +218,19 @@ export const migrations: readonly Migration[] = [
         check (visibility in ('shared', 'private'));
     `,
   },
+  {
+    id: "012-user-avatars",
+    sql: `
+      create table userAvatars (
+        userId text not null primary key references "user" ("id") on delete cascade,
+        contentType text not null,
+        bytes blob not null,
+        updatedAt integer not null
+      );
+      create index artifactVersions_created_by on artifactVersions (createdBy, createdAt);
+      create index artifactComments_author on artifactComments (authorId, createdAt);
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

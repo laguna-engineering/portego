@@ -151,12 +151,41 @@ h3 {
   gap: 0.75rem;
 }
 
-.who {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  font-size: 0.85rem;
-  color: var(--ink-muted);
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--mark-1);
+  color: #ffffff;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.icon-button.icon-only.avatar-button {
+  padding: 2px;
+  border-radius: 50%;
+}
+
+/* Undoes the tooltip rule for spans in icon-only buttons. */
+.icon-button.icon-only .avatar {
+  position: static;
+  transform: none;
+  z-index: auto;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--mark-1);
+  color: #ffffff;
+  font-weight: 600;
+  opacity: 1;
 }
 
 /* The full-screen view: masthead on top, artifact over the rest. The frame
@@ -1475,23 +1504,33 @@ button.link {
   .masthead-menu-account {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 0.6rem;
+    width: 100%;
     padding: 0.65rem 1rem;
+    border: 0;
     border-top: 1px solid var(--line);
-    font-size: 0.8rem;
-    color: var(--ink-muted);
+    border-radius: 0;
+    background: none;
+    font-size: 0.9rem;
+    text-align: left;
   }
 
-  .masthead-menu-account span {
+  .masthead-menu-account:hover {
+    background: var(--surface-sunken);
+  }
+
+  .masthead-menu-account[aria-pressed="true"] .masthead-menu-account-label {
+    color: var(--accent);
+  }
+
+  .masthead-menu-account-email {
+    margin-left: auto;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .masthead-menu-account button {
-    flex: none;
-    color: var(--ink);
+    font-size: 0.8rem;
+    color: var(--ink-muted);
   }
 }
 
@@ -1834,4 +1873,275 @@ button.link {
   .selection-count {
     flex: 1;
   }
+}
+
+/* Profile ------------------------------------------------------------------ */
+
+.profile {
+  max-width: 56rem;
+  margin: 0 auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.profile h1 {
+  margin: 0 0 0.25rem;
+}
+
+.profile-panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  min-width: 0;
+}
+
+.profile-account {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.profile-identity dl,
+.profile-identity dd {
+  margin: 0;
+}
+
+.profile-identity dd {
+  overflow-wrap: anywhere;
+}
+
+.profile-identity dt {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  margin-bottom: 0.15rem;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.9rem;
+}
+
+.profile-identity .problem,
+.profile-identity .profile-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 36rem) {
+  .profile-account {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .profile-signout {
+    grid-column: 1 / -1;
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+  }
+}
+
+.activity-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.activity-head h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.activity-head p {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.activity-scroll {
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.activity-grid {
+  display: grid;
+  grid-template-rows: 1rem repeat(7, 0.7rem);
+  gap: 3px;
+  width: max-content;
+}
+
+.activity-month,
+.activity-dow {
+  font-size: 0.66rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  line-height: 0.7rem;
+}
+
+/* A month name is wider than its column, so it spills over the next ones. */
+.activity-month {
+  overflow: visible;
+  width: 0;
+}
+
+.activity-cell {
+  display: block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 2px;
+  background: var(--surface-sunken);
+}
+
+.activity-cell[data-label]:hover {
+  outline: 1px solid var(--ink-muted);
+  outline-offset: -1px;
+}
+
+.activity-panel {
+  position: relative;
+}
+
+/* Drawn like the icon-button tooltips, but above the cell. */
+.activity-tip {
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, calc(-100% - 6px));
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.4rem;
+  background: var(--ink);
+  color: var(--page);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.activity-cell.l1 {
+  background: color-mix(in oklab, var(--accent) 30%, var(--surface));
+}
+
+.activity-cell.l2 {
+  background: color-mix(in oklab, var(--accent) 55%, var(--surface));
+}
+
+.activity-cell.l3 {
+  background: color-mix(in oklab, var(--accent) 78%, var(--surface));
+}
+
+.activity-cell.l4 {
+  background: var(--accent);
+}
+
+.activity-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.activity-totals {
+  display: flex;
+  gap: 1rem 2.5rem;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.activity-totals dt {
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}
+
+.activity-totals dd {
+  margin: 0.1rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.activity-legend {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.66rem;
+  color: var(--ink-muted);
+}
+
+.activity-legend > span:first-child {
+  margin-right: 0.3rem;
+}
+
+.activity-legend > span:last-child {
+  margin-left: 0.3rem;
+}
+
+.avatar-crop {
+  width: min(22rem, 100%);
+}
+
+.avatar-crop-body {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.avatar-crop-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  /* What uncovered space looks like once saved: the avatar's own background. */
+  background: var(--mark-1);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.avatar-crop-frame:active {
+  cursor: grabbing;
+}
+
+.avatar-crop-frame img {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+}
+
+/* Dims the corners the round avatar hides. The saved image is the whole square. */
+.avatar-crop-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgb(0 0 0 / 0.45);
+  pointer-events: none;
+}
+
+.avatar-crop-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.avatar-crop-controls label {
+  margin: 0;
+}
+
+.avatar-crop-controls input {
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: none;
+  accent-color: var(--accent);
+}
+
+.avatar-crop .problem {
+  margin-bottom: 1rem;
 }

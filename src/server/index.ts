@@ -13,6 +13,7 @@ import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
 import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
+import { createProfileStore } from "./storage/profiles.ts";
 
 const env = parseEnv(Bun.env);
 const authConfig = parseAuthConfig(env, Bun.env);
@@ -49,6 +50,7 @@ const app = createApp({
   signingSecret: authConfig.secret,
   events,
   activity: createActivityStore({ database }),
+  profiles: createProfileStore({ database }),
 });
 
 const server = Bun.serve({

@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { Avatar } from "./Avatar.tsx";
 import logoMark from "./assets/logo-mark.png";
 import { CloseIcon, MenuIcon } from "./Icons.tsx";
 import { NotificationBell } from "./NotificationBell.tsx";
@@ -6,8 +7,12 @@ import type { ArtifactTarget } from "./router.ts";
 
 export type MastheadProps = {
   email: string;
+  /** The URL of the user's avatar, or null for their initial. */
+  avatar: string | null;
   onHome: () => void;
-  onSignOut: () => void;
+  onProfile: () => void;
+  /** Marks the account button as the current page. */
+  onProfilePage?: boolean;
   /** Opens an artifact picked from the notifications, on the version or comment it is about. */
   onOpenArtifact: (id: string, target?: ArtifactTarget) => void;
   /** Sits between the wordmark and the account, for a page that has its own chrome. */
@@ -22,8 +27,10 @@ export type MastheadProps = {
 
 export function Masthead({
   email,
+  avatar,
   onHome,
-  onSignOut,
+  onProfile,
+  onProfilePage = false,
   onOpenArtifact,
   children,
   trailing,
@@ -72,23 +79,33 @@ export function Masthead({
           />
           <div className="masthead-menu">
             {menu?.(() => setMenuOpen(false))}
-            <div className="masthead-menu-account">
-              <span>{email}</span>
-              <button type="button" onClick={onSignOut}>
-                Sign out
-              </button>
-            </div>
+            <button
+              type="button"
+              className="masthead-menu-account"
+              aria-pressed={onProfilePage}
+              onClick={() => {
+                setMenuOpen(false);
+                onProfile();
+              }}
+            >
+              <Avatar email={email} src={avatar} size="1.5rem" />
+              <span className="masthead-menu-account-label">Profile</span>
+              <span className="masthead-menu-account-email">{email}</span>
+            </button>
           </div>
         </>
       ) : null}
       <div className="masthead-end">
         {trailing}
-        <div className="who">
-          <span>{email}</span>
-          <button type="button" onClick={onSignOut}>
-            Sign out
-          </button>
-        </div>
+        <button
+          type="button"
+          className="icon-button icon-only avatar-button"
+          aria-pressed={onProfilePage}
+          onClick={onProfile}
+        >
+          <Avatar email={email} src={avatar} />
+          <span>Profile</span>
+        </button>
       </div>
       {notice ? (
         <div className="masthead-notice" role="status">

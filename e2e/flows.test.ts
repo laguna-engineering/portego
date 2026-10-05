@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Page } from "playwright";
+import type { Locator, Page } from "playwright";
 import { SELF_CONTAINED_ARTIFACT } from "../src/server/preview/fixtures/hostile.ts";
 import { type BrowserApp, startBrowserApp, uploadArtifact } from "./support.ts";
 
@@ -503,7 +503,7 @@ describe("the whole flow in a browser", () => {
       for (const { role, name } of CONTROLS) {
         expect(await page.getByRole(role, { name }).count()).toBe(0);
       }
-      expect(await page.getByRole("button", { name: "Sign out" }).count()).toBe(0);
+      expect(await page.getByRole("button", { name: /Profile/ }).count()).toBe(0);
 
       const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth);
       expect(scrollWidth).toBeLessThanOrEqual(390);
@@ -529,7 +529,7 @@ describe("the whole flow in a browser", () => {
       expect(await download.getAttribute("download")).not.toBeNull();
 
       expect(await menu.getByText("person@acme.example").isVisible()).toBe(true);
-      expect(await menu.getByRole("button", { name: "Sign out" }).isVisible()).toBe(true);
+      expect(await menu.getByRole("button", { name: /Profile/ }).isVisible()).toBe(true);
 
       const toggle = page.getByRole("button", { name: "Close menu" });
       expect(await toggle.getAttribute("aria-expanded")).toBe("true");
@@ -677,7 +677,7 @@ describe("the whole flow in a browser", () => {
       await context.close();
     });
 
-    test("opens a menu with Upload an artifact, the account email, and sign out", async () => {
+    test("opens a menu with Upload an artifact and the account", async () => {
       const { context, page } = await openOnPhone();
 
       await page.getByRole("button", { name: "Menu" }).click();
@@ -686,7 +686,7 @@ describe("the whole flow in a browser", () => {
 
       await menu.getByRole("button", { name: "Upload an artifact" }).waitFor();
       expect(await menu.getByText("person@acme.example").isVisible()).toBe(true);
-      expect(await menu.getByRole("button", { name: "Sign out" }).isVisible()).toBe(true);
+      expect(await menu.getByRole("button", { name: /Profile/ }).isVisible()).toBe(true);
 
       const toggle = page.getByRole("button", { name: "Close menu" });
       expect(await toggle.getAttribute("aria-expanded")).toBe("true");
@@ -709,12 +709,14 @@ describe("the whole flow in a browser", () => {
       await context.close();
     });
 
-    test("signs out from the menu", async () => {
+    test("signs out from the profile, opened from the menu", async () => {
       const { context, page } = await openOnPhone();
 
       await page.getByRole("button", { name: "Menu" }).click();
       const menu = page.locator(".masthead-menu");
-      await menu.getByRole("button", { name: "Sign out" }).click();
+      await menu.getByRole("button", { name: /Profile/ }).click();
+      expect(await menu.count()).toBe(0);
+      await page.getByRole("button", { name: "Sign out" }).click();
 
       await page.getByRole("button", { name: "Continue with Google" }).waitFor();
 
@@ -801,7 +803,7 @@ describe("the whole flow in a browser", () => {
       await menu.waitFor();
 
       expect(await menu.getByRole("button", { name: "Upload an artifact" }).count()).toBe(0);
-      expect(await menu.getByRole("button", { name: "Sign out" }).isVisible()).toBe(true);
+      expect(await menu.getByRole("button", { name: /Profile/ }).isVisible()).toBe(true);
 
       await context.close();
     });
@@ -1028,4 +1030,101 @@ describe("changes reach a page that is already open", () => {
     },
     TWO_BROWSERS_MS,
   );
+});
+
+describe("profile", () => {
+  /** A solid red 400 x 100 PNG, so any pixel the image does not cover is easy to tell apart. */
+  async function wideImage(page: Page): Promise<Buffer> {
+    const dataUrl = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 400;
+      canvas.height = 100;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("No 2D canvas");
+      context.fillStyle = "#ff0000";
+      context.fillRect(0, 0, 400, 100);
+      return canvas.toDataURL("image/png");
+    });
+    return Buffer.from(dataUrl.split(",")[1] ?? "", "base64");
+  }
+
+  /** The saved avatar's size, and the alpha and red of two of its pixels. */
+  async function savedAvatar(page: Page, src: string) {
+    return page.evaluate(async (url) => {
+      const bitmap = await createImageBitmap(await (await fetch(url)).blob());
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("No 2D canvas");
+      context.drawImage(bitmap, 0, 0);
+      const pixel = (x: number, y: number) => {
+        const [red, , , alpha] = context.getImageData(x, y, 1, 1).data;
+        return { red, alpha };
+      };
+      return {
+        width: bitmap.width,
+        height: bitmap.height,
+        corner: pixel(256, 10),
+        middle: pixel(256, 256),
+      };
+    }, src);
+  }
+
+  async function chooseAndCrop(page: Page, zoom: (input: Locator) => Promise<void>) {
+    await page.goto(`${app.server.origin}/profile`);
+    await page.setInputFiles('input[type="file"]', {
+      name: "wide.png",
+      mimeType: "image/png",
+      buffer: await wideImage(page),
+    });
+    const dialog = page.getByRole("dialog", { name: "Position your avatar" });
+    // The controls are disabled until the image has loaded and its size is known.
+    await dialog.locator("button.primary:not([disabled])").waitFor();
+    await zoom(dialog.getByLabel("Zoom"));
+    const frame = dialog.getByRole("group", { name: /Image position/ });
+    const box = await frame.boundingBox();
+    if (!box) throw new Error("The crop frame has no box");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2);
+    await page.mouse.up();
+    await dialog.getByRole("button", { name: "Save avatar" }).click();
+
+    // The dialog closes once the upload is done. Waiting for "Remove avatar"
+    // would not do: the tests share one user, who may have an avatar already.
+    await dialog.waitFor({ state: "detached" });
+    const src = await page.locator(".masthead .avatar img").getAttribute("src");
+    expect(src).toMatch(/^\/api\/me\/avatar\?v=\d+$/);
+    return savedAvatar(page, src as string);
+  }
+
+  test("crops a wide image to a square avatar and shows it in the masthead", async () => {
+    const context = await app.signedIn();
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    const saved = await chooseAndCrop(page, (input) => input.fill("2"));
+
+    expect(saved.width).toBe(512);
+    expect(saved.height).toBe(512);
+    // Zoomed in, the image covers the whole square.
+    expect(saved.corner).toEqual({ red: 255, alpha: 255 });
+
+    await context.close();
+  });
+
+  test("zooms out far enough to keep all of a wide image, leaving the rest transparent", async () => {
+    const context = await app.signedIn();
+    const page = await context.newPage();
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    const saved = await chooseAndCrop(page, (input) => input.press("Home"));
+
+    // 400 x 100 fitted to 512 wide is 128 tall, centred, so the top is empty.
+    expect(saved.corner.alpha).toBe(0);
+    expect(saved.middle).toEqual({ red: 255, alpha: 255 });
+
+    await context.close();
+  });
 });
