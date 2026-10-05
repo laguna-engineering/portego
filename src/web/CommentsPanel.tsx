@@ -3,6 +3,7 @@ import { Comments } from "./Comments.tsx";
 import { Entries } from "./Entries.tsx";
 import { formatBytes } from "./format.ts";
 import { CloseIcon } from "./Icons.tsx";
+import { MemberLink } from "./Member.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
 
 export type CommentsPanelProps = {
@@ -72,21 +73,24 @@ export function CommentsPanel({
             {versions.map((version) => {
               const isCurrent = version.id === currentVersionId;
               return (
-                <li key={version.id}>
+                <li
+                  key={version.id}
+                  className={version.id === viewedId ? "version-row selected" : "version-row"}
+                >
                   <button
                     type="button"
-                    className={version.id === viewedId ? "version-row selected" : "version-row"}
+                    className="row-button version-select"
                     aria-pressed={version.id === viewedId}
                     aria-label={`Version ${version.number}${isCurrent ? ", current" : ""}`}
                     onClick={() => onSelectVersion(version.id)}
                   >
                     <span className="version-number">v{version.number}</span>
                     {isCurrent ? <span className="badge">current</span> : null}
-                    <span className="version-meta">
-                      {version.creator.name} · <RelativeTime iso={version.createdAt} /> ·{" "}
-                      {formatBytes(version.byteSize)}
-                    </span>
                   </button>
+                  <span className="version-meta">
+                    <MemberLink id={version.creator.id}>{version.creator.name}</MemberLink> ·{" "}
+                    <RelativeTime iso={version.createdAt} /> · {formatBytes(version.byteSize)}
+                  </span>
                 </li>
               );
             })}

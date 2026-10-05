@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { artifactPath, galleryPath, readRoute } from "./router.ts";
+import { artifactPath, galleryPath, memberPath, readRoute } from "./router.ts";
 
 describe("readRoute", () => {
   test("reads the gallery and its search term from the URL", () => {
@@ -63,6 +63,18 @@ describe("readRoute", () => {
       versionId: null,
       commentId: null,
     });
+  });
+
+  test("reads a member's profile, and builds a path that reads back the same", () => {
+    expect(readRoute(new URL("http://app.test/u/user-1"))).toEqual({
+      name: "member",
+      id: "user-1",
+    });
+    expect(readRoute(new URL(`http://app.test${memberPath("a/b")}`))).toEqual({
+      name: "member",
+      id: "a/b",
+    });
+    expect(readRoute(new URL("http://app.test/u/"))).toEqual({ name: "unknown" });
   });
 
   test("reads the version an artifact link points at", () => {

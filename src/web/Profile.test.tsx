@@ -23,19 +23,27 @@ function stub(
     requests.push({ path, method: init?.method ?? "GET", body: init?.body });
     if (path === "/api/me/activity") return { body: activity };
     if (path === "/api/me/avatar") return { body: { avatar: null } };
+    if (path.startsWith("/api/users/me-id/activity")) {
+      return { body: { entries: [], total: 0, pageSize: 10 } };
+    }
     return { body: {} };
   });
   return requests;
 }
 
-function renderProfile(avatar: string | null = null) {
-  const changes: (string | null)[] = [];
+function renderProfile(avatar: string | null = null, displayName: string | null = null) {
+  const changes: unknown[] = [];
   render(
     <Profile
+      userId="me-id"
       email="person@acme.example"
+      displayName={displayName}
+      defaultName="A Person"
       avatar={avatar}
       onAvatarChange={(value) => changes.push(value)}
+      onDisplayNameChange={(names) => changes.push(names)}
       onSignOut={() => {}}
+      onOpenArtifact={() => {}}
     />,
   );
   return changes;
@@ -157,5 +165,90 @@ describe("avatar", () => {
 
     await waitFor(() => expect(changes).toEqual([null]));
     expect(requests.some((r) => r.path === "/api/me/avatar" && r.method === "DELETE")).toBe(true);
+  });
+});
+
+describe("display name", () => {
+  function stubNames(): Request[] {
+    const requests: Request[] = [];
+    stubFetch((path, init) => {
+      requests.push({ path, method: init?.method ?? "GET", body: init?.body });
+      if (path === "/api/me/display-name") {
+        const { displayName } = JSON.parse(String(init?.body)) as { displayName: string };
+        const chosen = displayName.trim() || null;
+        return {
+          body: { name: chosen ?? "A Person", displayName: chosen, defaultName: "A Person" },
+        };
+      }
+      if (path === "/api/me/activity") return { body: { uploads: [], versions: [], comments: [] } };
+      return { body: { entries: [], total: 0, pageSize: 10 } };
+    });
+    return requests;
+  }
+
+  test("offers the name sign-in recorded until the user chooses another, and saves the choice", async () => {
+    const requests = stubNames();
+    const changes = renderProfile();
+
+    const input = screen.getByLabelText("Display name") as HTMLInputElement;
+    expect(input.value).toBe("");
+    expect(input.placeholder).toBe("A Person");
+    // Nothing to save until the name differs from what is stored.
+    const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
+
+    fireEvent.change(input, { target: { value: "Ada" } });
+    fireEvent.click(save);
+
+    await waitFor(() =>
+      expect(changes).toEqual([{ name: "Ada", displayName: "Ada", defaultName: "A Person" }]),
+    );
+    const sent = requests.find((request) => request.path === "/api/me/display-name");
+    expect(sent?.method).toBe("PUT");
+    expect(JSON.parse(String(sent?.body))).toEqual({ displayName: "Ada" });
+    expect(screen.getByText("Saved.")).toBeDefined();
+  });
+
+  test("resets a chosen name to the one sign-in recorded", async () => {
+    stubNames();
+    const changes = renderProfile(null, "Ada");
+
+    expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe("Ada");
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    await waitFor(() =>
+      expect(changes).toEqual([{ name: "A Person", displayName: null, defaultName: "A Person" }]),
+    );
+    expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe("");
+  });
+
+  test("shows what the server refused and keeps the draft", async () => {
+    stubFetch((path) =>
+      path === "/api/me/display-name"
+        ? {
+            status: 400,
+            body: {
+              error: {
+                code: "INVALID_INPUT",
+                message: "The display name can be at most 80 characters.",
+              },
+            },
+          }
+        : path === "/api/me/activity"
+          ? { body: { uploads: [], versions: [], comments: [] } }
+          : { body: { entries: [], total: 0, pageSize: 10 } },
+    );
+    const changes = renderProfile();
+
+    const input = screen.getByLabelText("Display name") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Too long" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The display name can be at most 80 characters.",
+    );
+    expect(input.value).toBe("Too long");
+    expect(changes).toEqual([]);
   });
 });

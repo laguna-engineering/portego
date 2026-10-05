@@ -2,7 +2,12 @@ import { DEFAULT_GALLERY_SORT, type GallerySort } from "./router.ts";
 
 export type User = {
   id: string;
+  /** The name others see: `displayName` if set, else `defaultName`. */
   name: string;
+  /** The name the user chose, or null if they have not chosen one. */
+  displayName: string | null;
+  /** The name sign-in recorded. */
+  defaultName: string;
   email: string;
   image: string | null;
   /** The URL of the avatar the user uploaded, or null if they have none. */
@@ -345,6 +350,49 @@ export type ProfileActivity = { uploads: number[]; versions: number[]; comments:
 
 export function fetchProfileActivity(): Promise<ProfileActivity> {
   return request<ProfileActivity>("/api/me/activity");
+}
+
+export type MemberProfile = {
+  user: { id: string; name: string; joinedAt: number; avatar: string | null };
+  /** Artifacts the viewer can open that the member uploaded to or commented on. */
+  artifactCount: number;
+};
+
+export type HistoryKind = "created" | "updated" | "commented";
+
+export type HistoryEntry = {
+  /** The id of the version or comment. */
+  id: string;
+  kind: HistoryKind;
+  versionNumber: number | null;
+  createdAt: number;
+  artifact: { id: string; title: string; filename: string };
+};
+
+export type HistoryPage = { entries: HistoryEntry[]; total: number; pageSize: number };
+
+export function fetchMemberProfile(userId: string): Promise<MemberProfile> {
+  return request<MemberProfile>(`/api/users/${encodeURIComponent(userId)}`);
+}
+
+export function fetchMemberHistory(
+  userId: string,
+  options: { kind: HistoryKind | null; page: number },
+): Promise<HistoryPage> {
+  const search = new URLSearchParams({ page: String(options.page) });
+  if (options.kind) search.set("kind", options.kind);
+  return request<HistoryPage>(`/api/users/${encodeURIComponent(userId)}/activity?${search}`);
+}
+
+export type DisplayName = Pick<User, "name" | "displayName" | "defaultName">;
+
+/** An empty name goes back to the one sign-in recorded. */
+export function saveDisplayName(displayName: string): Promise<DisplayName> {
+  return request<DisplayName>("/api/me/display-name", {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ displayName }),
+  });
 }
 
 /** Returns the new avatar's URL. */

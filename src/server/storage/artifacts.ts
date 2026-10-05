@@ -7,6 +7,7 @@ import {
   writeContent,
   writeImage,
 } from "./content.ts";
+import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
 
 /**
  * Workflow state. `solved` means the question the artifact was shared for has
@@ -217,19 +218,20 @@ type VersionRow = {
 
 /** Artifact columns plus the creator's name and version facts, which every read needs. */
 const SELECT_ARTIFACT = `
-  select artifacts.*, "user".name as createdByName, "user".email as createdByEmail,
+  select artifacts.*, ${USER_NAME} as createdByName, "user".email as createdByEmail,
     (select count(*) from artifactVersions where artifactVersions.artifactId = artifacts.id)
       as versionCount,
     (select id from artifactVersions where artifactVersions.artifactId = artifacts.id
       order by number desc limit 1) as currentVersionId
-  from artifacts join "user" on "user".id = artifacts.createdBy`;
+  from artifacts join "user" on "user".id = artifacts.createdBy ${JOIN_DISPLAY_NAME}`;
 
 /** Takes the viewer's id, or null for nobody, as its one parameter. */
 export const VISIBLE = "(artifacts.visibility = 'shared' or artifacts.createdBy = ?)";
 
 const SELECT_VERSION = `
-  select artifactVersions.*, "user".name as createdByName, "user".email as createdByEmail
-  from artifactVersions join "user" on "user".id = artifactVersions.createdBy`;
+  select artifactVersions.*, ${USER_NAME} as createdByName, "user".email as createdByEmail
+  from artifactVersions join "user" on "user".id = artifactVersions.createdBy
+    ${JOIN_DISPLAY_NAME}`;
 
 function toArtifact(row: Row): Artifact {
   return {

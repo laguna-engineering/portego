@@ -12,12 +12,16 @@ import { Avatar } from "./Avatar.tsx";
 import { AvatarCropDialog } from "./AvatarCrop.tsx";
 import {
   ApiError,
+  type DisplayName,
   fetchProfileActivity,
   type ProfileActivity,
   removeAvatar,
+  saveDisplayName,
   uploadAvatar,
 } from "./api.ts";
 import { useNow } from "./clock.ts";
+import { ActivityList } from "./Member.tsx";
+import type { ArtifactTarget } from "./router.ts";
 
 /** The chosen file is cropped and re-encoded before upload, so it may be larger than what is saved. */
 const SOURCE_MAX_BYTES = 20 * 1024 * 1024;
@@ -235,16 +239,103 @@ function DayRow({ dow, weeks }: { dow: number; weeks: Day[][] }) {
   );
 }
 
+const DISPLAY_NAME_MAX_LENGTH = 80;
+
+function DisplayNameForm({
+  displayName,
+  defaultName,
+  onChange,
+}: {
+  displayName: string | null;
+  defaultName: string;
+  onChange: (names: DisplayName) => void;
+}) {
+  const [draft, setDraft] = useState(displayName ?? "");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const unchanged = draft.trim() === (displayName ?? "");
+
+  const save = async (value: string) => {
+    setBusy(true);
+    try {
+      const names = await saveDisplayName(value);
+      onChange(names);
+      setDraft(names.displayName ?? "");
+      setProblem(null);
+      setSaved(true);
+    } catch (error) {
+      setProblem(error instanceof ApiError ? error.message : "Could not save your name.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form
+      className="profile-name"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save(draft);
+      }}
+    >
+      <label htmlFor="display-name">Display name</label>
+      <div className="profile-name-row">
+        <input
+          id="display-name"
+          value={draft}
+          placeholder={defaultName}
+          maxLength={DISPLAY_NAME_MAX_LENGTH}
+          autoComplete="name"
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setSaved(false);
+          }}
+        />
+        <button type="submit" disabled={busy || unchanged}>
+          Save
+        </button>
+        {displayName !== null ? (
+          <button type="button" disabled={busy} onClick={() => void save("")}>
+            Reset
+          </button>
+        ) : null}
+      </div>
+      {problem ? (
+        <p className="problem" role="alert">
+          {problem}
+        </p>
+      ) : (
+        <p className="hint profile-note" role="status">
+          {saved
+            ? "Saved."
+            : `Shown on your profile, artifacts, and comments. Leave it empty to use ${defaultName}.`}
+        </p>
+      )}
+    </form>
+  );
+}
+
 export function Profile({
+  userId,
   email,
+  displayName,
+  defaultName,
   avatar,
   onAvatarChange,
+  onDisplayNameChange,
   onSignOut,
+  onOpenArtifact,
 }: {
+  userId: string;
   email: string;
+  displayName: string | null;
+  defaultName: string;
   avatar: string | null;
   onAvatarChange: (avatar: string | null) => void;
+  onDisplayNameChange: (names: DisplayName) => void;
   onSignOut: () => void;
+  onOpenArtifact: (id: string, target: ArtifactTarget) => void;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -327,6 +418,11 @@ export function Profile({
               You can zoom and position the image before it is saved.
             </p>
           )}
+          <DisplayNameForm
+            displayName={displayName}
+            defaultName={defaultName}
+            onChange={onDisplayNameChange}
+          />
         </div>
         <div className="profile-signout">
           <button type="button" onClick={onSignOut}>
@@ -335,6 +431,7 @@ export function Profile({
         </div>
       </section>
       <ActivityGraph />
+      <ActivityList userId={userId} heading="Recent activity" onOpenArtifact={onOpenArtifact} />
       {cropping ? (
         <AvatarCropDialog
           file={cropping}

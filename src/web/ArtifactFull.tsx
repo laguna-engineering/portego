@@ -37,6 +37,7 @@ import {
 } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
 import { Masthead } from "./Masthead.tsx";
+import { MemberLink } from "./Member.tsx";
 import { FolderPicker, TagPicker } from "./Organize.tsx";
 import {
   type BridgeMessage,
@@ -375,7 +376,9 @@ export function ArtifactFull({
     window.requestAnimationFrame(() => {
       const section = document.getElementById("versions");
       if (section?.parentElement) section.parentElement.scrollTop = 0;
-      section?.querySelector<HTMLElement>(".version-row.selected")?.focus({ preventScroll: true });
+      section
+        ?.querySelector<HTMLElement>(".version-row.selected .version-select")
+        ?.focus({ preventScroll: true });
     });
   }
 
@@ -605,7 +608,8 @@ export function ArtifactFull({
           ) : null}
         </div>
         <p className="detail-meta">
-          {artifact.creator.name} · <RelativeTime iso={artifact.createdAt} />
+          <MemberLink id={artifact.creator.id}>{artifact.creator.name}</MemberLink> ·{" "}
+          <RelativeTime iso={artifact.createdAt} />
           <span className="meta-extra">
             {" "}
             · {formatBytes(artifact.byteSize)} ·{" "}

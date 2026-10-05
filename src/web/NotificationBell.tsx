@@ -2,22 +2,24 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { type ActivityFeed, type ActivityItem, fetchActivity, markActivityRead } from "./api.ts";
 import { BellIcon } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
+import { MemberLink } from "./Member.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
 import type { ArtifactTarget } from "./router.ts";
 
+/** What the actor did, to follow their name. */
 function describe(item: ActivityItem): string {
-  const { actor, artifact } = item;
+  const { artifact } = item;
   switch (item.kind) {
     case "artifact.created":
-      return `${actor.name} uploaded ${artifact.title}`;
+      return `uploaded ${artifact.title}`;
     case "version.created":
-      return `${actor.name} uploaded version ${item.versionNumber} of ${artifact.title}`;
+      return `uploaded version ${item.versionNumber} of ${artifact.title}`;
     case "comment.created":
-      return `${actor.name} ${item.reply ? "replied" : "commented"} on ${artifact.title}`;
+      return `${item.reply ? "replied" : "commented"} on ${artifact.title}`;
     case "status.changed":
       return item.change === "solved"
-        ? `${actor.name} marked ${artifact.title} solved`
-        : `${actor.name} ${item.change} ${artifact.title}`;
+        ? `marked ${artifact.title} solved`
+        : `${item.change} ${artifact.title}`;
   }
 }
 
@@ -134,17 +136,26 @@ export function NotificationBell({
             ) : (
               <ul>
                 {feed.items.map((item) => (
-                  <li key={item.id}>
+                  <li
+                    key={item.id}
+                    className="activity-item"
+                    data-unread={isAfter(item, openedSince) || undefined}
+                  >
+                    <span>
+                      <MemberLink id={item.actor.id} onFollow={() => setOpen(false)}>
+                        {item.actor.name}
+                      </MemberLink>{" "}
+                      {describe(item)}
+                    </span>
                     <button
                       type="button"
-                      className="activity-item"
-                      data-unread={isAfter(item, openedSince) || undefined}
+                      className="row-button"
+                      aria-label={`${item.actor.name} ${describe(item)}`}
                       onClick={() => {
                         setOpen(false);
                         onOpenArtifact(item.artifact.id, targetOf(item));
                       }}
                     >
-                      <span>{describe(item)}</span>
                       <RelativeTime iso={item.createdAt} />
                     </button>
                   </li>

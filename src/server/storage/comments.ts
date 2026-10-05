@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
 
 /**
  * Points a comment at a passage of the artifact's rendered text. `quote` is
@@ -56,10 +57,11 @@ type Row = {
 };
 
 const SELECT_COMMENT = `
-  select artifactComments.*, "user".name as authorName, "user".email as authorEmail,
+  select artifactComments.*, ${USER_NAME} as authorName, "user".email as authorEmail,
     artifactVersions.number as versionNumber
   from artifactComments
     join "user" on "user".id = artifactComments.authorId
+    ${JOIN_DISPLAY_NAME}
     join artifactVersions on artifactVersions.id = artifactComments.versionId`;
 
 function toComment(row: Row): Comment {

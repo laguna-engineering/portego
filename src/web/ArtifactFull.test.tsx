@@ -1314,6 +1314,25 @@ describe("versions", () => {
     });
   }
 
+  test("links each version's creator to their profile without selecting the version", async () => {
+    stubTwoVersions();
+    renderFull({ versionId: "v2" });
+
+    await screen.findByRole("button", { name: "Version 1" });
+    const creators = screen.getAllByRole("link", { name: "A Person" });
+    expect(creators.map((link) => link.getAttribute("href"))).toContain("/u/user-1");
+    const rowLink = creators.find((link) => link.closest(".version-row"));
+    // A link inside the button would be invalid markup and hard to reach by keyboard.
+    expect(rowLink?.closest("button")).toBeNull();
+
+    await userEvent.click(rowLink as HTMLElement);
+    expect(window.location.pathname).toBe("/u/user-1");
+    expect(screen.getByRole("button", { name: "Version 1" }).getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    window.history.replaceState(null, "", "/");
+  });
+
   test("opens the panel on the version a link points at, then lets the link go", async () => {
     stubTwoVersions();
     let shown = 0;

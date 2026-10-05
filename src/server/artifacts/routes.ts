@@ -386,7 +386,7 @@ async function uploadFromForm(
   });
 }
 
-async function readJson(c: Context<AppEnv>): Promise<Record<string, unknown>> {
+export async function readJson(c: Context<AppEnv>): Promise<Record<string, unknown>> {
   try {
     const body = await c.req.json();
     if (!body || typeof body !== "object") throw new Error("not an object");

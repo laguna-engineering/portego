@@ -56,6 +56,14 @@ describe("data entries", () => {
     await screen.findByText("1 data entry");
   });
 
+  test("link each author to their profile", async () => {
+    stubFetch(() => ({ body: { entries: [entry()], schema: null } }));
+    render(<Entries artifactId="artifact-1" currentUserId="user-2" />);
+
+    await userEvent.click(await screen.findByText("1 data entry"));
+    expect(screen.getByRole("link", { name: "A Person" }).getAttribute("href")).toBe("/u/user-1");
+  });
+
   test("reload when someone else records an entry", async () => {
     let entries: Entry[] = [];
     stubFetch(() => ({ body: { entries, schema: null } }));
