@@ -66,10 +66,11 @@ registers this way leaves nothing behind.
 
 A client that accepts a pre-registered client id needs its document served
 somewhere the authorization server can fetch it: over HTTPS, with no redirect,
-and without a session. The application serves only `/assets/` from disk and
-answers every other path with `index.html`, so the document cannot go in a
-release. `deploy/nginx/portego.conf` serves one per client from an exact
-`location =` block instead.
+and without a session. The application serves only `/assets/` and `/branding/`
+from disk and answers every other path with `index.html`, so the document
+cannot go in a release. `deploy/nginx/portego.conf` serves one per client from
+an exact `location =` block instead, and the Compose example serves the files
+in `deploy/docker/mcp-clients/`.
 
 The document's `client_id` has to be its own URL. For a client whose callback
 is a loopback address:

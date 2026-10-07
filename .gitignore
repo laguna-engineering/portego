@@ -33,3 +33,6 @@ playwright-report/
 
 # OS
 .DS_Store
+
+# Docker Compose configuration with secrets
+deploy/docker/portego.env

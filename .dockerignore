@@ -1,0 +1,17 @@
+.git
+.github
+.claude
+.pi
+node_modules
+dist
+data
+.env
+.env.*
+!.env.example
+deploy
+docs
+e2e
+plugins
+test-results
+playwright-report
+*.log
