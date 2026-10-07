@@ -20,3 +20,9 @@ afterEach(cleanup);
 // a connection that does not exist.
 const { StubEventSource } = await import("./testing.ts");
 StubEventSource.install();
+
+// The server writes the deployment's name into every page it serves.
+const name = document.createElement("meta");
+name.name = "application-name";
+name.content = "Test App";
+document.head.append(name);

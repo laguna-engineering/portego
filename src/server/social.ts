@@ -5,7 +5,6 @@ import type { Auth } from "./auth/auth.ts";
 /** Same paths the client router treats as one artifact's page. */
 const ARTIFACT_PATH = /^\/a\/([^/]+)(?:\/full)?\/?$/;
 const EXCERPT_LENGTH = 200;
-const SITE_NAME = "Portego";
 
 export type PageMeta = {
   title: string;
@@ -62,9 +61,9 @@ function artifactIdFromPath(path: string): string | null {
 export function withSocialTags(
   html: string,
   meta: PageMeta | null,
-  page: { appOrigin: string; path: string },
+  page: { appOrigin: string; path: string; appName: string },
 ): string {
-  const title = meta?.title ?? SITE_NAME;
+  const title = meta?.title ?? page.appName;
   const tags = [
     `<meta property="og:title" content="${escapeHtml(title)}" />`,
     `<meta property="og:url" content="${escapeHtml(page.appOrigin + page.path)}" />`,
@@ -121,7 +120,7 @@ function truncate(text: string): string {
   return `${(lastSpace > 0 ? cut.slice(0, lastSpace) : cut).replace(/[\s.,;:]+$/, "")}…`;
 }
 
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")

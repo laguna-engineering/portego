@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { activityRoutes } from "./activity/routes.ts";
@@ -13,6 +15,7 @@ import {
   requireSameOrigin,
   requireUser,
 } from "./auth/middleware.ts";
+import { BRAND_STYLESHEET, type BrandingFile, matchesEtag, withBranding } from "./branding.ts";
 import type { EventBus } from "./events/bus.ts";
 import { eventRoutes } from "./events/routes.ts";
 import { createPrincipalResolver } from "./mcp/principal.ts";
@@ -30,6 +33,8 @@ export type AppOptions = {
   /** Serve the built Vite client from disk. Off in development, where Vite serves it. */
   serveClient: boolean;
   clientDist: string;
+  /** The content of each /branding/ name, from `loadBranding`. */
+  branding: ReadonlyMap<string, BrandingFile>;
   auth: Auth;
   authConfig: AuthConfig;
   artifacts: ArtifactService;
@@ -165,16 +170,32 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
 
   if (options.serveClient) {
     const root = options.clientDist;
+    const { appName } = options.authConfig;
+    // A deploy restarts the server, so the page cannot change while it runs.
+    const indexHtml = withBranding(readFileSync(join(root, "index.html"), "utf8"), {
+      appName,
+      stylesheet: options.branding.has(BRAND_STYLESHEET),
+    });
     app.use("/assets/*", serveStatic({ root }));
+    app.get("/branding/:name", (c) => {
+      const file = options.branding.get(c.req.param("name"));
+      if (file === undefined) return c.notFound();
+      // The names are not hashed, so the browser asks every time and a
+      // current copy costs an empty 304.
+      const headers = { "Cache-Control": "no-cache", ETag: file.etag };
+      if (matchesEtag(c.req.header("If-None-Match"), file.etag)) {
+        return new Response(null, { status: 304, headers });
+      }
+      return new Response(file.body, { headers: { ...headers, "Content-Type": file.type } });
+    });
     // Keep unknown API and asset paths a 404. The catch-all below answers every
     // other path with index.html so the client router can handle deep links.
     // A stale index.html naming a removed hashed asset would otherwise receive
     // HTML with status 200, and the browser would fail parsing it as JavaScript.
     app.all("/api/*", (c) => c.notFound());
     app.all("/assets/*", (c) => c.notFound());
+    app.all("/branding/*", (c) => c.notFound());
     app.get("*", async (c) => {
-      const file = Bun.file(`${root}/index.html`);
-      if (!(await file.exists())) return c.notFound();
       const meta = await pageMeta(c.req.path, c.req.raw.headers, {
         auth: options.auth,
         artifacts: options.artifacts,
@@ -185,7 +206,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
       // The sandbox leaves an artifact free to navigate its own frame, which
       // would carry whatever the page knows to another site in the URL.
       c.header("Content-Security-Policy", frameSourcePolicy(options.contentOrigin));
-      return c.html(withSocialTags(await file.text(), meta, { appOrigin, path: c.req.path }));
+      return c.html(withSocialTags(indexHtml, meta, { appOrigin, path: c.req.path, appName }));
     });
   }
 

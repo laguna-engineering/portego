@@ -12,6 +12,7 @@ import type { Auth } from "./auth/auth.ts";
 import type { AppEnv } from "./auth/middleware.ts";
 import type { ResolvedProvider } from "./auth/providers/index.ts";
 import { createTestAuth, signIn, type TestClaims } from "./auth/testing.ts";
+import { loadBranding } from "./branding.ts";
 import { databasePath, openDatabase } from "./db.ts";
 import { createEventBus, type EventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
@@ -93,6 +94,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
   const app = createApp({
     serveClient: options.serveClient ?? false,
     clientDist: "dist/client",
+    branding: loadBranding(undefined, "dist/client"),
     auth,
     authConfig: config,
     artifacts,

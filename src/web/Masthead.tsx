@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { Avatar } from "./Avatar.tsx";
-import logoMark from "./assets/logo-mark.png";
+import { appName } from "./branding.ts";
 import { CloseIcon, MenuIcon } from "./Icons.tsx";
 import { NotificationBell } from "./NotificationBell.tsx";
 import type { ArtifactTarget } from "./router.ts";
@@ -52,8 +52,8 @@ export function Masthead({
     <header className="masthead">
       <button type="button" className="wordmark" onClick={onHome}>
         {/* Decorative: the text beside it already names the button. */}
-        <img src={logoMark} alt="" width="22" height="22" />
-        <span className="wordmark-label" role="img" aria-label="portego" />
+        <img src="/branding/logo-mark.png" alt="" width="22" height="22" />
+        <span className="wordmark-label" role="img" aria-label={appName()} />
       </button>
       {children}
       <NotificationBell onOpenArtifact={onOpenArtifact} />

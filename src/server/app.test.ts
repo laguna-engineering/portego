@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createApp } from "./app.ts";
 import { createArtifactService } from "./artifacts/service.ts";
 import { createTestAuth, TEST_BASE_URL } from "./auth/testing.ts";
+import { loadBranding } from "./branding.ts";
 import { createEventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService } from "./organization/service.ts";
@@ -24,7 +25,11 @@ afterAll(() => {
 });
 
 /** These tests never reach the artifact routes, so nothing is written to disk. */
-async function createTestApp(options?: { serveClient: boolean; clientDist: string }) {
+async function createTestApp(options?: {
+  serveClient: boolean;
+  clientDist: string;
+  brandingDir?: string;
+}) {
   const { auth, config, database } = await createTestAuth();
   const events = createEventBus();
   const artifactStore = createArtifactStore({ database, dataDir: "data" });
@@ -36,6 +41,7 @@ async function createTestApp(options?: { serveClient: boolean; clientDist: strin
   return createApp({
     serveClient: options?.serveClient ?? false,
     clientDist: options?.clientDist ?? "dist/client",
+    branding: loadBranding(options?.brandingDir, options?.clientDist ?? "dist/client"),
     auth,
     authConfig: config,
     artifacts: createArtifactService({
@@ -193,6 +199,82 @@ describe("client routes", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  test("serves a deployment's branding over the defaults and names the page after it", async () => {
+    const cwd = process.cwd();
+    const dir = mkdtempSync(join(tmpdir(), "client-"));
+    mkdirSync(join(dir, "dist/client/branding"), { recursive: true });
+    mkdirSync(join(dir, "brand"));
+    writeFileSync(
+      join(dir, "dist/client/index.html"),
+      "<!doctype html><head><title>Portego</title></head>",
+    );
+    writeFileSync(join(dir, "dist/client/branding/logo-full.png"), "default-full");
+    writeFileSync(join(dir, "dist/client/branding/logo-mark.png"), "default-mark");
+    writeFileSync(join(dir, "brand/logo-mark.png"), "acme-mark");
+    writeFileSync(join(dir, "brand/brand.css"), ":root { --accent: red; }");
+    process.chdir(dir);
+
+    try {
+      const prod = await createTestApp({
+        serveClient: true,
+        clientDist: "dist/client",
+        brandingDir: "brand",
+      });
+
+      const mark = await prod.request("/branding/logo-mark.png");
+      expect(await mark.text()).toBe("acme-mark");
+      expect(mark.headers.get("cache-control")).toBe("no-cache");
+      // A browser holding the current copy gets an empty answer.
+      const etag = mark.headers.get("etag") ?? "";
+      const revalidated = await prod.request("/branding/logo-mark.png", {
+        headers: { "If-None-Match": etag },
+      });
+      expect(revalidated.status).toBe(304);
+      expect(await revalidated.text()).toBe("");
+
+      expect(await (await prod.request("/branding/logo-full.png")).text()).toBe("default-full");
+      const css = await prod.request("/branding/brand.css");
+      expect(css.headers.get("content-type")).toMatch(/css/);
+
+      // A missing or unknown file must not come back as index.html.
+      for (const path of ["/branding/favicon-32.png", "/branding/other.png", "/branding/a/b"]) {
+        const res = await prod.request(path);
+        expect(res.status).toBe(404);
+        expect(res.headers.get("content-type")).not.toMatch(/html/);
+      }
+
+      const page = await (await prod.request("/")).text();
+      expect(page).toContain("<title>Test App</title>");
+      expect(page).toContain('<link rel="stylesheet" href="/branding/brand.css" />');
+    } finally {
+      process.chdir(cwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("reads index.html once at startup, and refuses to start without it", async () => {
+    const cwd = process.cwd();
+    const dir = mkdtempSync(join(tmpdir(), "client-"));
+    mkdirSync(join(dir, "dist/client"), { recursive: true });
+    process.chdir(dir);
+
+    try {
+      // Every route would answer 404, which looks like a running server.
+      await expect(createTestApp({ serveClient: true, clientDist: "dist/client" })).rejects.toThrow(
+        /index\.html/,
+      );
+
+      writeFileSync(join(dir, "dist/client/index.html"), "<head><title>First</title></head>");
+      const prod = await createTestApp({ serveClient: true, clientDist: "dist/client" });
+      writeFileSync(join(dir, "dist/client/index.html"), "<head><title>Second</title></head>");
+      expect(await (await prod.request("/")).text()).toContain("<title>Test App</title>");
+      expect(await (await prod.request("/")).text()).not.toContain("Second");
+    } finally {
+      process.chdir(cwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("GET * (social tags)", () => {
@@ -277,8 +359,8 @@ describe("GET * (social tags)", () => {
     try {
       const res = await server.app.request("/a/does-not-exist");
       const body = await res.text();
-      expect(body).toContain('<meta property="og:title" content="Portego" />');
-      expect(body).toContain("<title>Portego</title>");
+      expect(body).toContain('<meta property="og:title" content="Test App" />');
+      expect(body).toContain("<title>Test App</title>");
       expect(body).not.toContain('name="description"');
       expect(body).not.toContain("og:description");
     } finally {
@@ -302,8 +384,8 @@ describe("GET * (social tags)", () => {
 
       const res = await server.app.request(`/a/${artifact.id}`, { headers: { cookie } });
       const body = await res.text();
-      expect(body).toContain('<meta property="og:title" content="Portego" />');
-      expect(body).toContain("<title>Portego</title>");
+      expect(body).toContain('<meta property="og:title" content="Test App" />');
+      expect(body).toContain("<title>Test App</title>");
       expect(body).not.toContain("og:description");
     } finally {
       server.cleanup();
@@ -332,7 +414,7 @@ describe("GET * (social tags)", () => {
       // An unfurler sends no cookie, so a pasted link must not reveal the title.
       for (const headers of [{}, { cookie: other }] as Record<string, string>[]) {
         const body = await (await server.app.request(`/a/${artifact.id}`, { headers })).text();
-        expect(body).toContain('<meta property="og:title" content="Portego" />');
+        expect(body).toContain('<meta property="og:title" content="Test App" />');
         expect(body).not.toContain("Draft plan");
       }
       const own = await (
