@@ -3,7 +3,7 @@ import { z } from "zod";
 const schema = z
   .object({
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
-    // Shown on the sign-in page and by the OAuth consent screen.
+    // Written into every page and shown by the OAuth consent screen.
     APP_NAME: z.string().min(1).default("Portego"),
     HOST: z.string().min(1).default("127.0.0.1"),
     PORT: z.coerce.number().int().min(1).max(65535).default(3000),
@@ -14,6 +14,9 @@ const schema = z
       .min(1)
       .refine((value) => !value.startsWith("/"), "must be relative to the working directory")
       .default("dist/client"),
+    // Replaces the logos, icons, and social image, and adds a stylesheet.
+    // docs/branding.md lists the file names.
+    BRANDING_DIR: z.string().min(1).optional(),
     SESSION_SECRET: z.string().min(32).optional(),
     // The public origin of the application. OAuth callback URLs are built from
     // it, so it must match what the browser used, not what the server bound to.

@@ -134,6 +134,8 @@ value is absent.
 
 [docs/deployment.md](docs/deployment.md) covers a single-host deployment: nginx, the
 systemd units, certificates, and the deploy and rollback commands.
+[docs/branding.md](docs/branding.md) covers replacing the name, logos, and
+colors.
 
 ## Commands
 

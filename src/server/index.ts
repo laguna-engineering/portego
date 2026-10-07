@@ -3,6 +3,7 @@ import { maxUploadRequestBytes } from "./artifacts/routes.ts";
 import { createArtifactService } from "./artifacts/service.ts";
 import { createAuth } from "./auth/auth.ts";
 import { parseAuthConfig } from "./auth/config.ts";
+import { loadBranding } from "./branding.ts";
 import { databasePath, openDatabase } from "./db.ts";
 import { parseEnv } from "./env.ts";
 import { createEventBus } from "./events/bus.ts";
@@ -42,6 +43,7 @@ const artifacts = createArtifactService({
 const app = createApp({
   serveClient: env.NODE_ENV === "production",
   clientDist: env.CLIENT_DIST,
+  branding: loadBranding(env.BRANDING_DIR, env.CLIENT_DIST),
   auth,
   authConfig,
   artifacts,

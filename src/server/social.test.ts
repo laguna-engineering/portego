@@ -58,7 +58,7 @@ describe("excerpt", () => {
 });
 
 describe("withSocialTags", () => {
-  const page = { appOrigin: "https://portego.example", path: "/a/abc123" };
+  const page = { appOrigin: "https://portego.example", path: "/a/abc123", appName: "Acme Share" };
   const html =
     "<!doctype html><html><head><title>Portego</title>" +
     '<meta property="og:image" content="/assets/logo-full-abc.png" />' +
@@ -71,9 +71,9 @@ describe("withSocialTags", () => {
     );
   });
 
-  test("falls back to the generic title and leaves <title> unchanged for a non-artifact page", () => {
+  test("falls back to the deployment's name and leaves <title> unchanged for a non-artifact page", () => {
     const result = withSocialTags(html, null, page);
-    expect(result).toContain('<meta property="og:title" content="Portego" />');
+    expect(result).toContain('<meta property="og:title" content="Acme Share" />');
     expect(result).toContain("<title>Portego</title>");
     expect(result).not.toContain('name="description"');
     expect(result).not.toContain("og:description");

@@ -78,7 +78,7 @@ describe("the whole flow in a browser", () => {
     expect(source?.startsWith(app.server.origin)).toBe(false);
 
     // The wordmark leads back to the gallery, which lists it, and the search finds it.
-    await page.getByRole("button", { name: "portego" }).click();
+    await page.getByRole("button", { name: "Test App" }).click();
     await page.getByText("Quarterly chart").waitFor();
 
     await page.getByLabel("Search artifacts").fill("Quarterly");
