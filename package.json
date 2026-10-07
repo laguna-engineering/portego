@@ -31,9 +31,9 @@
   "dependencies": {
     "@better-auth/cimd": "1.7.4",
     "@better-auth/mcp": "1.7.4",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.31.0",
     "better-auth": "1.7.4",
-    "hono": "4.13.5",
+    "hono": "4.13.7",
     "marked": "18.0.13",
     "parse5": "8.0.1",
     "react": "19.2.8",
@@ -57,5 +57,8 @@
     "playwright": "1.62.1",
     "typescript": "7.0.2",
     "vite": "8.2.2"
+  },
+  "overrides": {
+    "shell-quote": "1.11.0"
   }
 }
