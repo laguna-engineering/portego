@@ -11,7 +11,7 @@
     "dev:issuer": "bun run scripts/dev-issuer.ts",
     "build": "bun run build:web && bun run build:server",
     "build:web": "vite build",
-    "build:server": "bun build src/server/index.ts --target=bun --outdir dist/server",
+    "build:server": "bun build src/server/index.ts src/server/migrate.ts --target=bun --outdir dist/server",
     "migrate": "bun run src/server/migrate.ts",
     "reconcile": "bun run src/server/storage/reconcile.ts",
     "merge-artifacts": "bun run src/server/storage/merge.ts",

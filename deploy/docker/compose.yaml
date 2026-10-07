@@ -1,0 +1,53 @@
+# docs/docker.md explains each setting. From this directory:
+#   cp ../../.env.example portego.env    # then fill it in
+#   printf 'APP_HOST=share.acme.example\nCONTENT_HOST=content.share.acme.example\n' > .env
+#   docker compose up -d
+
+x-portego: &portego
+  build: ../..
+  image: portego:local
+  env_file: portego.env
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  volumes:
+    - data:/var/lib/portego
+    # With BRANDING_DIR=/etc/portego/branding in portego.env:
+    # - ./branding:/etc/portego/branding:ro
+
+services:
+  # The server never changes the schema itself. This runs first on every start
+  # and exits once the schema is current.
+  migrate:
+    <<: *portego
+    command: ["bun", "dist/server/migrate.js"]
+
+  app:
+    <<: *portego
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      APP_HOST: ${APP_HOST:?set APP_HOST in .env}
+      CONTENT_HOST: ${CONTENT_HOST:?set CONTENT_HOST in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./mcp-clients:/srv/mcp-clients:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [app]
+    restart: unless-stopped
+
+volumes:
+  data:
+  caddy-data:
+  caddy-config:

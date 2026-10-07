@@ -65,6 +65,16 @@ jobs:
       - name: Tests
         run: bun run test:ci
 
+  image:
+    name: Container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build, migrate, start, and check the image
+        run: scripts/docker-smoke.sh
+
   audit:
     name: Dependency audit
     runs-on: ubuntu-latest
