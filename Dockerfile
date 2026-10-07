@@ -20,7 +20,10 @@ ENV NODE_ENV=production \
     DATA_DIR=/var/lib/portego \
     CLIENT_DIST=dist/client
 COPY --from=build /src/dist ./dist
-RUN mkdir -p /var/lib/portego && chown bun:bun /var/lib/portego
+# With no node_modules, Bun would try to install an optional import the bundles
+# leave unresolved (@opentelemetry/api, from better-auth) on every start.
+RUN printf '[install]\nauto = "disable"\n' > bunfig.toml \
+ && mkdir -p /var/lib/portego && chown bun:bun /var/lib/portego
 USER bun
 VOLUME /var/lib/portego
 EXPOSE 3000
