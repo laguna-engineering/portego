@@ -2,12 +2,22 @@
 
 The [`Dockerfile`](../Dockerfile) builds one image that every deployment can
 use. Configuration comes from environment variables, branding from a mounted
-directory, and data lives on a volume. No registry publishes the image yet, so
-build it from a checkout:
+directory, and data lives on a volume. Each server release publishes it for
+`linux/amd64` and `linux/arm64`:
+
+```sh
+docker pull ghcr.io/laguna-engineering/portego:v26.41.2
+```
+
+The release tag, such as `v26.41.2`, names a fixed version. `latest` follows the
+newest release. To build the image from a checkout instead:
 
 ```sh
 docker build -t portego .
 ```
+
+The examples below use `portego` as the image name. Replace it with
+`ghcr.io/laguna-engineering/portego:<tag>` to use the published image.
 
 [`deploy/docker/`](../deploy/docker) holds a Compose example with the
 application, the migration step, and Caddy as the TLS proxy for both
@@ -99,11 +109,13 @@ From `deploy/docker/`:
 ```sh
 cp ../../.env.example portego.env    # fill in the production values
 printf 'APP_HOST=share.acme.example\nCONTENT_HOST=content.share.acme.example\n' > .env
+printf 'PORTEGO_VERSION=v26.41.2\n' >> .env
 docker compose up -d
 ```
 
 `portego.env` configures the application. `.env` gives Caddy the two hostnames,
-which must match `APP_URL` and `CONTENT_URL`. Caddy obtains and renews their
+which must match `APP_URL` and `CONTENT_URL`, and sets `PORTEGO_VERSION`, the
+image tag to run. Without it, Compose runs `latest`. Caddy obtains and renews their
 certificates, so ports 80 and 443 must be reachable from the internet.
 
 The Caddyfile mirrors [deploy/nginx/portego.conf](../deploy/nginx/portego.conf):
@@ -117,8 +129,9 @@ The Caddyfile mirrors [deploy/nginx/portego.conf](../deploy/nginx/portego.conf):
   [docs/mcp.md](mcp.md#hosting-a-metadata-document).
 - It sends HSTS, the one security header the application leaves to the proxy.
 
-`docker compose up -d --build` rebuilds the image after a pull, and runs the
-migration again before the application restarts.
+To upgrade, change `PORTEGO_VERSION` and run `docker compose up -d`. Compose
+pulls the new image and runs the migration again before the application
+restarts.
 
 ## Testing the image
 
