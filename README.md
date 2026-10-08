@@ -335,7 +335,8 @@ hosting a client metadata document, the tools, how a client sends a file
 without putting it in a tool argument, and how to connect each client. The
 local plugin can also create and validate an artifact in a configurable style;
 [docs/artifact-styles.md](docs/artifact-styles.md) defines the style format and
-resolution order.
+resolution order. [docs/custom-plugin.md](docs/custom-plugin.md) covers building
+the plugin and npm package under a company's own name.
 
 ## Uploaded HTML
 
