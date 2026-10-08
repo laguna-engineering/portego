@@ -19,7 +19,8 @@ The first available style wins:
 2. `PORTEGO_ARTIFACT_STYLE`, including the Claude plugin's `style` setting.
 3. `.portego/artifact-style/`, searched from the working directory through its parents.
 4. `$XDG_CONFIG_HOME/portego/artifact-style/`, or `~/.config/portego/artifact-style/`.
-5. The Portego style bundled with `portego-upload`.
+5. The style bundled with the tool: the Portego style, or the one a company
+   built into its own copy ([docs/custom-plugin.md](custom-plugin.md)).
 
 An explicit path can name the directory or its `manifest.json`.
 

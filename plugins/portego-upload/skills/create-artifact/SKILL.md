@@ -26,7 +26,7 @@ Portego gives the page `window.portego`:
 - `window.portego.entries`: every entry, as `{ key, value, authorId, author, updatedAt }`. `author` is a name; use `authorId` to tell people apart.
 - A `portego:entries` event on `window`, with the list in `event.detail`, fired after load and after every change. Render from this event; the list is empty until it first fires.
 - `window.portego.set(key, value)` and `window.portego.clear(key)`, which change the reader's own entry. Portego makes the change only while the reader's click is active, so call them from a click handler, never on load or on a timer.
-- `window.portego.renderComment(text, element)`, which fills `element` with `text` formatted like a Portego comment: http(s) links, `` `code` ``, `*bold*`, `_italic_`, and `~strikethrough~`. Use it to show free text readers wrote, such as a proposal's description, never `innerHTML`.
+- `window.portego.renderComment(text, element)`, which fills `element` with `text` formatted like a comment in Portego: http(s) links, `` `code` ``, `*bold*`, `_italic_`, and `~strikethrough~`. Use it to show free text readers wrote, such as a proposal's description, never `innerHTML`.
 
 Keys are 1 to 200 printable characters with no spaces, such as `vote:P-01`. A value is at most 4000 bytes of JSON, and all values on an artifact at most 1 MiB together. Entries suit votes, polls, and proposals. They do not prove what a reader decided, because any recent click in Portego lets the page write, so never use them for approvals or sign-offs.
 

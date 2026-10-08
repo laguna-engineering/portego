@@ -22,6 +22,17 @@ describe("choosing the deployment", () => {
   test("has no answer before the first setup", () => {
     expect(resolveOrigin({ store: { tokens: {} } })).toBeUndefined();
   });
+
+  // A company's build names its deployment, but a person who set up another
+  // one, or a project that points elsewhere, keeps that choice.
+  test("uses the deployment a company's build names only when nothing else names one", () => {
+    const fallback = "https://share.acme.example";
+    expect(resolveOrigin({ store: { tokens: {} }, fallback })).toBe(fallback);
+    expect(resolveOrigin({ store, fallback })).toBe("https://main.example");
+    expect(resolveOrigin({ env: "https://project.example", store: { tokens: {} }, fallback })).toBe(
+      "https://project.example",
+    );
+  });
 });
 
 describe("the credentials file", () => {

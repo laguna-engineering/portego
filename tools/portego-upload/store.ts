@@ -39,14 +39,17 @@ export function parseStore(text: string | null): Store {
 
 /**
  * PORTEGO_ORIGIN wins, so a project can point at another deployment without
- * changing the default that every other project uses.
+ * changing the default that every other project uses. `fallback`, the
+ * deployment a company's build names, comes last so a person's own choice
+ * overrides it.
  */
 export function resolveOrigin(sources: {
   env?: string;
   argument?: string;
   store: Store;
+  fallback?: string;
 }): string | undefined {
-  const origin = sources.env || sources.argument || sources.store.defaultOrigin;
+  const origin = sources.env || sources.argument || sources.store.defaultOrigin || sources.fallback;
   return origin ? normalizeOrigin(origin) : undefined;
 }
 

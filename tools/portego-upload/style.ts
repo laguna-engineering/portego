@@ -6,6 +6,7 @@ import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 
 import { fileURLToPath } from "node:url";
 import { type DefaultTreeAdapterTypes, parse } from "parse5";
 import { z } from "zod";
+import { brand } from "./brand.ts";
 import {
   checkImageLimits,
   cssUrls,
@@ -100,9 +101,22 @@ function bundledStyleRoot(): string {
   const candidates = [join(here, "style", "portego"), join(here, "..", "style", "portego")];
   const root = candidates.find((candidate) => existsSync(join(candidate, "manifest.json")));
   if (!root) {
-    throw new ArtifactStyleError("The bundled Portego artifact style is missing.");
+    throw new ArtifactStyleError("The bundled artifact style is missing.");
   }
   return root;
+}
+
+/**
+ * The style used when nothing else selects one. A company's build bundles its
+ * own under style/default/, next to the Portego style it may extend.
+ */
+function bundledDefaultRoot(): string {
+  const here = moduleDirectory();
+  const candidates = [join(here, "style", "default"), join(here, "..", "style", "default")];
+  return (
+    candidates.find((candidate) => existsSync(join(candidate, "manifest.json"))) ??
+    bundledStyleRoot()
+  );
 }
 
 function styleRoot(path: string): string {
@@ -246,14 +260,16 @@ export async function resolveArtifactStyle(
   const user = join(configHome, "portego", "artifact-style");
   if (existsSync(join(user, "manifest.json"))) return loadStyle(user, "user");
 
-  return loadStyle(bundledStyleRoot(), "bundled");
+  return loadStyle(bundledDefaultRoot(), "bundled");
 }
 
 export async function summarizeArtifactStyle(style: ArtifactStyle): Promise<StyleSummary> {
   const instructions = await Promise.all(
     style.instructionFiles.map(async (path) => {
       const text = await readFile(path, "utf8");
-      return `# ${basename(dirname(path)) === "portego" ? "Portego" : basename(dirname(path))}\n\n${text.trim()}`;
+      const directory = basename(dirname(path));
+      const heading = directory === "portego" || directory === "default" ? brand.name : directory;
+      return `# ${heading}\n\n${text.trim()}`;
     }),
   );
   return {
@@ -403,7 +419,7 @@ async function inlineCssAssets(file: StyleFile): Promise<string> {
 function defaultFinalPath(path: string): string {
   const extension = extname(path);
   const stem = extension ? basename(path, extension) : basename(path);
-  return join(dirname(path), `${stem}.portego.html`);
+  return join(dirname(path), `${stem}.${brand.slug}.html`);
 }
 
 export async function finalizeArtifact(options: {
@@ -611,7 +627,7 @@ export function validateArtifactHtml(html: string, maxBytes = DEFAULT_MAX_BYTES)
       add({
         level: "error",
         code: "blocked-embed",
-        message: `<${node.tagName}> cannot render under Portego's artifact policy.`,
+        message: `<${node.tagName}> cannot render under ${brand.name}'s artifact policy.`,
       });
     }
     if (node.tagName === "form" && attrs.action) {
@@ -652,7 +668,7 @@ export function validateArtifactHtml(html: string, maxBytes = DEFAULT_MAX_BYTES)
         add({
           level: "error",
           code: "script-network",
-          message: "An inline script attempts network access, which Portego blocks.",
+          message: `An inline script attempts network access, which ${brand.name} blocks.`,
         });
       }
     }
