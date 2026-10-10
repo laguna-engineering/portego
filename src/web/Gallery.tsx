@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ArtifactCard } from "./ArtifactCard.tsx";
-import { ApiError, type Artifact, fetchArtifacts } from "./api.ts";
-import { CloseIcon, FolderIcon, TagIcon } from "./Icons.tsx";
+import { ApiError, type Artifact, fetchArtifacts, setArtifactStatus } from "./api.ts";
+import { CheckIcon, CloseIcon, FolderIcon, ReopenIcon, TagIcon } from "./Icons.tsx";
 import { useLiveEvents } from "./live.ts";
 import { FolderPicker, TagPicker } from "./Organize.tsx";
 import { GALLERY_SORTS, type GalleryFilters, type GallerySort, ROOT_FOLDER_ID } from "./router.ts";
@@ -46,6 +46,8 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
   const [stale, setStale] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [organizing, setOrganizing] = useState<"folder" | "tags" | null>(null);
+  const [changingStatus, setChangingStatus] = useState(false);
+  const [statusProblem, setStatusProblem] = useState<string | null>(null);
   const moved = useRef(false);
   const request = useRef(0);
 
@@ -113,9 +115,12 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
 
   const selected = selectedIds.flatMap((id) => items.find((item) => item.id === id) ?? []);
   const selecting = selected.length > 0;
+  const allSolved = selected.every((artifact) => artifact.status === "solved");
 
   useEffect(() => {
-    if (!selecting) setOrganizing(null);
+    if (selecting) return;
+    setOrganizing(null);
+    setStatusProblem(null);
   }, [selecting]);
 
   useEffect(() => {
@@ -135,6 +140,25 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
 
   function replaceItem(changed: Artifact) {
     setItems((current) => current.map((item) => (item.id === changed.id ? changed : item)));
+  }
+
+  async function toggleSolved() {
+    const next = allSolved ? "open" : "solved";
+    setChangingStatus(true);
+    setStatusProblem(null);
+    try {
+      await Promise.all(
+        selected
+          .filter((artifact) => artifact.status !== next)
+          .map(async (artifact) => replaceItem(await setArtifactStatus(artifact.id, next))),
+      );
+    } catch (error) {
+      setStatusProblem(
+        error instanceof ApiError ? error.message : "That change did not go through.",
+      );
+    } finally {
+      setChangingStatus(false);
+    }
   }
 
   function closeOrganizing() {
@@ -339,6 +363,15 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
             <TagIcon />
             <span>Tags</span>
           </button>
+          <button
+            type="button"
+            className="icon-button"
+            disabled={changingStatus}
+            onClick={() => void toggleSolved()}
+          >
+            {allSolved ? <ReopenIcon /> : <CheckIcon />}
+            <span>{allSolved ? "Reopen" : "Mark solved"}</span>
+          </button>
           {organizing === "folder" ? (
             <FolderPicker
               artifacts={selected}
@@ -351,6 +384,11 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
           ) : null}
           {organizing === "tags" ? (
             <TagPicker artifacts={selected} onChanged={replaceItem} onClose={closeOrganizing} />
+          ) : null}
+          {statusProblem ? (
+            <p className="problem" role="alert">
+              {statusProblem}
+            </p>
           ) : null}
         </div>
       ) : null}

@@ -488,6 +488,13 @@ describe("selecting", () => {
   ) {
     const changes: { id: string; body: Record<string, unknown> }[] = [];
     stubFetch((path, init) => {
+      const status = path.match(/^\/api\/artifacts\/([^/]+)\/status$/);
+      if (status?.[1] && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        changes.push({ id: status[1], body });
+        const current = items.find((item) => item.id === status[1]);
+        return { body: { artifact: { ...current, status: body.status } } };
+      }
       const change = path.match(/^\/api\/artifacts\/([^/]+)\/organization$/);
       if (change?.[1] && init?.method === "PATCH") {
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
@@ -691,6 +698,49 @@ describe("selecting", () => {
       { id: "alpha", body: { tagIds: [] } },
       { id: "beta", body: { tagIds: [] } },
     ]);
+  });
+
+  test("marks the open artifacts in the selection solved, and keeps the selection so it can be undone", async () => {
+    const changes = stubSelection([
+      artifact({ id: "alpha", title: "Alpha", status: "solved" }),
+      artifact({ id: "beta", title: "Beta" }),
+    ]);
+    renderGallery();
+    await screen.findByText("Alpha");
+    await longPress("Alpha");
+    await userEvent.click(card("Beta"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Mark solved" }));
+    // Alpha is already solved, so only Beta changes.
+    await screen.findByRole("button", { name: "Reopen" });
+    expect(changes).toEqual([{ id: "beta", body: { status: "solved" } }]);
+    expect(screen.getByText("2 selected")).toBeDefined();
+
+    await userEvent.click(screen.getByRole("button", { name: "Reopen" }));
+    await screen.findByRole("button", { name: "Mark solved" });
+    expect(changes.slice(1).sort((a, b) => a.id.localeCompare(b.id))).toEqual([
+      { id: "alpha", body: { status: "open" } },
+      { id: "beta", body: { status: "open" } },
+    ]);
+  });
+
+  test("says so when a status change fails, and leaves the cards as they were", async () => {
+    stubFetch((_path, init) => {
+      if (init?.method === "PATCH") {
+        return {
+          status: 404,
+          body: { error: { code: "NOT_FOUND", message: "Artifact not found." } },
+        };
+      }
+      return { body: { items: [artifact({ id: "alpha", title: "Alpha" })], nextCursor: null } };
+    });
+    renderGallery();
+    await screen.findByText("Alpha");
+    await longPress("Alpha");
+
+    await userEvent.click(screen.getByRole("button", { name: "Mark solved" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Artifact not found.");
+    expect(screen.getByRole("button", { name: "Mark solved" })).toBeDefined();
   });
 });
 

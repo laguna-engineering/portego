@@ -1997,6 +1997,7 @@ button.link {
   transform: translateX(-50%);
   z-index: 12;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
@@ -2010,6 +2011,10 @@ button.link {
   margin: 0 0.5rem 0 0;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.selection-bar .problem {
+  flex-basis: 100%;
 }
 
 /* The bar sits at the bottom of the window, so its panel and tooltip open upward. */
