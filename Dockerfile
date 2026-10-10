@@ -3,7 +3,9 @@
 # The version CI tests with.
 ARG BUN_VERSION=1.4.0
 
-FROM oven/bun:${BUN_VERSION} AS build
+# The build output is JavaScript and static files, so one build on the
+# runner's platform serves every target platform.
+FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION} AS build
 WORKDIR /src
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile

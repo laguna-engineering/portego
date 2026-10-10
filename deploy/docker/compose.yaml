@@ -1,11 +1,11 @@
 # docs/docker.md explains each setting. From this directory:
 #   cp ../../.env.example portego.env    # then fill it in
 #   printf 'APP_HOST=share.acme.example\nCONTENT_HOST=content.share.acme.example\n' > .env
+#   printf 'PORTEGO_VERSION=v26.41.2\n' >> .env    # the image tag, latest if unset
 #   docker compose up -d
 
 x-portego: &portego
-  build: ../..
-  image: portego:local
+  image: ghcr.io/laguna-engineering/portego:${PORTEGO_VERSION:-latest}
   env_file: portego.env
   read_only: true
   tmpfs: [/tmp]
