@@ -492,8 +492,8 @@ describe("embedding", () => {
       />,
     );
 
-    await screen.findByText("A thought");
-    expect(reported.at(-1)).toEqual(listed);
+    // The list is reported from an effect, which can run after the text shows.
+    await waitFor(() => expect(reported.at(-1)).toEqual(listed));
   });
 });
 
