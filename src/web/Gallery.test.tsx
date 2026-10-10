@@ -700,6 +700,19 @@ describe("selecting", () => {
     ]);
   });
 
+  test("select all takes in every loaded card, and select none ends the selection", async () => {
+    stubSelection();
+    renderGallery();
+    await screen.findByText("Alpha");
+    await longPress("Alpha");
+
+    await userEvent.click(screen.getByRole("button", { name: "Select all" }));
+    expect(screen.getByText("3 selected")).toBeDefined();
+
+    await userEvent.click(screen.getByRole("button", { name: "Select none" }));
+    expect(screen.queryByRole("toolbar", { name: "Selected artifacts" })).toBeNull();
+  });
+
   test("marks the open artifacts in the selection solved, and keeps the selection so it can be undone", async () => {
     const changes = stubSelection([
       artifact({ id: "alpha", title: "Alpha", status: "solved" }),

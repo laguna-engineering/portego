@@ -115,6 +115,7 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
 
   const selected = selectedIds.flatMap((id) => items.find((item) => item.id === id) ?? []);
   const selecting = selected.length > 0;
+  const allSelected = selected.length === items.length;
   const allSolved = selected.every((artifact) => artifact.status === "solved");
 
   useEffect(() => {
@@ -345,6 +346,12 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
           <p className="selection-count" aria-live="polite">
             {selected.length} selected
           </p>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(allSelected ? [] : items.map((item) => item.id))}
+          >
+            {allSelected ? "Select none" : "Select all"}
+          </button>
           <button
             type="button"
             className="icon-button"
