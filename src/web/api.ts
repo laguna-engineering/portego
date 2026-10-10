@@ -169,6 +169,36 @@ export function fetchArtifacts(
   return request<Page>(`/api/artifacts${suffix}`);
 }
 
+/** A run of text, marked when it is part of a word the query matched. */
+export type TextSegment = { text: string; match?: true };
+
+export type SearchResults = {
+  /** Every artifact, text, and comment match, beyond the few each group shows. */
+  total: number;
+  artifacts: { artifact: Artifact; title: TextSegment[]; snippet: TextSegment[] | null }[];
+  content: { artifact: Artifact; snippet: TextSegment[]; matches: number }[];
+  comments: {
+    artifact: Artifact;
+    comment: { id: string; author: { id: string; name: string }; createdAt: string };
+    snippet: TextSegment[];
+  }[];
+  tags: { id: string; name: string; count: number }[];
+  folders: { id: string; name: string; count: number }[];
+};
+
+export function searchArtifacts(options: {
+  query: string;
+  folderId?: string | null;
+  artifactId?: string | null;
+  archived?: boolean;
+}): Promise<SearchResults> {
+  const search = new URLSearchParams({ q: options.query });
+  if (options.folderId) search.set("folderId", options.folderId);
+  if (options.artifactId) search.set("artifactId", options.artifactId);
+  if (options.archived) search.set("archived", "true");
+  return request<SearchResults>(`/api/artifacts/search?${search}`);
+}
+
 export type FolderTree = { folders: Folder[]; rootArtifactCount: number };
 
 export function fetchFolderTree(): Promise<FolderTree> {

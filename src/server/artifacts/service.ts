@@ -2,6 +2,7 @@ import type { EventBus } from "../events/bus.ts";
 import { CONVERTER_VERSION, htmlToMarkdown } from "../markdown/convert.ts";
 import { markdownToHtml } from "../markdown/render.ts";
 import type { CachedMarkdown, MarkdownStore } from "../markdown/store.ts";
+import { markdownToText, TEXT_VERSION } from "../markdown/text.ts";
 import type { OrganizationService } from "../organization/service.ts";
 import type {
   Artifact,
@@ -9,6 +10,7 @@ import type {
   ArtifactStore,
   ArtifactVersion,
   ArtifactVisibility,
+  CreateArtifactInput,
   ListResult,
   ListSort,
   TagMatch,
@@ -17,6 +19,14 @@ import { ContentMissingError, InvalidCursorError } from "../storage/artifacts.ts
 import type { Comment, CommentAnchor, CommentStore } from "../storage/comments.ts";
 import type { Entry, EntryStore } from "../storage/entries.ts";
 import type { ArtifactOrganization } from "../storage/organization.ts";
+import type {
+  NameHit,
+  SearchHit,
+  SearchKind,
+  SearchScope,
+  SearchStore,
+} from "../storage/search.ts";
+import { queryWords } from "../storage/search.ts";
 import {
   checkEntry,
   ENTRY_KEY_MAX_LENGTH,
@@ -29,6 +39,7 @@ import {
   parseEntrySchema,
 } from "./entry-schema.ts";
 import { ServiceError } from "./errors.ts";
+import { highlight, snippet, type TextSegment } from "./highlight.ts";
 import {
   DESCRIPTION_MAX_LENGTH,
   decodeUtf8,
@@ -120,6 +131,37 @@ export type ListInput = {
   includeArchived?: boolean;
 };
 
+export type SearchInput = {
+  query: string;
+  /** Artifacts filed directly in this folder. */
+  folderId?: string | null;
+  artifactId?: string | null;
+  includeArchived?: boolean;
+};
+
+/** Matches grouped by where the query matched. Each group holds the most recent few. */
+export type SearchResults = {
+  /** How many artifacts match anywhere, which is what the gallery filter lists. */
+  total: number;
+  /** Matched in the title or description. The snippet is the description's, when only it matched. */
+  artifacts: { artifact: ArtifactSummary; title: TextSegment[]; snippet: TextSegment[] | null }[];
+  /** Matched in the current version's text. */
+  content: { artifact: ArtifactSummary; snippet: TextSegment[]; matches: number }[];
+  comments: {
+    artifact: ArtifactSummary;
+    comment: { id: string; author: { id: string; name: string }; createdAt: Date };
+    snippet: TextSegment[];
+  }[];
+  tags: NameHit[];
+  folders: NameHit[];
+};
+
+/** Matches each group of SearchResults holds. */
+export const SEARCH_GROUP_LIMIT = 5;
+
+/** What produced a version's search text: its Markdown, then the plain text. */
+const SEARCH_TEXT_VERSION = `${CONVERTER_VERSION}.${TEXT_VERSION}`;
+
 export const COMMENT_MAX_LENGTH = 4000;
 export const ANCHOR_QUOTE_MAX_LENGTH = 500;
 export const ANCHOR_CONTEXT_MAX_LENGTH = 100;
@@ -183,6 +225,16 @@ export type ArtifactService = {
     input?: ListInput,
   ) => { items: ArtifactSummary[]; nextCursor: string | null };
   get: (id: string, viewer: Viewer) => ArtifactSummary;
+  search: (viewer: Viewer, input: SearchInput) => SearchResults;
+  /**
+   * Indexes the text of current versions that have none, or whose text older
+   * code produced. Returns how many it indexed, and the versions it could not
+   * index for a reason other than missing content.
+   */
+  reindexVersions: () => Promise<{
+    indexed: number;
+    failed: { versionId: string; cause: unknown }[];
+  }>;
   upload: (input: UploadInput) => Promise<UploadResult>;
   /** Highest number first. */
   versions: (id: string, viewer: Viewer) => VersionSummary[];
@@ -301,6 +353,7 @@ export function createArtifactService(options: {
   markdownStore: MarkdownStore;
   commentStore: CommentStore;
   entryStore: EntryStore;
+  searchStore: SearchStore;
   maxUploadBytes?: number;
   maxImages?: number;
   maxImageBytesTotal?: number;
@@ -317,7 +370,7 @@ export function createArtifactService(options: {
     "assignments" | "checkAssignment" | "setArtifactOrganization"
   >;
 }): ArtifactService {
-  const { store, markdownStore, commentStore, entryStore, organization } = options;
+  const { store, markdownStore, commentStore, entryStore, searchStore, organization } = options;
   const assignments = organization?.assignments ?? (() => new Map<string, ArtifactOrganization>());
   const summary = (artifact: Artifact) =>
     toSummary(artifact, assignments([artifact.id]).get(artifact.id));
@@ -354,6 +407,24 @@ export function createArtifactService(options: {
       entrySchemas.set(versionId, schema);
     }
     return schema;
+  };
+
+  // Uploaded Markdown when there is some, otherwise converted once and cached.
+  const versionMarkdown = async (version: ArtifactVersion): Promise<CachedMarkdown> => {
+    const provided = markdownStore.readProvided(version.id);
+    if (provided) return provided;
+    const cached = markdownStore.read(version.id, version.sha256, CONVERTER_VERSION);
+    if (cached) return cached;
+    const content = await readSource(store, version.id);
+    // Parsing only. The document's own scripts are dropped, never run.
+    const converted = htmlToMarkdown(new TextDecoder().decode(content));
+    return markdownStore.write({
+      versionId: version.id,
+      sourceSha256: version.sha256,
+      converterVersion: CONVERTER_VERSION,
+      markdown: converted.markdown,
+      empty: converted.empty,
+    });
   };
 
   const visible = (id: string, viewer: Viewer): Artifact => {
@@ -405,6 +476,98 @@ export function createArtifactService(options: {
 
     get(id, viewer) {
       return summary(visible(id, viewer));
+    },
+
+    search(viewer, input) {
+      const words = queryWords(input.query);
+      const scope: SearchScope = {
+        viewerId: viewer.userId,
+        folderId: input.folderId ?? null,
+        artifactId: input.artifactId ?? null,
+        includeArchived: input.includeArchived ?? false,
+      };
+      const found = (kind: SearchKind) =>
+        searchStore.search(kind, input.query, scope, SEARCH_GROUP_LIMIT);
+      const artifactHits = found("artifact");
+      const contentHits = found("version");
+      const commentHits = found("comment");
+
+      const ids = [
+        ...new Set(
+          [artifactHits, contentHits, commentHits].flatMap((hits) =>
+            hits.map((hit) => hit.artifactId),
+          ),
+        ),
+      ];
+      const filed = assignments(ids);
+      const summaries = new Map<string, ArtifactSummary>();
+      for (const id of ids) {
+        const artifact = store.get(id);
+        if (artifact) summaries.set(id, toSummary(artifact, filed.get(id)));
+      }
+      const withArtifact = (hits: SearchHit[]) =>
+        hits.flatMap((hit) => {
+          const artifact = summaries.get(hit.artifactId);
+          return artifact ? [{ hit, artifact }] : [];
+        });
+
+      return {
+        total: searchStore.countArtifacts(input.query, scope),
+        artifacts: withArtifact(artifactHits).map(({ hit, artifact }) => {
+          const title = highlight(hit.title, words, hit.stemmed.title);
+          const titleMatched = title.some((segment) => segment.match);
+          return {
+            artifact,
+            title,
+            snippet:
+              titleMatched || hit.body === ""
+                ? null
+                : snippet(hit.body, words, hit.stemmed.body).snippet,
+          };
+        }),
+        content: withArtifact(contentHits).map(({ hit, artifact }) => ({
+          artifact,
+          ...snippet(hit.body, words, hit.stemmed.body),
+        })),
+        comments: withArtifact(commentHits).flatMap(({ hit, artifact }) => {
+          const comment = commentStore.get(hit.refId);
+          if (!comment) return [];
+          return [
+            {
+              artifact,
+              comment: {
+                id: comment.id,
+                author: { id: comment.author.id, name: comment.author.name },
+                createdAt: comment.createdAt,
+              },
+              snippet: snippet(hit.body, words, hit.stemmed.body).snippet,
+            },
+          ];
+        }),
+        tags: searchStore.tags(input.query, scope, SEARCH_GROUP_LIMIT),
+        folders: searchStore.folders(input.query, scope, SEARCH_GROUP_LIMIT),
+      };
+    },
+
+    async reindexVersions() {
+      let indexed = 0;
+      const failed: { versionId: string; cause: unknown }[] = [];
+      for (const versionId of searchStore.staleVersions(SEARCH_TEXT_VERSION)) {
+        const version = store.getVersion(versionId);
+        if (!version) continue;
+        try {
+          const { markdown } = await versionMarkdown(version);
+          searchStore.indexVersion(version.id, markdownToText(markdown), SEARCH_TEXT_VERSION);
+          indexed += 1;
+        } catch (cause) {
+          // A version whose bytes are gone stays out of the index. The
+          // reconcile report is where missing content shows.
+          if (!(cause instanceof ServiceError && cause.code === "CONTENT_MISSING")) {
+            failed.push({ versionId, cause });
+          }
+        }
+      }
+      return { indexed, failed };
     },
 
     async upload(input) {
@@ -493,6 +656,18 @@ export function createArtifactService(options: {
         }
       }
 
+      // Converted now, so the version is searchable as soon as it exists.
+      const generated = providedMarkdown === null ? htmlToMarkdown(text) : null;
+      const versionText: Pick<CreateArtifactInput, "generatedMarkdown" | "searchText"> = {
+        searchText: {
+          text: markdownToText(providedMarkdown ?? generated?.markdown ?? ""),
+          textVersion: SEARCH_TEXT_VERSION,
+        },
+      };
+      if (generated) {
+        versionText.generatedMarkdown = { ...generated, converterVersion: CONVERTER_VERSION };
+      }
+
       const filing = {
         ...(input.folderId === undefined ? {} : { folderId: input.folderId }),
         ...(input.tagIds === undefined ? {} : { tagIds: input.tagIds }),
@@ -521,6 +696,7 @@ export function createArtifactService(options: {
           originalFilename,
           content,
           ...(providedMarkdown === null ? {} : { providedMarkdown }),
+          ...versionText,
           entrySchema,
           images,
           createdBy: input.createdBy,
@@ -542,6 +718,7 @@ export function createArtifactService(options: {
         originalFilename,
         content,
         ...(providedMarkdown === null ? {} : { providedMarkdown }),
+        ...versionText,
         entrySchema,
         images,
         visibility,
@@ -730,24 +907,7 @@ export function createArtifactService(options: {
     async markdown(id, viewer, versionId) {
       const artifact = visible(id, viewer);
       const version = requireVersion(store, id, versionId ?? artifact.currentVersionId);
-
-      const provided = markdownStore.readProvided(version.id);
-      if (provided) return { artifact: summary(artifact), ...provided };
-
-      const cached = markdownStore.read(version.id, version.sha256, CONVERTER_VERSION);
-      if (cached) return { artifact: summary(artifact), ...cached };
-
-      const content = await readSource(store, version.id);
-      // Parsing only. The document's own scripts are dropped, never run.
-      const converted = htmlToMarkdown(new TextDecoder().decode(content));
-      const stored = markdownStore.write({
-        versionId: version.id,
-        sourceSha256: version.sha256,
-        converterVersion: CONVERTER_VERSION,
-        markdown: converted.markdown,
-        empty: converted.empty,
-      });
-      return { artifact: summary(artifact), ...stored };
+      return { artifact: summary(artifact), ...(await versionMarkdown(version)) };
     },
 
     async source(id, viewer, versionId) {

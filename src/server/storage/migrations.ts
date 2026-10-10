@@ -280,6 +280,85 @@ export const migrations: readonly Migration[] = [
         from artifactComments group by authorId, artifactId;
     `,
   },
+  {
+    // The text search reads. Triggers keep artifact and comment rows in step.
+    // A version's text comes from its Markdown, which only the application
+    // can produce, so the server indexes versions itself.
+    // The integer key keeps FTS rowids stable: VACUUM may renumber the rowids
+    // of tables with a text primary key.
+    // The porter index matches word forms. The plain one matches a word still
+    // being typed, whose stem differs from the full word's ("runn", "running").
+    id: "016-search",
+    sql: `
+      create table searchDocuments (
+        id integer primary key,
+        kind text not null check (kind in ('artifact', 'version', 'comment')),
+        refId text not null,
+        title text not null default '',
+        body text not null,
+        unique (kind, refId)
+      );
+      create virtual table searchStemmed using fts5(
+        title, body, content = 'searchDocuments', content_rowid = 'id',
+        tokenize = 'porter unicode61 remove_diacritics 2'
+      );
+      create virtual table searchPrefix using fts5(
+        title, body, content = 'searchDocuments', content_rowid = 'id',
+        tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3'
+      );
+
+      create trigger searchDocuments_insert after insert on searchDocuments begin
+        insert into searchStemmed (rowid, title, body) values (new.id, new.title, new.body);
+        insert into searchPrefix (rowid, title, body) values (new.id, new.title, new.body);
+      end;
+      create trigger searchDocuments_delete after delete on searchDocuments begin
+        insert into searchStemmed (searchStemmed, rowid, title, body)
+          values ('delete', old.id, old.title, old.body);
+        insert into searchPrefix (searchPrefix, rowid, title, body)
+          values ('delete', old.id, old.title, old.body);
+      end;
+      create trigger searchDocuments_update after update on searchDocuments begin
+        insert into searchStemmed (searchStemmed, rowid, title, body)
+          values ('delete', old.id, old.title, old.body);
+        insert into searchPrefix (searchPrefix, rowid, title, body)
+          values ('delete', old.id, old.title, old.body);
+        insert into searchStemmed (rowid, title, body) values (new.id, new.title, new.body);
+        insert into searchPrefix (rowid, title, body) values (new.id, new.title, new.body);
+      end;
+
+      create trigger artifacts_search_insert after insert on artifacts begin
+        insert into searchDocuments (kind, refId, title, body)
+          values ('artifact', new.id, new.title, coalesce(new.description, ''));
+      end;
+      create trigger artifacts_search_update after update of title, description on artifacts begin
+        update searchDocuments set title = new.title, body = coalesce(new.description, '')
+          where kind = 'artifact' and refId = new.id;
+      end;
+      create trigger artifacts_search_delete after delete on artifacts begin
+        delete from searchDocuments where kind = 'artifact' and refId = old.id;
+      end;
+      create trigger artifactVersions_search_delete after delete on artifactVersions begin
+        delete from searchDocuments where kind = 'version' and refId = old.id;
+      end;
+      create trigger artifactComments_search_insert after insert on artifactComments begin
+        insert into searchDocuments (kind, refId, body) values ('comment', new.id, new.body);
+      end;
+      create trigger artifactComments_search_delete after delete on artifactComments begin
+        delete from searchDocuments where kind = 'comment' and refId = old.id;
+      end;
+
+      insert into searchDocuments (kind, refId, title, body)
+        select 'artifact', id, title, coalesce(description, '') from artifacts;
+      insert into searchDocuments (kind, refId, body)
+        select 'comment', id, body from artifactComments;
+    `,
+  },
+  {
+    // For a version: what produced its text, so a change to that code
+    // reindexes it. Text indexed before this has none and is reindexed.
+    id: "017-search-text-version",
+    sql: "alter table searchDocuments add column textVersion text;",
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

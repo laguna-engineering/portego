@@ -125,7 +125,8 @@ of it has to pass the browser's `Host` through unchanged.
 
 | Tool | Purpose |
 | --- | --- |
-| `list_artifacts` | Cursor, limit, optional query and sort. Returns compact metadata and web URLs. Leaves out other people's private artifacts. |
+| `list_artifacts` | Cursor, limit, optional query and sort. The query matches words in the title, description, current text, and comments. Returns compact metadata and web URLs. Leaves out other people's private artifacts. |
+| `search_artifacts` | A query, and optional `folderId`, `artifactId`, and `includeArchived`. Returns the matches grouped by where they matched (title or description, artifact text, comments, folders, tags), five per group, each with a snippet that marks the matched words in `**bold**`, and the number of matching artifacts. |
 | `get_artifact_metadata` | One metadata record. |
 | `get_artifact_source` | The stored HTML of one version, up to 1 MiB, current by default or the one named by an optional `versionId`. Larger artifacts are refused with their size and a link, rather than truncated. |
 | `upload_artifact` | Title, optional description, optional `artifactId` to add a version to an existing artifact, optional `allowDuplicateTitle`, optional `folderId` and `tagIds` to file the artifact, optional `visibility`, and either self-contained HTML or Markdown, or both. Markdown alone becomes a static HTML page in the Portego style; with HTML, it is the text agents read back. Returns the id, digest, version number, whether the upload created the artifact, and the web URL. |
@@ -361,6 +362,7 @@ upload_artifact_from_path({ path, contentType?, markdownPath?, title?, descripti
                             artifactId?, allowDuplicateTitle?, folderId?, tagIds?,
                             visibility? })
 list_artifacts({ query?, folderId?, cursor? })
+search_artifacts({ query, folderId?, artifactId? })
 get_artifact_markdown({ id, versionId? })
 download_artifact_source({ id, path, versionId?, overwrite? })
 list_artifact_comments({ id })

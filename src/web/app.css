@@ -324,14 +324,6 @@ label {
   margin-bottom: 1.25rem;
 }
 
-.search {
-  flex: 1;
-}
-
-.gallery-controls.in-folder .search {
-  flex: 0 1 18rem;
-}
-
 .folder-watch {
   flex: 1;
   min-width: 0;
@@ -614,21 +606,17 @@ label {
   }
 
   /* Upload is in the masthead menu. */
-  .gallery-controls > button {
+  .filters-upload {
     display: none;
   }
 
-  .gallery-controls.in-folder {
+  .gallery-controls {
     flex-wrap: wrap;
   }
 
   /* The levels hang from the folder's row, as wide as the screen allows. */
   .folder-watch {
     position: relative;
-  }
-
-  .gallery-controls.in-folder .search {
-    flex: 1 1 100%;
   }
 
   .folder-watch-control {
@@ -1350,8 +1338,16 @@ button.link {
 
 .full-actions {
   display: flex;
+  align-items: center;
   gap: 0.4rem;
   flex-wrap: wrap;
+}
+
+.full-actions-divider {
+  width: 1px;
+  height: 1.1rem;
+  margin: 0 0.2rem;
+  background: var(--line);
 }
 
 .full-header .problem {
@@ -1457,6 +1453,219 @@ button.link {
   }
 }
 
+/* Search: a field in the gallery masthead, a popover in the artifact view. */
+/* At the right, next to the bell, where the artifact view has its search button. */
+.masthead-search {
+  position: relative;
+  flex: 1;
+  max-width: 24rem;
+  margin-inline-start: auto;
+}
+
+.search-field {
+  position: relative;
+  display: block;
+}
+
+.search-field .icon {
+  position: absolute;
+  left: 0.65rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-muted);
+  pointer-events: none;
+}
+
+.search-field input {
+  padding-left: 2rem;
+}
+
+/* No taller than the artifact view's masthead, so the masthead keeps its height between pages. */
+.masthead-search input {
+  padding-block: 0.35rem;
+}
+
+.search-field input:focus {
+  border-color: var(--accent);
+}
+
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  width: max(100%, 30rem);
+  z-index: 20;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.search-popover {
+  width: 30rem;
+  gap: 0.6rem;
+}
+
+.search-panel,
+.search-groups {
+  display: grid;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+}
+
+.search-groups {
+  max-height: min(28rem, 60vh);
+  overflow-y: auto;
+}
+
+.search-scopes {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.search-scopes .chip,
+.search-tag {
+  padding: 0.15rem 0.6rem;
+  font-size: 0.78rem;
+}
+
+.search-total {
+  margin-inline-start: auto;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.search-group ul {
+  display: grid;
+  gap: 0.1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.search-group-label {
+  margin: 0 0 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.search-tags {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.search-tags .search-group-label {
+  margin: 0;
+}
+
+.search-tags ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.search-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: start;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border-color: transparent;
+  text-align: start;
+}
+
+.search-option[aria-selected="true"],
+.search-tag[aria-selected="true"] {
+  border-color: var(--accent);
+}
+
+.search-mark {
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 0.4rem;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+
+.search-mark.search-icon {
+  color: var(--ink-muted);
+}
+
+.search-text {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.search-title {
+  font-weight: 500;
+}
+
+.search-badge {
+  margin-inline-start: 0.35rem;
+}
+
+.search-snippet {
+  color: var(--ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.search-meta,
+.search-count {
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--ink-muted);
+}
+
+.search-match {
+  font-weight: 600;
+  color: var(--ink);
+  background: var(--surface-sunken);
+  border-radius: 0.2rem;
+  padding: 0 0.15rem;
+}
+
+.search-find {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.find-step {
+  padding: 0.05rem 0.45rem;
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.search-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+}
+
+.link-button {
+  margin-inline-start: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: inherit;
+}
+
 .menu-toggle,
 .masthead-menu,
 .masthead-menu-backdrop {
@@ -1513,6 +1722,23 @@ button.link {
 
   .full-header .problem {
     order: 2;
+  }
+
+  .masthead-search {
+    order: 1;
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .search-dropdown {
+    width: auto;
+    left: 0;
+  }
+
+  /* No room for the key hints, which leaves nothing without a Show all link. */
+  .search-footer > span,
+  .search-footer:not(:has(button)) {
+    display: none;
   }
 
   /* The header has no box of its own here, so the panel hangs from the masthead. */
@@ -1814,6 +2040,11 @@ button.link {
   margin-left: auto;
 }
 
+/* The gallery's search field already takes the space before the bell. */
+.masthead-search + .bell {
+  margin-left: 0;
+}
+
 .popover.activity {
   width: 22rem;
   gap: 0.25rem;
@@ -1928,6 +2159,11 @@ button.link {
 @media (max-width: 34rem) {
   .bell {
     position: static;
+  }
+
+  /* The field has a row of its own here, so the bell goes back to the right. */
+  .masthead-search + .bell {
+    margin-left: auto;
   }
 
   .popover.activity {
