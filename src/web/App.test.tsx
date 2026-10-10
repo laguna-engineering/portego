@@ -42,6 +42,9 @@ function signedIn(path: string) {
   if (path.endsWith("/preview")) return { body: { url: "http://127.0.0.1:5173/preview/token" } };
   if (path.endsWith("/versions")) return { body: { versions: [] } };
   if (path.endsWith("/entries")) return { body: { entries: [], schema: null } };
+  if (path.startsWith("/api/artifacts/search")) {
+    return { body: { total: 0, artifacts: [], content: [], comments: [], tags: [], folders: [] } };
+  }
   if (path.startsWith("/api/artifacts")) return { body: { items: [artifact()], nextCursor: null } };
   if (path === "/api/folders") return { body: { folders: [] } };
   if (path === "/api/tags") return { body: { tags: [] } };
@@ -176,7 +179,7 @@ describe("signed in", () => {
 
     await screen.findByText("Sales chart");
     expect(requested.some((path) => path.includes("q=latency"))).toBe(true);
-    expect((screen.getByLabelText("Search artifacts") as HTMLInputElement).value).toBe("latency");
+    expect((screen.getByLabelText("Search everything") as HTMLInputElement).value).toBe("latency");
   });
 });
 

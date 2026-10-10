@@ -4,6 +4,7 @@ import { createMarkdownStore } from "../markdown/store.ts";
 import { createArtifactStore } from "../storage/artifacts.ts";
 import { createCommentStore } from "../storage/comments.ts";
 import { createEntryStore } from "../storage/entries.ts";
+import { createSearchStore } from "../storage/search.ts";
 import {
   createTestServer,
   htmlFile,
@@ -350,6 +351,7 @@ describe("turning private artifacts off", () => {
       markdownStore: createMarkdownStore({ database: server.database }),
       commentStore: createCommentStore({ database: server.database }),
       entryStore: createEntryStore({ database: server.database }),
+      searchStore: createSearchStore({ database: server.database }),
       privateArtifacts: false,
     });
   }

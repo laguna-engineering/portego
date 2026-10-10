@@ -15,6 +15,7 @@ import { createCommentStore } from "./storage/comments.ts";
 import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 import { createProfileStore } from "./storage/profiles.ts";
+import { createSearchStore } from "./storage/search.ts";
 
 const env = parseEnv(Bun.env);
 const authConfig = parseAuthConfig(env, Bun.env);
@@ -32,6 +33,7 @@ const artifacts = createArtifactService({
   markdownStore: createMarkdownStore({ database }),
   commentStore: createCommentStore({ database }),
   entryStore: createEntryStore({ database }),
+  searchStore: createSearchStore({ database }),
   organization,
   maxUploadBytes: env.ARTIFACT_MAX_BYTES,
   maxImages: env.ARTIFACT_MAX_IMAGES,
@@ -65,3 +67,15 @@ const server = Bun.serve({
 });
 
 console.log(`Server listening on http://${server.hostname}:${server.port}`);
+
+// Versions uploaded before search existed, or indexed by older code, are
+// indexed while the server runs. Until then, search does not find their text.
+artifacts
+  .reindexVersions()
+  .then(({ indexed, failed }) => {
+    if (indexed > 0) console.log(`Indexed the text of ${indexed} version(s) for search.`);
+    for (const { versionId, cause } of failed) {
+      console.error(`Indexing version ${versionId} for search failed:`, cause);
+    }
+  })
+  .catch((cause) => console.error("Indexing versions for search failed:", cause));

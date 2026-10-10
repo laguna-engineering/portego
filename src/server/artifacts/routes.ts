@@ -121,6 +121,18 @@ export function artifactRoutes(
     return c.json(page);
   });
 
+  routes.get("/search", (c) => {
+    const folderId = c.req.query("folderId") ?? null;
+    organization.validateListFilters({ folderId, tagIds: [] });
+    const results = service.search(viewer(c), {
+      query: c.req.query("q") ?? "",
+      folderId,
+      artifactId: c.req.query("artifactId") ?? null,
+      includeArchived: c.req.query("archived") === "true",
+    });
+    return c.json(results);
+  });
+
   routes.post("/", async (c) => {
     const result = await uploadFromForm(c, service, currentUser(c).id, { inApp: true });
     return c.json(result, 201);

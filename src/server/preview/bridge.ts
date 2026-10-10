@@ -15,6 +15,9 @@ import { parseComment, renderCommentNodes } from "../../shared/comment-format.ts
  * The frame's fragment is reported too, so the page's address can link to a
  * part of the artifact.
  *
+ * Find works like a browser's: the page sends a query and which match is
+ * current, and this script marks every match and reports how many there are.
+ *
  * A passage is a text quote plus a little text on each side, matched against
  * the raw text nodes of the document in order. `Range.toString()` is the same
  * concatenation, so what the reader selected is what is searched for later.
@@ -46,7 +49,9 @@ export const BRIDGE_SCRIPT = `(() => {
     const style = document.createElement("style");
     style.textContent =
       "::highlight(portego-comment){background-color:rgba(255,196,0,0.45)}" +
-      "::highlight(portego-comment-active){background-color:rgba(255,140,0,0.75)}";
+      "::highlight(portego-comment-active){background-color:rgba(255,140,0,0.75)}" +
+      "::highlight(portego-find){background-color:rgba(47,109,99,0.25)}" +
+      "::highlight(portego-find-active){background-color:rgba(47,109,99,0.6)}";
     (document.head || document.documentElement).appendChild(style);
   }
 
@@ -104,6 +109,116 @@ export const BRIDGE_SCRIPT = `(() => {
     }
     CSS.highlights.set("portego-comment", all);
     CSS.highlights.set("portego-comment-active", active);
+  }
+
+  // Find matches what a reader can see, so script, style, and hidden text are
+  // left out. Case, accents, and runs of whitespace do not matter.
+  const UNSEEN = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE"]);
+  const MAX_FOUND = 1000;
+  let finding = "";
+  let findIndex = 0;
+
+  // Text in different blocks reads as separate words, as in a browser's find.
+  function blockOf(element, blocks) {
+    for (let at = element; at; at = at.parentElement) {
+      let block = blocks.get(at);
+      if (block === undefined) {
+        const display = getComputedStyle(at).display;
+        block = !display.startsWith("inline") && display !== "contents";
+        blocks.set(at, block);
+      }
+      if (block) return at;
+    }
+    return null;
+  }
+
+  function visibleText() {
+    const root = document.body || document.documentElement;
+    let folded = "";
+    // Where each folded character came from: a node and the offsets in it.
+    const origin = [];
+    if (!root) return { folded, origin };
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        const element = node.parentElement;
+        if (!element || UNSEEN.has(element.tagName)) return NodeFilter.FILTER_REJECT;
+        if (element.checkVisibility && !element.checkVisibility()) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    const blocks = new Map();
+    let lastBlock = null;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const block = blockOf(node.parentElement, blocks);
+      if (block !== lastBlock && folded !== "" && !folded.endsWith(" ")) {
+        folded += " ";
+        origin.push({ node, start: 0, end: 0 });
+      }
+      lastBlock = block;
+      const data = node.data;
+      for (let offset = 0; offset < data.length; ) {
+        const character = String.fromCodePoint(data.codePointAt(offset));
+        const end = offset + character.length;
+        if (/\\s/.test(character)) {
+          if (folded !== "" && !folded.endsWith(" ")) {
+            folded += " ";
+            origin.push({ node, start: offset, end });
+          }
+        } else {
+          const plain = character.normalize("NFD").replace(/\\p{M}/gu, "").toLowerCase();
+          for (let i = 0; i < plain.length; i += 1) origin.push({ node, start: offset, end });
+          folded += plain;
+        }
+        offset = end;
+      }
+    }
+    return { folded, origin };
+  }
+
+  function fold(text) {
+    return text
+      .normalize("NFD")
+      .replace(/\\p{M}/gu, "")
+      .toLowerCase()
+      .replace(/\\s+/g, " ")
+      .trim();
+  }
+
+  function find(query, index, scroll) {
+    if (!painted) return;
+    finding = query;
+    const needle = fold(query);
+    const found = [];
+    let more = false;
+    if (needle !== "") {
+      const { folded, origin } = visibleText();
+      let at = folded.indexOf(needle);
+      while (at >= 0 && found.length < MAX_FOUND) {
+        const first = origin[at];
+        const last = origin[at + needle.length - 1];
+        const range = document.createRange();
+        range.setStart(first.node, first.start);
+        range.setEnd(last.node, last.end);
+        found.push(range);
+        at = folded.indexOf(needle, at + needle.length);
+      }
+      more = at >= 0;
+    }
+    const current = found.length === 0 ? 0 : ((index % found.length) + found.length) % found.length;
+    findIndex = current;
+    const all = new Highlight();
+    const active = new Highlight();
+    found.forEach((range, position) => (position === current ? active : all).add(range));
+    CSS.highlights.set("portego-find", all);
+    CSS.highlights.set("portego-find-active", active);
+    const range = found[current];
+    if (scroll && range) {
+      const rect = range.getBoundingClientRect();
+      if (rect.top < 0 || rect.bottom > window.innerHeight) {
+        window.scrollTo({ top: window.scrollY + rect.top - window.innerHeight / 3 });
+      }
+    }
+    send({ type: "found", count: found.length, index: current, more });
   }
 
   function describeSelection() {
@@ -230,6 +345,9 @@ export const BRIDGE_SCRIPT = `(() => {
       window.portego.entries = entries;
       window.dispatchEvent(new CustomEvent("portego:entries", { detail: entries }));
       land();
+    } else if (message.type === "find") {
+      const query = typeof message.query === "string" ? message.query.slice(0, 200) : "";
+      find(query, Number.isInteger(message.index) ? message.index : 0, true);
     } else if (message.type === "reveal") {
       paint(message.id);
       const range = ranges.get(message.id);
@@ -240,10 +358,17 @@ export const BRIDGE_SCRIPT = `(() => {
   });
 
   let repaint = 0;
+  let refind = 0;
   const observer = new MutationObserver(() => {
-    if (anchors.length === 0) return;
-    clearTimeout(repaint);
-    repaint = setTimeout(() => paint(null), 200);
+    if (anchors.length > 0) {
+      clearTimeout(repaint);
+      repaint = setTimeout(() => paint(null), 200);
+    }
+    // The text changed under the matches, so count them again where they are.
+    if (finding !== "") {
+      clearTimeout(refind);
+      refind = setTimeout(() => find(finding, findIndex, false), 200);
+    }
   });
   const watch = () => {
     if (document.body) observer.observe(document.body, { childList: true, subtree: true, characterData: true });

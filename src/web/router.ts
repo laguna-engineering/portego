@@ -36,7 +36,14 @@ export type GalleryFilters = {
 export type Route =
   | ({ name: "gallery" } & GalleryFilters)
   /** One artifact filling the viewport under the masthead, optionally opened on a version or comment. */
-  | { name: "artifact"; id: string; versionId: string | null; commentId: string | null }
+  | {
+      name: "artifact";
+      id: string;
+      versionId: string | null;
+      commentId: string | null;
+      /** Text to find in the artifact as it opens. */
+      find: string | null;
+    }
   | { name: "profile" }
   /** Another member's profile, or the user's own as others see it. */
   | { name: "member"; id: string }
@@ -56,6 +63,7 @@ export function readRoute(url: URL): Route {
       id: decodeURIComponent(artifact[1]),
       versionId: url.searchParams.get("version") || null,
       commentId: url.searchParams.get("comment") || null,
+      find: url.searchParams.get("find") || null,
     };
   }
   if (url.pathname === "/profile") return { name: "profile" };
@@ -104,13 +112,14 @@ export function memberPath(id: string): string {
   return `/u/${encodeURIComponent(id)}`;
 }
 
-/** What in an artifact a link opens the panel on. */
-export type ArtifactTarget = { versionId?: string; commentId?: string };
+/** What in an artifact a link opens the panel on, or finds in it. */
+export type ArtifactTarget = { versionId?: string; commentId?: string; find?: string };
 
 export function artifactPath(id: string, target: ArtifactTarget = {}): string {
   const search = new URLSearchParams();
   if (target.versionId) search.set("version", target.versionId);
   if (target.commentId) search.set("comment", target.commentId);
+  if (target.find) search.set("find", target.find);
   const path = `/a/${encodeURIComponent(id)}`;
   return search.size === 0 ? path : `${path}?${search}`;
 }
