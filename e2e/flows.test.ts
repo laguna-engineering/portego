@@ -77,13 +77,17 @@ describe("the whole flow in a browser", () => {
     expect(source?.startsWith(app.server.contentOrigin)).toBe(true);
     expect(source?.startsWith(app.server.origin)).toBe(false);
 
-    // The wordmark leads back to the gallery, which lists it, and the search finds it.
+    // The wordmark leads back to the gallery, which lists it, and the search
+    // finds it. Enter with no result picked filters the gallery.
     await page.getByRole("button", { name: "Test App" }).click();
     await page.getByText("Quarterly chart").waitFor();
 
-    await page.getByLabel("Search artifacts").fill("Quarterly");
-    await page.getByText("Quarterly chart").waitFor();
-    expect(page.url()).toContain("q=Quarterly");
+    const search = page.getByLabel("Search everything");
+    await search.fill("Quarter");
+    await page.getByRole("option", { name: /Quarterly chart/ }).waitFor();
+    await search.press("Enter");
+    await page.waitForURL(/q=Quarter/);
+    await page.locator("li.card", { hasText: "Quarterly chart" }).waitFor();
   });
 
   test("opens a short card from the empty space its taller neighbour gives it", async () => {
@@ -726,7 +730,7 @@ describe("the whole flow in a browser", () => {
     test("lays out the search field, status chips, sort, and archived toggle", async () => {
       const { context, page } = await openOnPhone();
 
-      const searchBox = await page.getByLabel("Search artifacts").boundingBox();
+      const searchBox = await page.getByLabel("Search everything").boundingBox();
       if (!searchBox) throw new Error("The search field has no box");
       expect(searchBox.width).toBeGreaterThanOrEqual(340);
 
@@ -859,6 +863,55 @@ describe("the whole flow in a browser", () => {
     const deadline = Date.now() + 5000;
     while ((await painted()) !== 1 && Date.now() < deadline) await page.waitForTimeout(100);
     expect(await painted()).toBe(1);
+
+    await context.close();
+  });
+
+  test("finds in the artifact like a browser, over visible text only", async () => {
+    const id = await uploadArtifact(app, {
+      title: "Findable",
+      html: `<!doctype html><html><head><title>t</title><style>.rollback { color: red }</style></head>
+        <body><p>Start the Rollback.</p><p hidden>rollback hidden</p>
+        <script>const rollback = 1;</script><p>Then rollé   back? No: rollback again.</p>
+        <p>roll</p><p>back</p></body></html>`,
+    });
+
+    const context = await app.signedIn();
+    const page = await context.newPage();
+    await page.goto(`${app.server.origin}/a/${id}`);
+    const frame = page.frameLocator('iframe[title="Preview of Findable"]');
+    await frame.locator("p").first().waitFor();
+
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await page.getByLabel("Search everything").fill("rollback");
+    await page.getByRole("button", { name: "This artifact" }).click();
+    // Two visible matches: not the style rule, the hidden paragraph, the script,
+    // or two paragraphs that only run together in the markup.
+    await page.getByText("1 of 2").waitFor();
+    const marked = () =>
+      frame.locator("body").evaluate(() => ({
+        all: CSS.highlights.get("portego-find")?.size ?? 0,
+        active: [...(CSS.highlights.get("portego-find-active") ?? [])].map((range) =>
+          (range as Range).toString(),
+        ),
+      }));
+    expect(await marked()).toEqual({ all: 1, active: ["Rollback"] });
+
+    await page.getByLabel("Search everything").press("Enter");
+    await page.getByText("2 of 2").waitFor();
+    await page.getByLabel("Search everything").press("Enter");
+    await page.getByText("1 of 2").waitFor();
+
+    // Whitespace runs and accents do not matter, as in a browser's find.
+    await page.getByLabel("Search everything").fill("rolle back");
+    await page.getByText("1 of 1").waitFor();
+
+    await page.getByLabel("Search everything").press("Escape");
+    const deadline = Date.now() + 5000;
+    while ((await marked()).active.length > 0 && Date.now() < deadline) {
+      await page.waitForTimeout(100);
+    }
+    expect(await marked()).toEqual({ all: 0, active: [] });
 
     await context.close();
   });

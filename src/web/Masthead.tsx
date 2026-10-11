@@ -17,8 +17,6 @@ export type MastheadProps = {
   onOpenArtifact: (id: string, target?: ArtifactTarget) => void;
   /** Sits between the wordmark and the account, for a page that has its own chrome. */
   children?: ReactNode;
-  /** Sits just before the account block, e.g. a page's own toggle. */
-  trailing?: ReactNode;
   /** The page's rows in the phone menu, above the account. A row calls `close` to dismiss the menu. */
   menu?: (close: () => void) => ReactNode;
   /** A short message shown just below the masthead, e.g. a change someone else made. */
@@ -33,7 +31,6 @@ export function Masthead({
   onProfilePage = false,
   onOpenArtifact,
   children,
-  trailing,
   menu,
   notice,
 }: MastheadProps) {
@@ -96,7 +93,6 @@ export function Masthead({
         </>
       ) : null}
       <div className="masthead-end">
-        {trailing}
         <button
           type="button"
           className="icon-button icon-only avatar-button"

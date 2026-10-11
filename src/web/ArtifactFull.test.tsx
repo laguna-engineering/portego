@@ -64,6 +64,7 @@ function fullProps(overrides: Partial<ArtifactFullProps> = {}): ArtifactFullProp
     privateArtifacts: true,
     onHome: () => {},
     onOpenFolder: () => {},
+    onOpenGallery: () => {},
     onProfile: () => {},
     onOpenArtifact: () => {},
     ...overrides,
@@ -729,6 +730,31 @@ describe("comments panel", () => {
 
     expect(await screen.findByRole("dialog", { name: "Versions and comments" })).toBeDefined();
     expect(document.getElementById("comment-comment-1")?.className).toContain("focused");
+  });
+});
+
+describe("links to a match in the text", () => {
+  test("open the search on the artifact and find the match once the artifact is listening", async () => {
+    stubFetch(answer);
+    let shown = 0;
+    renderFull({
+      find: "rollback",
+      onLinkShown: () => {
+        shown += 1;
+      },
+    });
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+    expect(shown).toBe(1);
+    // The frame drops a find it gets before it is ready, so none is sent yet.
+    expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
+
+    await sendFromFrame(frame, { type: "ready" });
+    const field = (await screen.findByLabelText("Search everything")) as HTMLInputElement;
+    expect(field.value).toBe("rollback");
+    await waitFor(() =>
+      expect(sent).toContainEqual({ portego: 1, type: "find", query: "rollback", index: 0 }),
+    );
   });
 });
 

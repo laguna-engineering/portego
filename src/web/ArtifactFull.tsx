@@ -32,6 +32,7 @@ import {
   PreviewIcon,
   ReopenIcon,
   RestoreIcon,
+  SearchIcon,
   TagIcon,
   TextIcon,
   UnlockIcon,
@@ -51,7 +52,8 @@ import {
   usePreviewBridge,
 } from "./preview-bridge.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
-import { type ArtifactTarget, artifactPath } from "./router.ts";
+import { type ArtifactTarget, artifactPath, type GalleryFilters } from "./router.ts";
+import { type FindResult, SearchPopover, useSearchShortcut } from "./Search.tsx";
 import { effectiveLevel, useSubscription, WatchPopover, watchLabel } from "./Watch.tsx";
 
 export type ArtifactFullProps = {
@@ -64,13 +66,17 @@ export type ArtifactFullProps = {
   privateArtifacts: boolean;
   onHome: () => void;
   onOpenFolder: (folderId: string) => void;
+  /** Shows the gallery with these filters, e.g. all results of a search. */
+  onOpenGallery: (filters: Partial<GalleryFilters>) => void;
   onProfile: () => void;
   onOpenArtifact: (id: string, target?: ArtifactTarget) => void;
   /** A version to open the panel on, e.g. from a notification. */
   versionId?: string | null;
   /** A comment to open the panel on and reveal in the artifact. */
   commentId?: string | null;
-  /** Called once the page has acted on `versionId` or `commentId`, so the link can be dropped. */
+  /** Text to find in the artifact once it shows. */
+  find?: string | null;
+  /** Called once the page has acted on `versionId`, `commentId`, or `find`, so the link can be dropped. */
   onLinkShown?: () => void;
 };
 
@@ -146,10 +152,12 @@ export function ArtifactFull({
   privateArtifacts,
   onHome,
   onOpenFolder,
+  onOpenGallery,
   onProfile,
   onOpenArtifact,
   versionId = null,
   commentId = null,
+  find = null,
   onLinkShown,
 }: ArtifactFullProps) {
   const [artifact, setArtifact] = useState<Artifact | null>(null);
@@ -161,7 +169,7 @@ export function ArtifactFull({
   const [changing, setChanging] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [organizing, setOrganizing] = useState<"tags" | "folder" | "watch" | null>(null);
+  const [organizing, setOrganizing] = useState<"tags" | "folder" | "watch" | "search" | null>(null);
   const [selection, setSelection] = useState<CommentAnchor | null>(null);
   /** What is selected in the artifact right now, and where, for the overlay. */
   const [live, setLive] = useState<{ anchor: CommentAnchor; rect: SelectionRect } | null>(null);
@@ -201,11 +209,26 @@ export function ArtifactFull({
   /** A comment from a link, waiting to be revealed in the artifact. */
   const [pendingReveal, setPendingReveal] = useState<string | null>(null);
   const [frameReady, setFrameReady] = useState(false);
+  /** How many matches the frame found for the reader's find, and which is current. */
+  const [found, setFound] = useState<FindResult | null>(null);
+  /** Text from a link, waiting for the artifact to show before it is found. */
+  const [pendingFind, setPendingFind] = useState<string | null>(null);
+  /**
+   * What the search popover opens with, when a link asked for a find. The
+   * number remounts an open popover for a second find.
+   */
+  const [initialFind, setInitialFind] = useState<{ query: string; key: number } | null>(null);
 
   const linkShown = useRef(onLinkShown);
   useEffect(() => {
     linkShown.current = onLinkShown;
   });
+
+  useEffect(() => {
+    if (!find) return;
+    setPendingFind(find);
+    linkShown.current?.();
+  }, [find]);
 
   useEffect(() => {
     if (!versionId && !commentId) return;
@@ -323,6 +346,8 @@ export function ArtifactFull({
       } else if (message.type === "set" || message.type === "clear") {
         if (!readerIsActing()) return;
         void changeEntry(message.key, message.type === "set" ? { value: message.value } : null);
+      } else if (message.type === "found") {
+        setFound({ count: message.count, index: message.index, more: message.more });
       } else {
         setFocusedId(message.id);
         setPanelOpen(true);
@@ -332,6 +357,11 @@ export function ArtifactFull({
   );
 
   usePreviewBridge(frameRef, handleBridgeMessage);
+
+  const runFind = useCallback((query: string, index: number) => {
+    if (query.trim() === "") setFound(null);
+    sendToPreview(frameRef.current, { type: "find", query, index });
+  }, []);
 
   useEffect(() => {
     sendToPreview(frameRef.current, { type: "mode", enabled: panelOpen });
@@ -350,6 +380,18 @@ export function ArtifactFull({
     sendToPreview(frameRef.current, { type: "reveal", id: pendingReveal });
     setPendingReveal(null);
   }, [pendingReveal, frameReady, comments]);
+
+  // The popover finds in the frame, so a link's find waits until the frame can answer.
+  useEffect(() => {
+    if (!pendingFind || !frameReady || view !== "preview") return;
+    setInitialFind((previous) => ({ query: pendingFind, key: (previous?.key ?? 0) + 1 }));
+    setOrganizing("search");
+    setPendingFind(null);
+  }, [pendingFind, frameReady, view]);
+
+  useEffect(() => {
+    if (organizing !== "search") setInitialFind(null);
+  }, [organizing]);
 
   useEffect(() => {
     sendToPreview(frameRef.current, { type: "comments", comments: pageComments });
@@ -584,6 +626,9 @@ export function ArtifactFull({
     : [];
 
   const closeOrganizing = useCallback(() => setOrganizing(null), []);
+  useSearchShortcut(() => {
+    if (artifact) setOrganizing("search");
+  });
 
   const commentsAction: HeaderAction = {
     id: "comments",
@@ -592,6 +637,15 @@ export function ArtifactFull({
     pressed: panelOpen,
     expanded: panelOpen,
     onSelect: () => setPanelOpen((open) => !open),
+  };
+
+  const searchAction: HeaderAction = {
+    id: "search",
+    label: "Search",
+    icon: <SearchIcon />,
+    pressed: organizing === "search",
+    expanded: organizing === "search",
+    onSelect: () => setOrganizing(organizing === "search" ? null : "search"),
   };
 
   const header = artifact ? (
@@ -643,6 +697,9 @@ export function ArtifactFull({
         {actions.map((action) => (
           <HeaderControl key={action.id} action={action} className="icon-button icon-only" />
         ))}
+        <span className="full-actions-divider" aria-hidden="true" />
+        <HeaderControl action={commentsAction} className="icon-button icon-only" />
+        <HeaderControl action={searchAction} className="icon-button icon-only" />
       </div>
       {organizing === "tags" ? (
         <TagPicker artifacts={[artifact]} onChanged={setArtifact} onClose={closeOrganizing} />
@@ -658,6 +715,19 @@ export function ArtifactFull({
           onClose={closeOrganizing}
         />
       ) : null}
+      {organizing === "search" ? (
+        <SearchPopover
+          key={initialFind?.key ?? 0}
+          initialQuery={initialFind?.query ?? ""}
+          initialScope={initialFind ? "artifact" : "everywhere"}
+          folderId={artifact.folder?.id ?? null}
+          // The markdown view is part of this page, where the browser's own find works.
+          find={view === "preview" && frameReady ? { result: found, run: runFind } : null}
+          onOpenArtifact={onOpenArtifact}
+          onOpenGallery={onOpenGallery}
+          onClose={closeOrganizing}
+        />
+      ) : null}
       {problem ? (
         <p className="problem" role="alert">
           {problem}
@@ -666,13 +736,9 @@ export function ArtifactFull({
     </div>
   ) : null;
 
-  const commentsToggle = artifact ? (
-    <HeaderControl action={commentsAction} className="icon-button icon-only" />
-  ) : null;
-
   const menu = artifact
     ? (close: () => void) =>
-        [...actions, commentsAction].map((action) => (
+        [...actions, commentsAction, searchAction].map((action) => (
           <HeaderControl
             key={action.id}
             action={action}
@@ -759,7 +825,6 @@ export function ArtifactFull({
         onHome={onHome}
         onProfile={onProfile}
         onOpenArtifact={onOpenArtifact}
-        trailing={commentsToggle}
         menu={menu}
         notice={
           notice

@@ -212,3 +212,12 @@ export function TickIcon() {
     </Icon>
   );
 }
+
+export function SearchIcon({ size = 16 }: { size?: number }) {
+  return (
+    <Icon width={size} height={size}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </Icon>
+  );
+}

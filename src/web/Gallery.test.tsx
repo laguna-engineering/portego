@@ -149,18 +149,19 @@ describe("filters", () => {
     }
   });
 
-  test("searches every folder, wherever the search starts", async () => {
+  test("keeps the folder while searching, so a search scoped to a folder lists only that folder", async () => {
     const requested: string[] = [];
     stubFetch((path) => {
       requested.push(path);
       return { body: { items: [artifact()], nextCursor: null } };
     });
-    renderGallery({ folderId: "root", query: "chart" });
+    renderGallery({ folderId: "folder-1", query: "chart" });
 
     await screen.findByText("Sales chart");
-    const search = new URL(requested[0] ?? "", "http://app.test").searchParams;
+    const listing = requested.find((path) => path.startsWith("/api/artifacts?"));
+    const search = new URL(listing ?? "", "http://app.test").searchParams;
     expect(search.get("q")).toBe("chart");
-    expect(search.has("folderId")).toBe(false);
+    expect(search.get("folderId")).toBe("folder-1");
   });
 
   test("leaves archived artifacts out unless they are asked for", async () => {

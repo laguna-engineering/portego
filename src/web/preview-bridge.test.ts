@@ -53,6 +53,28 @@ describe("readBridgeMessage", () => {
     expect(read?.type === "selection" && read.anchor?.suffix).toHaveLength(100);
   });
 
+  test("accepts a find count, and refuses one that could not be a count", () => {
+    expect(readBridgeMessage({ portego: 1, type: "found", count: 3, index: 2 })).toEqual({
+      type: "found",
+      count: 3,
+      index: 2,
+      more: false,
+    });
+    expect(
+      readBridgeMessage({ portego: 1, type: "found", count: 1000, index: 0, more: true }),
+    ).toMatchObject({ more: true });
+    expect(readBridgeMessage({ portego: 1, type: "found", count: 0, index: 0 })).not.toBeNull();
+    for (const [count, index] of [
+      [3, 3],
+      [-1, 0],
+      [1.5, 0],
+      ["3", 0],
+      [1e9, 0],
+    ]) {
+      expect(readBridgeMessage({ portego: 1, type: "found", count, index })).toBeNull();
+    }
+  });
+
   test("treats a message without the portego marker as coming from an untrusted frame", () => {
     const { portego: _portego, ...rest } = selectionMessage();
     expect(readBridgeMessage(rest)).toBeNull();

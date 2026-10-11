@@ -56,12 +56,14 @@ describe("readRoute", () => {
       id: "abc-123",
       versionId: null,
       commentId: null,
+      find: null,
     });
     expect(readRoute(new URL("http://app.test/a/a%2Fb"))).toEqual({
       name: "artifact",
       id: "a/b",
       versionId: null,
       commentId: null,
+      find: null,
     });
   });
 
@@ -83,6 +85,7 @@ describe("readRoute", () => {
       id: "abc-123",
       versionId: "v/2",
       commentId: null,
+      find: null,
     });
   });
 
@@ -92,6 +95,7 @@ describe("readRoute", () => {
       id: "abc-123",
       versionId: null,
       commentId: null,
+      find: null,
     });
   });
 
@@ -134,7 +138,13 @@ describe("paths", () => {
       id: "a/b",
       versionId: null,
       commentId: "c/1",
+      find: null,
     });
+  });
+
+  test("carries text to find in the artifact, and reads back the same", () => {
+    const path = artifactPath("abc", { find: "roll back" });
+    expect(readRoute(new URL(path, "http://app.test"))).toMatchObject({ find: "roll back" });
   });
 
   test("points at one version when asked, and reads back the same", () => {
@@ -145,6 +155,7 @@ describe("paths", () => {
       id: "a/b",
       versionId: "v/2",
       commentId: null,
+      find: null,
     });
   });
 });

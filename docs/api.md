@@ -50,13 +50,15 @@ false when the deployment turned private artifacts off, and the deployment's
 | `GET` | `/api/artifacts/:id/source` | Download the stored bytes of one version |
 | `POST` | `/api/artifacts/:id/preview` | Mint a short-lived preview URL for one version |
 | `POST` | `/api/uploads` | Upload one HTML document with a ticket, no session, or a new version of one |
+| `GET` | `/api/artifacts/search` | Search titles, descriptions, artifact text, comments, folders, and tags |
 | `GET` | `/api/events` | Subscribe to changes, as Server-Sent Events |
 | `GET` | `/api/activity` | Recent activity on every artifact, and when you last read it |
 | `POST` | `/api/activity/read` | Mark the activity read up to now |
 
 ### List
 
-Query parameters: `q` filters on title and description, `status` is `open` or
+Query parameters: `q` matches words in the title, description, current
+version's text, and comments, as Search matches them, `status` is `open` or
 `solved`, `archived=true` includes archived artifacts (they are left out
 otherwise), `folderId` filters to artifacts filed directly in one folder
 (`folderId=root` lists the artifacts in no folder), and
@@ -71,6 +73,31 @@ instead and offers the global listing as "All artifacts".
 
 `GET /api/folders` returns `folders` and `rootArtifactCount`, the number of
 artifacts in no folder.
+
+### Search
+
+`GET /api/artifacts/search?q=…` returns the matches grouped by where the words
+matched: `artifacts` (title or description), `content` (the current version's
+text), `comments`, `folders`, and `tags` (by name). Each group holds the five
+most recent matches. `total` counts the artifacts that match anywhere, each
+once, which is how many the list returns for the same `q`, folder, and
+archived setting with every status.
+Text matches carry a `snippet`, a list of `{ text, match? }` segments with the
+matched words marked, and content matches count their `matches`. Folders and
+tags carry a `count` of the artifacts in scope they hold, which can be 0.
+
+Every word must match, and words match whole words only: "ego" does not find
+"Portego". A word matches the start of a longer one, since it may still be
+being typed ("deplo" finds "deploy"), and other forms of a word match too
+("rollbacks" finds "rollback"). Only letters and digits count, so a query of
+punctuation matches nothing. A folder or tag name matches when it contains
+every word. The text searched is the version's Markdown as plain text: link
+targets, image paths, and markup never match. `folderId` limits the search to
+one folder (`root` for no folder), `artifactId` to one artifact, and
+`archived=true` includes archived artifacts.
+
+Versions uploaded before search existed, or indexed by an older server, are
+indexed in the background when the server starts.
 
 `sort` is one of `updated-desc` (the default), `updated-asc`, `created-desc`,
 `created-asc`, `title-asc`, or `title-desc`. Title order ignores case.

@@ -276,7 +276,10 @@ describes the suites and the hostile-artifact cases.
 ## Web client
 
 Two views. The gallery lists artifacts as cards and keeps its search term in
-the URL, so a link reproduces what the sender was looking at. The artifact page
+the URL, so a link reproduces what the sender was looking at. Search sits in
+the masthead (a field in the gallery, a button on an artifact; `/` opens it)
+and finds words in titles, descriptions, artifact text, comments, and folder
+and tag names. Enter without picking a result filters the gallery. The artifact page
 fills the window under the masthead with an isolated preview, and carries the
 metadata, versions, comments, a source download, and a copy-link action. A link
 to it unfurls in chat apps with the artifact's title and the Portego logo. Uploading is a dialog that takes a dropped or chosen file, confirms its

@@ -32,7 +32,7 @@ export type ArtifactCardProps = {
  * card shows a generated mark rather than a rendering of the upload: no
  * artifact markup enters this DOM.
  */
-function mark(id: string): string {
+export function mark(id: string): string {
   let hash = 0;
   for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) % 997;
   return `var(--mark-${(hash % 4) + 1})`;

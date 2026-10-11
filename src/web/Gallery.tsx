@@ -27,15 +27,12 @@ const SORT_LABELS: Record<GallerySort, string> = {
 type Load = { status: "loading" } | { status: "ready" } | { status: "error"; message: string };
 
 export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
-  const { query, status, archived, sort } = filters;
-  // A search covers every folder, wherever it was started.
-  const folderId = query.trim() === "" ? filters.folderId : null;
+  const { query, status, archived, sort, folderId } = filters;
   // The route builds a new array on every navigation. Ids have no commas, so
   // the joined string is a stable dependency.
   const tagKey = filters.tagIds.join(",");
   const atRoot = folderId === ROOT_FOLDER_ID && tagKey === "";
   const filtered = folderId !== null || tagKey !== "";
-  const searchId = useId();
   const sortId = useId();
   const [items, setItems] = useState<Artifact[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -193,28 +190,15 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
     }
   }
 
-  // Kept while searching, which covers every folder, so the row does not jump.
-  const watchedFolderId =
-    filters.folderId !== null && filters.folderId !== ROOT_FOLDER_ID ? filters.folderId : null;
+  const watchedFolderId = folderId !== null && folderId !== ROOT_FOLDER_ID ? folderId : null;
 
   return (
     <section className={selecting ? "gallery selecting" : "gallery"}>
-      <div className={watchedFolderId ? "gallery-controls in-folder" : "gallery-controls"}>
-        {watchedFolderId ? <FolderWatch folderId={watchedFolderId} /> : null}
-        <div className="search">
-          <label htmlFor={searchId}>Search artifacts</label>
-          <input
-            id={searchId}
-            type="search"
-            value={query}
-            placeholder="Title or description"
-            onChange={(event) => onFilter({ query: event.target.value }, { replace: true })}
-          />
+      {watchedFolderId ? (
+        <div className="gallery-controls">
+          <FolderWatch folderId={watchedFolderId} />
         </div>
-        <button type="button" className="primary" onClick={onUpload}>
-          Upload
-        </button>
-      </div>
+      ) : null}
 
       <div className="filters">
         <fieldset className="chips">
@@ -255,6 +239,10 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
           />
           Show archived
         </label>
+
+        <button type="button" className="primary filters-upload" onClick={onUpload}>
+          Upload
+        </button>
       </div>
 
       {stale ? (

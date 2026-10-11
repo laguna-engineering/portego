@@ -17,14 +17,18 @@ export type BridgeMessage =
   | { type: "open"; url: string }
   | { type: "hash"; hash: string }
   | { type: "set"; key: string; value: unknown }
-  | { type: "clear"; key: string };
+  | { type: "clear"; key: string }
+  /** `more` is true when the frame stopped counting at its limit. */
+  | { type: "found"; count: number; index: number; more: boolean };
 
 export type BridgeCommand =
   | { type: "mode"; enabled: boolean }
   | { type: "highlights"; anchors: (CommentAnchor & { id: string })[] }
   | { type: "reveal"; id: string }
   | { type: "comments"; comments: PageComment[] }
-  | { type: "entries"; entries: PageEntry[] };
+  | { type: "entries"; entries: PageEntry[] }
+  /** Marks every match of `query` and makes match `index` current. An empty query clears. */
+  | { type: "find"; query: string; index: number };
 
 /**
  * A comment as the artifact sees it. The author's email is left out: the page
@@ -58,6 +62,8 @@ const ID_LIMIT = 100;
 const URL_LIMIT = 2048;
 const HASH_LIMIT = 256;
 const KEY_LIMIT = 200;
+/** The frame stops counting here. */
+const FOUND_LIMIT = 1000;
 /** The server's limit on a value's JSON text. */
 const VALUE_LIMIT = 4000;
 
@@ -137,6 +143,13 @@ export function readBridgeMessage(data: unknown): BridgeMessage | null {
     const read = readValue(message.value);
     return key && read ? { type: "set", key, value: read.value } : null;
   }
+  if (message.type === "found") {
+    const { count, index } = message;
+    const valid = (value: unknown): value is number =>
+      Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= FOUND_LIMIT;
+    if (!valid(count) || !valid(index) || (count > 0 && index >= count)) return null;
+    return { type: "found", count, index, more: message.more === true };
+  }
   if (message.type === "clear") {
     const key = readKey(message.key);
     return key ? { type: "clear", key } : null;
@@ -158,7 +171,8 @@ export function readBridgeMessage(data: unknown): BridgeMessage | null {
 export function sendToPreview(frame: HTMLIFrameElement | null, command: BridgeCommand): void {
   // The frame's origin is opaque and cannot be named, so the target is "*".
   // Nothing sent this way is secret: a mode flag, quotes the reader already
-  // sees, and the comments and entries with author names.
+  // sees, the comments and entries with author names, and a find query the
+  // reader typed to search this document.
   frame?.contentWindow?.postMessage({ portego: 1, ...command }, "*");
 }
 

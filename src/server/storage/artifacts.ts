@@ -8,6 +8,7 @@ import {
   writeImage,
 } from "./content.ts";
 import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
+import { matchingArtifactIds } from "./search.ts";
 import { follow } from "./subscriptions.ts";
 
 /**
@@ -90,6 +91,10 @@ export type CreateArtifactInput = {
   content: Uint8Array;
   /** Markdown supplied with this version, instead of generated from its HTML. */
   providedMarkdown?: string;
+  /** Markdown converted from this version's HTML, cached so it is not converted again. */
+  generatedMarkdown?: { markdown: string; empty: boolean; converterVersion: string };
+  /** The plain text search matches for this version, and what produced it. */
+  searchText?: { text: string; textVersion: string };
   /** The entry schema this version declares, already checked. */
   entrySchema?: string | null;
   images?: VersionImageInput[];
@@ -108,6 +113,10 @@ export type AddVersionInput = {
   content: Uint8Array;
   /** Markdown supplied with this version, instead of generated from its HTML. */
   providedMarkdown?: string;
+  /** Markdown converted from this version's HTML, cached so it is not converted again. */
+  generatedMarkdown?: { markdown: string; empty: boolean; converterVersion: string };
+  /** The plain text search matches for this version, and what produced it. */
+  searchText?: { text: string; textVersion: string };
   /** The entry schema this version declares, already checked. */
   entrySchema?: string | null;
   images?: VersionImageInput[];
@@ -145,7 +154,10 @@ export type ListOptions = {
   limit?: number;
   cursor?: string | null;
   sort?: ListSort | null;
-  /** Matches title and description. Absent or empty means no filter. */
+  /**
+   * Matches title, description, the current version's text, and comments.
+   * Absent or empty means no filter.
+   */
   query?: string | null;
   status?: ArtifactStatus | null;
   /** Filters to artifacts filed directly in this folder, or in none for `ROOT_FOLDER_ID`. */
@@ -425,12 +437,41 @@ export function createArtifactStore(options: {
     }
   };
 
-  const insertProvidedMarkdown = () =>
+  const insertMarkdown = () =>
     database.query(
       `insert into artifactMarkdown
          (versionId, converterVersion, sourceSha256, markdown, isEmpty, generatedAt)
-       values (?, 'provided', ?, ?, ?, ?)`,
+       values (?, ?, ?, ?, ?, ?)`,
     );
+
+  // Called inside the transaction that inserts the version.
+  const storeVersionText = (
+    versionId: string,
+    sha256: string,
+    input: CreateArtifactInput | AddVersionInput,
+    now: number,
+  ) => {
+    if (input.providedMarkdown !== undefined) {
+      insertMarkdown().run(
+        versionId,
+        "provided",
+        sha256,
+        input.providedMarkdown,
+        input.providedMarkdown.trim() === "" ? 1 : 0,
+        now,
+      );
+    } else if (input.generatedMarkdown) {
+      const { markdown, empty, converterVersion } = input.generatedMarkdown;
+      insertMarkdown().run(versionId, converterVersion, sha256, markdown, empty ? 1 : 0, now);
+    }
+    if (input.searchText !== undefined) {
+      database
+        .query(
+          "insert into searchDocuments (kind, refId, body, textVersion) values ('version', ?, ?, ?)",
+        )
+        .run(versionId, input.searchText.text, input.searchText.textVersion);
+    }
+  };
 
   return {
     get,
@@ -488,15 +529,7 @@ export function createArtifactStore(options: {
             at: now,
           });
           insertImages(id, images);
-          if (input.providedMarkdown !== undefined) {
-            insertProvidedMarkdown().run(
-              id,
-              stored.sha256,
-              input.providedMarkdown,
-              input.providedMarkdown.trim() === "" ? 1 : 0,
-              now,
-            );
-          }
+          storeVersionText(id, stored.sha256, input, now);
         })();
       } catch (cause) {
         // Nothing references the files yet, so removing them here keeps the
@@ -548,15 +581,7 @@ export function createArtifactStore(options: {
             at: now,
           });
           insertImages(id, images);
-          if (input.providedMarkdown !== undefined) {
-            insertProvidedMarkdown().run(
-              id,
-              stored.sha256,
-              input.providedMarkdown,
-              input.providedMarkdown.trim() === "" ? 1 : 0,
-              now,
-            );
-          }
+          storeVersionText(id, stored.sha256, input, now);
           const description = input.description === undefined ? "artifacts.description" : "?";
           const parameters: (string | number | null)[] = [
             input.originalFilename,
@@ -705,14 +730,13 @@ export function createArtifactStore(options: {
       if (!listOptions.includeArchived) {
         conditions.push("artifacts.archivedAt is null");
       }
-      if (search) {
-        // The escape clause lets a search term contain % or _ without those
-        // characters acting as wildcards.
-        conditions.push(
-          "(artifacts.title like ? escape '\\' or artifacts.description like ? escape '\\')",
-        );
-        const pattern = `%${search.replace(/[\\%_]/g, "\\$&")}%`;
-        parameters.push(pattern, pattern);
+      const matching = search ? matchingArtifactIds(search) : null;
+      if (matching) {
+        conditions.push(`artifacts.id in (${matching.sql})`);
+        parameters.push(...matching.parameters);
+      } else if (search) {
+        // A query with no letters or digits matches nothing.
+        conditions.push("0");
       }
       const where = conditions.length > 0 ? `where ${conditions.join(" and ")}` : "";
 

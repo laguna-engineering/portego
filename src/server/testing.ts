@@ -24,6 +24,7 @@ import { createEntryStore } from "./storage/entries.ts";
 import { applyMigrations } from "./storage/migrations.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 import { createProfileStore } from "./storage/profiles.ts";
+import { createSearchStore } from "./storage/search.ts";
 
 /** A different host from TEST_BASE_URL, which is what isolates a preview. */
 export const TEST_CONTENT_ORIGIN = "http://127.0.0.1:5173";
@@ -83,6 +84,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     markdownStore: createMarkdownStore({ database }),
     commentStore: createCommentStore({ database }),
     entryStore: createEntryStore({ database }),
+    searchStore: createSearchStore({ database }),
     organization,
     events,
     ...(options.maxUploadBytes ? { maxUploadBytes: options.maxUploadBytes } : {}),

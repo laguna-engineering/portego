@@ -83,6 +83,7 @@ describe("a first run with no deployment set", () => {
       "list_folders",
       "list_tags",
       "prepare_artifact_draft",
+      "search_artifacts",
       "sign_in",
       "upload_artifact_from_path",
       "validate_artifact",

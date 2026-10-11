@@ -174,6 +174,7 @@ describe("tools", () => {
   test("offers the artifact tools", async () => {
     expect(await tools()).toEqual([
       "list_artifacts",
+      "search_artifacts",
       "get_artifact_metadata",
       "list_artifact_versions",
       "get_artifact_source",
@@ -301,6 +302,37 @@ describe("tools", () => {
     const listed = (await callTool(otherClient, "list_artifacts", { query: "Private through MCP" }))
       .result?.structuredContent as { items: unknown[] };
     expect(listed.items).toHaveLength(0);
+    const searched = (
+      await callTool(otherClient, "search_artifacts", { query: "Private through MCP" })
+    ).result?.structuredContent as { total: number; artifacts: unknown[] };
+    expect(searched).toMatchObject({ total: 0, artifacts: [] });
+  });
+
+  test("searches artifact text and comments, and says where each matched", async () => {
+    const created = await upload(
+      "Searched through MCP",
+      "<!doctype html><html><title>t</title><p>Start the zanzibar rollback.</p></html>",
+    );
+    await callTool(client, "add_artifact_comment", { id: created.id, body: "zanzibar again?" });
+
+    const found = (await callTool(client, "search_artifacts", { query: "zanzibar" })).result
+      ?.structuredContent as {
+      total: number;
+      content: { id: string; title: string; url: string; snippet: string; matches: number }[];
+      comments: { id: string; snippet: string }[];
+    };
+    // One artifact, found in its text and in a comment.
+    expect(found.total).toBe(1);
+    expect(found.content).toEqual([
+      {
+        id: created.id,
+        title: "Searched through MCP",
+        url: created.url,
+        snippet: "Start the **zanzibar** rollback.",
+        matches: 1,
+      },
+    ]);
+    expect(found.comments.map((comment) => comment.snippet)).toEqual(["**zanzibar** again?"]);
   });
 
   test("moves status and archives through MCP, recording the caller", async () => {

@@ -19,6 +19,7 @@ import { McpLogin } from "./McpLogin.tsx";
 import { MemberProfile } from "./Member.tsx";
 import { Profile } from "./Profile.tsx";
 import { artifactPath, galleryPath, ROOT_FOLDER_ID, useRoute } from "./router.ts";
+import { SearchField } from "./Search.tsx";
 import { SignIn } from "./SignIn.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
 
@@ -157,7 +158,17 @@ export function App() {
             )
           : undefined
       }
-    />
+    >
+      {route.name === "gallery" ? (
+        <SearchField
+          initialQuery={route.query}
+          folderId={route.folderId !== ROOT_FOLDER_ID ? route.folderId : null}
+          archived={route.archived}
+          onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
+          onOpenGallery={(filters) => navigate(galleryPath({ ...route, ...filters }))}
+        />
+      ) : null}
+    </Masthead>
   );
 
   // The artifact view gives the artifact every pixel the masthead does not
@@ -170,6 +181,7 @@ export function App() {
         id={route.id}
         versionId={route.versionId}
         commentId={route.commentId}
+        find={route.find}
         onLinkShown={() => navigate(artifactPath(route.id), { replace: true })}
         email={session.user.email}
         avatar={session.user.avatar}
@@ -177,6 +189,7 @@ export function App() {
         privateArtifacts={session.features.privateArtifacts}
         onHome={() => navigate("/")}
         onOpenFolder={(folderId) => navigate(galleryPath({ folderId }))}
+        onOpenGallery={(filters) => navigate(galleryPath(filters))}
         onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
         onProfile={() => navigate("/profile")}
       />

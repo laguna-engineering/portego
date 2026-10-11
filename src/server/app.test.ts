@@ -16,6 +16,7 @@ import { createCommentStore } from "./storage/comments.ts";
 import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 import { createProfileStore } from "./storage/profiles.ts";
+import { createSearchStore } from "./storage/search.ts";
 import { createTestServer, htmlFile, TEST_CONTENT_ORIGIN, WORKSPACE_USER } from "./testing.ts";
 
 const cleanups: (() => void)[] = [];
@@ -49,6 +50,7 @@ async function createTestApp(options?: {
       markdownStore: createMarkdownStore({ database }),
       commentStore: createCommentStore({ database }),
       entryStore: createEntryStore({ database }),
+      searchStore: createSearchStore({ database }),
       organization,
     }),
     organization,
