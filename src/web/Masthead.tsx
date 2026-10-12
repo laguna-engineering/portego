@@ -21,6 +21,8 @@ export type MastheadProps = {
   menu?: (close: () => void) => ReactNode;
   /** A short message shown just below the masthead, e.g. a change someone else made. */
   notice?: { message: string; onSelect: () => void } | null;
+  /** A message with an action, shown below the masthead until the page clears it. */
+  alert?: { message: string; action: string; onAction: () => void } | null;
 };
 
 export function Masthead({
@@ -33,6 +35,7 @@ export function Masthead({
   children,
   menu,
   notice,
+  alert,
 }: MastheadProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -103,11 +106,23 @@ export function Masthead({
           <span>Profile</span>
         </button>
       </div>
-      {notice ? (
-        <div className="masthead-notice" role="status">
-          <button type="button" onClick={notice.onSelect}>
-            {notice.message}
-          </button>
+      {notice || alert ? (
+        <div className="masthead-notices">
+          {alert ? (
+            <div className="masthead-alert" role="status">
+              <span>{alert.message}</span>
+              <button type="button" onClick={alert.onAction}>
+                {alert.action}
+              </button>
+            </div>
+          ) : null}
+          {notice ? (
+            <div className="masthead-notice" role="status">
+              <button type="button" onClick={notice.onSelect}>
+                {notice.message}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </header>

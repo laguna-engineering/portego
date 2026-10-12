@@ -1138,11 +1138,11 @@ describe("change notices", () => {
   /**
    * Answers from `lists` at request time, so a test can change them before
    * announcing. A posted comment joins the list at once; with `holdPosts` its
-   * response waits for `release`.
+   * response waits for `release`. Every requested path goes into `requested`.
    */
   function stubLists(
     lists: { versions: ArtifactVersion[]; comments: Comment[] },
-    options: { holdPosts?: boolean } = {},
+    options: { holdPosts?: boolean; requested?: string[] } = {},
   ) {
     const held: (() => void)[] = [];
     const json = (body: unknown, status = 200) =>
@@ -1151,6 +1151,7 @@ describe("change notices", () => {
         headers: { "content-type": "application/json" },
       });
     stubFetchWith((path, init) => {
+      options.requested?.push(path);
       const base = path.split("?")[0] ?? path;
       if (base.endsWith("/comments") && init?.method === "POST") {
         const { body } = JSON.parse(String(init.body)) as { body: string };
@@ -1192,11 +1193,13 @@ describe("change notices", () => {
     await screen.findByRole("button", { name: "Version 1, current" });
   }
 
-  test("tells the reader who uploaded a new version, but not about the versions already there", async () => {
+  const newVersionPill = "New version available!";
+
+  test("offers a refresh for a new version, but not for the versions already there", async () => {
     const lists = { versions: [version({ creator: someoneElse })], comments: [] };
     stubLists(lists);
     await renderWithVersions();
-    expect(screen.queryByText(/uploaded version/)).toBeNull();
+    expect(screen.queryByText(newVersionPill)).toBeNull();
 
     lists.versions = [
       version({ id: "v2", number: 2, creator: someoneElse, inApp: true }),
@@ -1204,10 +1207,11 @@ describe("change notices", () => {
     ];
     await announce({ type: "artifact.changed", id: "artifact-1" });
 
-    expect(await screen.findByText("B Person uploaded version 2")).toBeDefined();
+    expect(await screen.findByText(newVersionPill)).toBeDefined();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDefined();
   });
 
-  test("tells the reader about a version uploaded under their own account, e.g. by their agent", async () => {
+  test("offers a refresh for a version uploaded under the reader's own account, e.g. by their agent", async () => {
     const lists = { versions: [version({ creator: me })], comments: [] };
     stubLists(lists);
     await renderWithVersions();
@@ -1215,10 +1219,10 @@ describe("change notices", () => {
     lists.versions = [version({ id: "v2", number: 2, creator: me }), ...lists.versions];
     await announce({ type: "artifact.changed", id: "artifact-1" });
 
-    expect(await screen.findByText("A Person uploaded version 2")).toBeDefined();
+    expect(await screen.findByText(newVersionPill)).toBeDefined();
   });
 
-  test("does not tell the reader about a version they uploaded in the web app", async () => {
+  test("does not offer a refresh for a version the reader uploaded in the web app", async () => {
     const lists = { versions: [version({ creator: me })], comments: [] };
     stubLists(lists);
     await renderWithVersions();
@@ -1231,10 +1235,44 @@ describe("change notices", () => {
 
     await screen.findByRole("button", { name: "Version 2, current" });
     await act(async () => {});
-    expect(screen.queryByText(/uploaded version/)).toBeNull();
+    expect(screen.queryByText(newVersionPill)).toBeNull();
   });
 
-  test("clicking a new version's notice takes a reader on an older version to the new one", async () => {
+  test("the refresh pill stays until the reader refreshes", async () => {
+    const lists = { versions: [version({ creator: someoneElse })], comments: [] };
+    stubLists(lists);
+    await renderWithVersions();
+
+    lists.versions = [version({ id: "v2", number: 2, creator: someoneElse }), ...lists.versions];
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+    await screen.findByText(newVersionPill);
+    // Comment notices go away on their own after six seconds.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 6500)));
+
+    expect(screen.getByText(newVersionPill)).toBeDefined();
+  }, 10_000);
+
+  test("refreshing reloads the frame, which otherwise keeps showing the version it loaded", async () => {
+    const requested: string[] = [];
+    const lists = { versions: [version({ creator: someoneElse })], comments: [] };
+    stubLists(lists, { requested });
+    await renderWithVersions();
+    await screen.findByTitle("Preview of Sales chart");
+
+    lists.versions = [version({ id: "v2", number: 2, creator: someoneElse }), ...lists.versions];
+    requested.length = 0;
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+    await screen.findByText(newVersionPill);
+    expect(requested.some((path) => path.includes("/preview"))).toBe(false);
+
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(requested.some((path) => path.includes("/preview"))).toBe(true));
+    expect(screen.queryByText(newVersionPill)).toBeNull();
+    expect(await screen.findByTitle("Preview of Sales chart")).toBeDefined();
+  });
+
+  test("refreshing takes a reader on an older version to the new one", async () => {
     const lists = {
       versions: [version({ id: "v1", number: 1, creator: someoneElse })],
       comments: [],
@@ -1242,20 +1280,14 @@ describe("change notices", () => {
     stubLists(lists);
     await renderWithVersions();
     await userEvent.click(screen.getByRole("button", { name: "Version 1, current" }));
-    await userEvent.click(screen.getByRole("button", { name: "Close comments" }));
 
     lists.versions = [version({ id: "v2", number: 2, creator: someoneElse }), ...lists.versions];
     await announce({ type: "artifact.changed", id: "artifact-1" });
-    await userEvent.click(
-      await screen.findByRole("button", { name: "B Person uploaded version 2" }),
-    );
+    await userEvent.click(await screen.findByRole("button", { name: "Refresh" }));
 
-    expect(
-      screen.getByRole("button", { name: "Versions & comments" }).getAttribute("aria-pressed"),
-    ).toBe("true");
     const newest = screen.getByRole("button", { name: "Version 2, current" });
     expect(newest.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.queryByText("B Person uploaded version 2")).toBeNull();
+    expect(screen.queryByText(newVersionPill)).toBeNull();
   });
 
   test("tells the reader who commented, but not about the comments already there", async () => {

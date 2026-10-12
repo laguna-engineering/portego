@@ -178,8 +178,13 @@ export function ArtifactFull({
   const [entries, setEntries] = useState<Entry[]>([]);
   /** The entry the artifact just recorded for the reader, shown for a moment. */
   const [recorded, setRecorded] = useState<string | null>(null);
-  /** A version or comment added from somewhere other than this page, shown for a moment. */
+  /** A comment added from somewhere other than this page, shown for a moment. */
   const [notice, setNotice] = useState<{ message: string; commentId?: string } | null>(null);
+  /** A version uploaded from somewhere other than this page, shown until the reader refreshes. */
+  const [newVersion, setNewVersion] = useState(false);
+  // The frame keeps what it loaded for the current version, so showing a newer
+  // current version takes a remount.
+  const [frameKey, setFrameKey] = useState(0);
   // What the reader has already seen. Null until the first load, which
   // announces nothing.
   const newestVersion = useRef<number | null>(null);
@@ -469,7 +474,7 @@ export function ArtifactFull({
         const seen = newestVersion.current;
         const mine = newest.inApp && newest.creator.id === currentUserId;
         if (seen !== null && newest.number > seen && !mine) {
-          setNotice({ message: `${newest.creator.name} uploaded version ${newest.number}` });
+          setNewVersion(true);
         }
         newestVersion.current = Math.max(seen ?? 0, newest.number);
       }
@@ -775,12 +780,13 @@ export function ArtifactFull({
   } else if (view === "text") {
     body = (
       <main className="full-text">
-        <ArtifactText artifactId={artifact.id} versionId={viewedVersionId} />
+        <ArtifactText key={frameKey} artifactId={artifact.id} versionId={viewedVersionId} />
       </main>
     );
   } else {
     body = (
       <ArtifactPreview
+        key={frameKey}
         ref={frameRef}
         artifactId={artifact.id}
         title={artifact.title}
@@ -834,8 +840,19 @@ export function ArtifactFull({
                   setNotice(null);
                   setPanelOpen(true);
                   if (notice.commentId) revealComment(notice.commentId);
-                  // A new version is the current one.
-                  else setViewedVersionId(null);
+                },
+              }
+            : null
+        }
+        alert={
+          newVersion
+            ? {
+                message: "New version available!",
+                action: "Refresh",
+                onAction: () => {
+                  setNewVersion(false);
+                  setViewedVersionId(null);
+                  setFrameKey((key) => key + 1);
                 },
               }
             : null
