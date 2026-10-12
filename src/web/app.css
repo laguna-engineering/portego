@@ -2020,12 +2020,44 @@ button.link {
   z-index: 5;
 }
 
-.masthead-notice {
+.masthead-notices {
   position: absolute;
   top: calc(100% + 0.5rem);
   left: 50%;
   transform: translateX(-50%);
   max-width: calc(100% - 2rem);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.masthead-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0.4rem 0.35rem 1rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.masthead-alert button {
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--accent-ink);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.masthead-alert button:hover {
+  border-color: var(--accent-ink);
+  background: var(--accent-ink);
+  color: var(--accent);
 }
 
 .masthead-notice button {
