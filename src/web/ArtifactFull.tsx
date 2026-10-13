@@ -17,7 +17,7 @@ import {
   setEntry,
   sourceUrl,
 } from "./api.ts";
-import { CommentsPanel } from "./CommentsPanel.tsx";
+import { COMMENTS_PANEL_ID, CommentsPanel } from "./CommentsPanel.tsx";
 import { formatBytes } from "./format.ts";
 import {
   ArchiveIcon,
@@ -90,6 +90,8 @@ type HeaderAction = {
   disabled?: boolean;
   pressed?: boolean;
   expanded?: boolean;
+  /** The id of the element this button opens and closes. */
+  controls?: string;
   keepsMenuOpen?: boolean;
   /** Puts a dot on the header button, e.g. when the artifact has tags. */
   dot?: boolean;
@@ -126,6 +128,7 @@ function HeaderControl({
       disabled={action.disabled}
       aria-pressed={action.pressed}
       aria-expanded={action.expanded}
+      aria-controls={action.controls}
       data-dot={action.dot || undefined}
       data-active={action.active || undefined}
       onClick={() => {
@@ -631,6 +634,7 @@ export function ArtifactFull({
     : [];
 
   const closeOrganizing = useCallback(() => setOrganizing(null), []);
+  const closePanel = useCallback(() => setPanelOpen(false), []);
   useSearchShortcut(() => {
     if (artifact) setOrganizing("search");
   });
@@ -641,6 +645,7 @@ export function ArtifactFull({
     icon: <CommentIcon />,
     pressed: panelOpen,
     expanded: panelOpen,
+    controls: COMMENTS_PANEL_ID,
     onSelect: () => setPanelOpen((open) => !open),
   };
 
@@ -680,6 +685,7 @@ export function ArtifactFull({
             <button
               type="button"
               className="version-pill"
+              aria-controls={COMMENTS_PANEL_ID}
               aria-label={`Show versions, viewing version ${viewedVersion.number}`}
               title="Show versions"
               onClick={showVersions}
@@ -805,6 +811,7 @@ export function ArtifactFull({
       <button
         type="button"
         className="selection-overlay"
+        aria-controls={COMMENTS_PANEL_ID}
         aria-label="Comment on selection"
         title="Comment on selection"
         style={{
@@ -879,7 +886,7 @@ export function ArtifactFull({
             onSelectVersion={setViewedVersionId}
             anchor={selection}
             onClearAnchor={() => setSelection(null)}
-            onClose={() => setPanelOpen(false)}
+            onClose={closePanel}
             onComments={handleComments}
             onEntries={setEntries}
             onFocusComment={revealComment}

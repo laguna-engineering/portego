@@ -89,6 +89,54 @@ describe("writing", () => {
     expect(posted).toEqual(["New one"]);
   });
 
+  test("posts on Cmd+Enter or Ctrl+Enter, while Enter alone adds a line", async () => {
+    const posted: string[] = [];
+    stubFetch((_path, init) => {
+      if (init?.method === "POST") {
+        const body = String(JSON.parse(String(init.body)).body);
+        posted.push(body);
+        return { status: 201, body: { comment: comment({ id: `c${posted.length}`, body }) } };
+      }
+      return { body: { comments: [] } };
+    });
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+    const draft = (await screen.findByLabelText("Add a comment")) as HTMLTextAreaElement;
+
+    await userEvent.type(draft, "First{Enter}line");
+    expect(posted).toEqual([]);
+    expect(draft.value).toBe("First\nline");
+
+    await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
+    await waitFor(() => expect(draft.value).toBe(""));
+
+    await userEvent.type(draft, "Second");
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    await waitFor(() => expect(draft.value).toBe(""));
+
+    expect(posted).toEqual(["First\nline", "Second"]);
+  });
+
+  test("names the shortcut with the modifier of the reader's platform", async () => {
+    stubFetch(() => ({ body: { comments: [] } }));
+    const platform = Object.getOwnPropertyDescriptor(navigator, "platform");
+    try {
+      Object.defineProperty(navigator, "platform", { value: "MacIntel", configurable: true });
+      const mac = render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+      const draft = await screen.findByLabelText("Add a comment");
+      expect(draft.getAttribute("aria-describedby")).toBe("comment-hint");
+      expect(document.getElementById("comment-hint")?.textContent).toBe("⌘ + Enter to post");
+      mac.unmount();
+
+      Object.defineProperty(navigator, "platform", { value: "Win32", configurable: true });
+      render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+      await screen.findByLabelText("Add a comment");
+      expect(document.getElementById("comment-hint")?.textContent).toBe("Ctrl + Enter to post");
+    } finally {
+      if (platform) Object.defineProperty(navigator, "platform", platform);
+      else delete (navigator as { platform?: string }).platform;
+    }
+  });
+
   test("writes a root comment with the version being viewed", async () => {
     const posted: unknown[] = [];
     stubFetch((_path, init) => {
@@ -251,6 +299,29 @@ describe("threading", () => {
 
     const reply = await screen.findByText("Thanks");
     expect(document.getElementById("comment-root-1")?.contains(reply)).toBe(true);
+    expect(posted).toEqual([{ body: "Thanks", parentId: "root-1" }]);
+  });
+
+  test("posts a reply on Ctrl+Enter", async () => {
+    const posted: unknown[] = [];
+    stubFetch((_path, init) => {
+      if (init?.method === "POST") {
+        posted.push(JSON.parse(String(init.body)));
+        return {
+          status: 201,
+          body: { comment: comment({ id: "reply-1", body: "Thanks", parentId: "root-1" }) },
+        };
+      }
+      return { body: { comments: [comment({ id: "root-1", body: "Root thought" })] } };
+    });
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+    await screen.findByText("Root thought");
+
+    await userEvent.click(screen.getByRole("button", { name: "Reply" }));
+    await userEvent.type(screen.getByLabelText(/Reply to /), "Thanks");
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+
+    expect(await screen.findByText("Thanks")).toBeDefined();
     expect(posted).toEqual([{ body: "Thanks", parentId: "root-1" }]);
   });
 

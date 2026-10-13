@@ -39,6 +39,22 @@ function truncate(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
 }
 
+/** Cmd+Enter or Ctrl+Enter posts the draft on every platform. Enter alone adds a line. */
+function submitOnModEnter(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+  if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+  event.preventDefault();
+  event.currentTarget.form?.requestSubmit();
+}
+
+function SubmitHint({ id }: { id: string }) {
+  const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+  return (
+    <p id={id} className="hint submit-hint">
+      <kbd>{modifier}</kbd> + <kbd>Enter</kbd> to post
+    </p>
+  );
+}
+
 type Thread = { root: Comment; replies: Comment[] };
 
 /** Groups a flat, creation-ordered list into root comments and their replies. */
@@ -274,8 +290,11 @@ export function Comments({
                   rows={2}
                   value={replyDraft}
                   disabled={replySending}
+                  aria-describedby={`reply-hint-${root.id}`}
                   onChange={(event) => setReplyDraft(event.target.value)}
+                  onKeyDown={submitOnModEnter}
                 />
+                <SubmitHint id={`reply-hint-${root.id}`} />
                 {replyProblem ? (
                   <p className="problem" role="alert">
                     {replyProblem}
@@ -321,8 +340,11 @@ export function Comments({
           rows={3}
           value={draft}
           disabled={sending}
+          aria-describedby="comment-hint"
           onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={submitOnModEnter}
         />
+        <SubmitHint id="comment-hint" />
         {problem ? (
           <p className="problem" role="alert">
             {problem}

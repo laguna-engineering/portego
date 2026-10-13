@@ -674,6 +674,37 @@ describe("comments panel", () => {
     expect(screen.queryByText("a line")).toBeNull();
   });
 
+  test("closes the panel on a click elsewhere on the page, and stays open on a click inside it", async () => {
+    stubFetch(answer);
+    renderFull();
+    const toggle = await screen.findByRole("button", { name: "Versions & comments" });
+    await userEvent.click(toggle);
+    const panel = await screen.findByRole("dialog", { name: "Versions and comments" });
+
+    await userEvent.click(within(panel).getByLabelText("Add a comment"));
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+
+    await userEvent.click(screen.getByRole("heading", { name: /Sales chart/ }));
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  test("closes the panel on Escape, after any popover over it", async () => {
+    stubFetch(answer);
+    renderFull();
+    const toggle = await screen.findByRole("button", { name: "Versions & comments" });
+    await userEvent.click(toggle);
+    await userEvent.keyboard("/");
+    await screen.findByRole("dialog", { name: "Search" });
+
+    // One Escape closes one layer, so a reader leaving the search keeps their comments open.
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Search" })).toBeNull();
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+
+    await userEvent.keyboard("{Escape}");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  });
+
   test("reveals a comment's quote in the artifact when it is clicked", async () => {
     stubFetch((path) =>
       path.endsWith("/comments")
