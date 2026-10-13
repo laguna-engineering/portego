@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { ArtifactVersion, Comment, CommentAnchor, Entry } from "./api.ts";
 import { Comments } from "./Comments.tsx";
 import { Entries } from "./Entries.tsx";
@@ -26,6 +27,23 @@ export type CommentsPanelProps = {
   focusedId: string | null;
 };
 
+export const COMMENTS_PANEL_ID = "comments-panel";
+
+/**
+ * Clicks here leave the panel open. Controls that open the panel carry
+ * aria-controls, so the press does not close it before its click opens it
+ * again. A click that dismisses a popover or the menu dismisses only that.
+ */
+const KEEPS_PANEL_OPEN = [
+  `#${COMMENTS_PANEL_ID}`,
+  `[aria-controls="${COMMENTS_PANEL_ID}"]`,
+  ".popover",
+  ".popover-backdrop",
+  ".masthead-menu",
+  ".masthead-menu-backdrop",
+  ".masthead-notices",
+].join(", ");
+
 /**
  * The comment thread, and the version history above it, as a panel over the
  * full-screen artifact, like Google Docs: it slides in from the right without
@@ -50,11 +68,49 @@ export function CommentsPanel({
   onFocusComment,
   focusedId,
 }: CommentsPanelProps) {
+  const panel = useRef<HTMLElement>(null);
+
+  // Clicks inside the artifact's frame never reach this document, so selecting
+  // a passage to comment on keeps the panel open.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => {
+      // The closed panel is only moved off screen, so focus left in it would
+      // keep typing into a hidden field.
+      if (panel.current?.contains(document.activeElement)) {
+        (document.activeElement as HTMLElement).blur();
+      }
+      onClose();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(KEEPS_PANEL_OPEN)) return;
+      close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      // Escape closes the topmost layer only: a popover, the menu, or the
+      // notifications close first. This listener captures on the window, so
+      // it sees those layers before their own handlers close them.
+      const otherLayer = document.querySelector(
+        `[aria-expanded="true"]:not([aria-controls="${COMMENTS_PANEL_ID}"])`,
+      );
+      if (!otherLayer) close();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [open, onClose]);
+
   const viewedId = viewedVersionId ?? currentVersionId;
   const viewedVersion = versions.find((version) => version.id === viewedId) ?? null;
 
   return (
     <aside
+      ref={panel}
+      id={COMMENTS_PANEL_ID}
       className={open ? "comments-panel open" : "comments-panel"}
       role="dialog"
       aria-label="Versions and comments"

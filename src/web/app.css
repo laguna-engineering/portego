@@ -881,6 +881,18 @@ label {
   width: 100%;
 }
 
+.submit-hint {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.submit-hint kbd {
+  font-family: var(--sans);
+  padding: 0 0.3rem;
+  border: 1px solid var(--line);
+  border-radius: 0.25rem;
+}
+
 .comment.focused {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
