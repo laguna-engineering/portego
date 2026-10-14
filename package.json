@@ -34,6 +34,7 @@
     "@better-auth/mcp": "1.7.4",
     "@modelcontextprotocol/sdk": "1.31.0",
     "better-auth": "1.7.4",
+    "diff": "9.0.0",
     "hono": "4.13.7",
     "marked": "18.0.13",
     "parse5": "8.0.1",
