@@ -810,8 +810,10 @@ export function ArtifactFull({
       <main className="full-text">
         <ArtifactDiff
           artifactId={artifact.id}
+          versions={versions}
           from={compareFrom}
           to={compareTo}
+          onSelect={setComparing}
           onClose={() => setComparing(null)}
         />
       </main>

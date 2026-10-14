@@ -1,13 +1,15 @@
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { ApiError, type ArtifactVersion, fetchMarkdown, type Markdown } from "./api.ts";
+import { HighlightIcon, SideBySideIcon } from "./Icons.tsx";
 import { type DiffRow, diffRows, type Segment } from "./versionDiff.ts";
 
 export type ArtifactDiffProps = {
   artifactId: string;
-  /** The older of the two versions. */
+  /** Every version of the artifact, for the two selects. */
+  versions: ArtifactVersion[];
   from: ArtifactVersion;
-  /** The newer of the two versions. */
   to: ArtifactVersion;
+  onSelect: (pair: { fromId: string; toId: string }) => void;
   onClose: () => void;
 };
 
@@ -22,7 +24,14 @@ type State =
  * The difference between the Markdown of two versions, either inline (the
  * newer text with what is new or changed highlighted) or side by side.
  */
-export function ArtifactDiff({ artifactId, from, to, onClose }: ArtifactDiffProps) {
+export function ArtifactDiff({
+  artifactId,
+  versions,
+  from,
+  to,
+  onSelect,
+  onClose,
+}: ArtifactDiffProps) {
   const [mode, setMode] = useState<Mode>("inline");
   const [state, setState] = useState<State>({ status: "loading" });
 
@@ -50,6 +59,12 @@ export function ArtifactDiff({ artifactId, from, to, onClose }: ArtifactDiffProp
     [state],
   );
 
+  const options = versions.map((version) => (
+    <option key={version.id} value={version.id}>
+      v{version.number}
+    </option>
+  ));
+
   let body: ReactNode;
   if (state.status === "loading") {
     body = <p className="hint">Comparing versions...</p>;
@@ -73,26 +88,42 @@ export function ArtifactDiff({ artifactId, from, to, onClose }: ArtifactDiffProp
   return (
     <section className="diff" aria-label="Changes between versions">
       <div className="diff-controls">
-        <h2 className="diff-title">
-          Changes from v{from.number} to v{to.number}
-        </h2>
+        <div className="diff-title">
+          Changes from{" "}
+          <select
+            aria-label="From version"
+            value={from.id}
+            onChange={(event) => onSelect({ fromId: event.target.value, toId: to.id })}
+          >
+            {options}
+          </select>{" "}
+          to{" "}
+          <select
+            aria-label="To version"
+            value={to.id}
+            onChange={(event) => onSelect({ fromId: from.id, toId: event.target.value })}
+          >
+            {options}
+          </select>
+          <button type="button" className="icon-button" onClick={onClose}>
+            Close comparison
+          </button>
+        </div>
         <fieldset className="chips">
           <legend>Show changes</legend>
           {(["inline", "split"] as const).map((value) => (
             <button
               key={value}
               type="button"
-              className={mode === value ? "chip selected" : "chip"}
+              className="icon-button icon-only"
               aria-pressed={mode === value}
               onClick={() => setMode(value)}
             >
-              {value === "inline" ? "Highlight changes" : "Side by side"}
+              {value === "inline" ? <HighlightIcon /> : <SideBySideIcon />}
+              <span>{value === "inline" ? "Highlight changes" : "Side by side"}</span>
             </button>
           ))}
         </fieldset>
-        <button type="button" className="icon-button" onClick={onClose}>
-          Close comparison
-        </button>
       </div>
       {body}
     </section>

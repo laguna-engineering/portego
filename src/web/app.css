@@ -1878,18 +1878,36 @@ button.link {
 
 /* Version diff ---------------------------------------------------------- */
 
+/* Stays at the top while the comparison scrolls. The negative margin and
+   matching padding cover the scroll container's padding. */
 .diff-controls {
-  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* The side columns share the rest equally, so the modes sit in the center. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
   gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
+  margin: -1rem -1rem 1rem;
+  padding: 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--page);
 }
 
 .diff-title {
-  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--serif);
   font-size: 1.1rem;
+}
+
+.diff-title select {
+  width: auto;
+  font-family: var(--sans);
+  font-size: 0.85rem;
 }
 
 .diff ins,

@@ -108,6 +108,25 @@ export function TextIcon() {
   );
 }
 
+export function HighlightIcon() {
+  return (
+    <Icon>
+      <path d="M4 6h16" />
+      <path d="M4 18h10" />
+      <rect x="3" y="10" width="18" height="4" rx="1" fill="currentColor" fillOpacity="0.3" />
+    </Icon>
+  );
+}
+
+export function SideBySideIcon() {
+  return (
+    <Icon>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M12 4v16" />
+    </Icon>
+  );
+}
+
 export function PreviewIcon() {
   return (
     <Icon>

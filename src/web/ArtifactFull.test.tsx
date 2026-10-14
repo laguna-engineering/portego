@@ -626,6 +626,13 @@ describe("version changes", () => {
     await userEvent.click(await screen.findByRole("button", { name: label }));
   }
 
+  async function expectComparing(from: string, to: string) {
+    const selected = (name: string) =>
+      (screen.getByRole("combobox", { name }) as HTMLSelectElement).selectedOptions[0]?.textContent;
+    await screen.findByRole("combobox", { name: "From version" });
+    expect([selected("From version"), selected("To version")]).toEqual([from, to]);
+  }
+
   test("offers no comparison for an artifact with a single version", async () => {
     stubFetch(answer);
     renderFull();
@@ -650,7 +657,7 @@ describe("version changes", () => {
 
     await compare("Compare version 2 with version 1");
 
-    expect(await screen.findByRole("heading", { name: "Changes from v1 to v2" })).toBeDefined();
+    await expectComparing("v1", "v2");
     await screen.findByText("Q4");
     expect([...container.querySelectorAll(".diff ins")].map((node) => node.textContent)).toEqual([
       "Q4",
@@ -670,7 +677,7 @@ describe("version changes", () => {
       await screen.findByRole("button", { name: "Compare version 1 with version 2" }),
     );
 
-    expect(await screen.findByRole("heading", { name: "Changes from v1 to v2" })).toBeDefined();
+    await expectComparing("v1", "v2");
   });
 
   test("shows both versions side by side with removals and additions marked", async () => {
@@ -690,6 +697,18 @@ describe("version changes", () => {
     ]);
   });
 
+  test("compares other versions picked in its header", async () => {
+    stubFetch(twoVersions);
+    renderFull();
+
+    await compare("Compare version 2 with version 1");
+    await screen.findByText("Q4");
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "From version" }), "v2");
+
+    expect(await screen.findByText("The text of these versions is the same.")).toBeDefined();
+    await expectComparing("v2", "v2");
+  });
+
   test("returns to the artifact when the comparison closes or a version is selected", async () => {
     stubFetch(twoVersions);
     renderFull();
@@ -699,10 +718,10 @@ describe("version changes", () => {
     expect(await screen.findByTitle("Preview of Sales chart")).toBeDefined();
 
     await userEvent.click(screen.getByRole("button", { name: "Compare version 2 with version 1" }));
-    await screen.findByRole("heading", { name: "Changes from v1 to v2" });
+    await expectComparing("v1", "v2");
     await userEvent.click(screen.getByRole("button", { name: "Version 1" }));
     expect(await screen.findByTitle("Preview of Sales chart")).toBeDefined();
-    expect(screen.queryByRole("heading", { name: /^Changes from/ })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "From version" })).toBeNull();
   });
 });
 
