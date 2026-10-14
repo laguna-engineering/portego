@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArtifactDiff } from "./ArtifactDiff.tsx";
 import { ArtifactPreview } from "./ArtifactPreview.tsx";
 import { ArtifactText } from "./ArtifactText.tsx";
 import {
@@ -213,6 +214,24 @@ export function ArtifactFull({
   }, [versions, viewedVersionId]);
 
   const viewedVersion = versions.find((version) => version.id === viewedId) ?? null;
+
+  /** Two versions being compared, set from the versions panel. */
+  const [comparing, setComparing] = useState<{ fromId: string; toId: string } | null>(null);
+  const compareFrom = versions.find((version) => version.id === comparing?.fromId);
+  const compareTo = versions.find((version) => version.id === comparing?.toId);
+
+  function compareWith(versionId: string) {
+    const other = versions.find((version) => version.id === versionId);
+    if (!viewedVersion || !other) return;
+    const [from, to] =
+      other.number < viewedVersion.number ? [other, viewedVersion] : [viewedVersion, other];
+    setComparing({ fromId: from.id, toId: to.id });
+  }
+
+  function selectVersion(versionId: string) {
+    setComparing(null);
+    setViewedVersionId(versionId);
+  }
 
   /** A comment from a link, waiting to be revealed in the artifact. */
   const [pendingReveal, setPendingReveal] = useState<string | null>(null);
@@ -602,7 +621,10 @@ export function ArtifactFull({
           label: view === "text" ? "View preview" : "View markdown",
           icon: view === "text" ? <PreviewIcon /> : <TextIcon />,
           pressed: view === "text",
-          onSelect: () => setView(view === "text" ? "preview" : "text"),
+          onSelect: () => {
+            setComparing(null);
+            setView(view === "text" ? "preview" : "text");
+          },
         },
         {
           id: "tags",
@@ -783,6 +805,17 @@ export function ArtifactFull({
         <p className="hint">Loading...</p>
       </main>
     );
+  } else if (compareFrom && compareTo) {
+    body = (
+      <main className="full-text">
+        <ArtifactDiff
+          artifactId={artifact.id}
+          from={compareFrom}
+          to={compareTo}
+          onClose={() => setComparing(null)}
+        />
+      </main>
+    );
   } else if (view === "text") {
     body = (
       <main className="full-text">
@@ -858,6 +891,7 @@ export function ArtifactFull({
                 action: "Refresh",
                 onAction: () => {
                   setNewVersion(false);
+                  setComparing(null);
                   setViewedVersionId(null);
                   setFrameKey((key) => key + 1);
                 },
@@ -883,7 +917,8 @@ export function ArtifactFull({
             versions={versions}
             currentVersionId={artifact.currentVersionId}
             viewedVersionId={viewedVersionId}
-            onSelectVersion={setViewedVersionId}
+            onSelectVersion={selectVersion}
+            onCompareVersion={compareWith}
             anchor={selection}
             onClearAnchor={() => setSelection(null)}
             onClose={closePanel}

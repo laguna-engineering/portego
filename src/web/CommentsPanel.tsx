@@ -18,6 +18,8 @@ export type CommentsPanelProps = {
   /** The version being viewed. Null means the current version. */
   viewedVersionId: string | null;
   onSelectVersion: (id: string) => void;
+  /** Compares the viewed version with this one. */
+  onCompareVersion: (id: string) => void;
   anchor: CommentAnchor | null;
   onClearAnchor: () => void;
   onClose: () => void;
@@ -60,6 +62,7 @@ export function CommentsPanel({
   currentVersionId,
   viewedVersionId,
   onSelectVersion,
+  onCompareVersion,
   anchor,
   onClearAnchor,
   onClose,
@@ -147,6 +150,16 @@ export function CommentsPanel({
                     <MemberLink id={version.creator.id}>{version.creator.name}</MemberLink> ·{" "}
                     <RelativeTime iso={version.createdAt} /> · {formatBytes(version.byteSize)}
                   </span>
+                  {viewedVersion && version.id !== viewedId ? (
+                    <button
+                      type="button"
+                      className="version-compare"
+                      aria-label={`Compare version ${viewedVersion.number} with version ${version.number}`}
+                      onClick={() => onCompareVersion(version.id)}
+                    >
+                      Compare
+                    </button>
+                  ) : null}
                 </li>
               );
             })}

@@ -10,6 +10,8 @@
   --accent: #2f6d63;
   --accent-ink: #ffffff;
   --danger: #a2503a;
+  --diff-added: #d7ead0;
+  --diff-removed: #f3d9cf;
 
   --mark-1: #4c7568;
   --mark-2: #5d7a54;
@@ -38,6 +40,8 @@
     --accent: #8fc7bb;
     --accent-ink: #131615;
     --danger: #d99f83;
+    --diff-added: #2a4630;
+    --diff-removed: #4e2f26;
   }
 }
 
@@ -1872,6 +1876,65 @@ button.link {
   background: none;
 }
 
+/* Version diff ---------------------------------------------------------- */
+
+.diff-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.diff-title {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.diff ins,
+.diff del {
+  text-decoration: none;
+  border-radius: 0.2rem;
+}
+
+.diff ins {
+  background: var(--diff-added);
+}
+
+.diff del {
+  background: var(--diff-removed);
+}
+
+.diff-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+/* Each row is two grid cells, so a long line on one side keeps both sides aligned. */
+.diff-row {
+  display: contents;
+}
+
+.diff-cell {
+  margin: 0;
+  padding: 0 0.75rem;
+  min-height: 1.5em;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-cell + .diff-cell {
+  border-left: 1px solid var(--line);
+}
+
+.diff-cell.missing {
+  background: var(--surface-sunken);
+}
+
 /* Comments panel ------------------------------------------------------ */
 
 /* Slides over the artifact's right edge, like Google Docs, so a reader keeps
@@ -1994,6 +2057,30 @@ button.link {
   margin-left: auto;
   color: var(--ink-muted);
   font-size: 0.72rem;
+}
+
+/* Shown on hover over the row's metadata, above the row button. Touch
+   screens have no hover, so they do not get it. */
+.version-compare {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+  padding: 0.15rem 0.6rem;
+  font-size: 0.72rem;
+  opacity: 0;
+}
+
+.version-row:hover .version-compare,
+.version-compare:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .version-compare {
+    display: none;
+  }
 }
 
 /* The comment control that appears beside a selection in the artifact. */

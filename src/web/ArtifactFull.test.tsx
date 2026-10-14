@@ -592,6 +592,120 @@ describe("views", () => {
   });
 });
 
+describe("version changes", () => {
+  // v2 reworded one line and dropped another.
+  const texts: Record<string, string> = {
+    v1: "# Sales chart\n\nQ3 by region\n\nOld footnote",
+    v2: "# Sales chart\n\nQ4 by region",
+  };
+
+  function twoVersions(path: string) {
+    const base = path.split("?")[0] ?? path;
+    if (base.endsWith("/versions")) {
+      return { body: { versions: [version({ id: "v2", number: 2 }), version({ id: "v1" })] } };
+    }
+    if (base.endsWith("/markdown")) {
+      const id = new URLSearchParams(path.split("?")[1]).get("version") ?? "v2";
+      return {
+        body: {
+          markdown: texts[id],
+          empty: false,
+          converterVersion: "1",
+          generatedAt: new Date().toISOString(),
+        },
+      };
+    }
+    if (base === "/api/artifacts/artifact-1") {
+      return { body: { artifact: artifact({ currentVersionId: "v2", versionCount: 2 }) } };
+    }
+    return answer(path);
+  }
+
+  async function compare(label: string) {
+    await userEvent.click(await screen.findByRole("button", { name: "Versions & comments" }));
+    await userEvent.click(await screen.findByRole("button", { name: label }));
+  }
+
+  test("offers no comparison for an artifact with a single version", async () => {
+    stubFetch(answer);
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Versions & comments" }));
+    await screen.findByRole("button", { name: "Version 1, current" });
+    expect(screen.queryByRole("button", { name: /^Compare/ })).toBeNull();
+  });
+
+  test("offers to compare the viewed version with every other one, but not with itself", async () => {
+    stubFetch(twoVersions);
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Versions & comments" }));
+    await screen.findByRole("button", { name: "Compare version 2 with version 1" });
+    expect(screen.getAllByRole("button", { name: /^Compare/ })).toHaveLength(1);
+  });
+
+  test("highlights what the newer version added or changed", async () => {
+    stubFetch(twoVersions);
+    const { container } = renderFull();
+
+    await compare("Compare version 2 with version 1");
+
+    expect(await screen.findByRole("heading", { name: "Changes from v1 to v2" })).toBeDefined();
+    await screen.findByText("Q4");
+    expect([...container.querySelectorAll(".diff ins")].map((node) => node.textContent)).toEqual([
+      "Q4",
+    ]);
+    // Highlighting shows the new text only; what was removed is for side by side.
+    expect(container.querySelector(".diff del")).toBeNull();
+    expect(screen.queryByText(/Old footnote/)).toBeNull();
+  });
+
+  test("compares older to newer whichever of the two is being viewed", async () => {
+    stubFetch(twoVersions);
+    renderFull();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Versions & comments" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Version 1" }));
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Compare version 1 with version 2" }),
+    );
+
+    expect(await screen.findByRole("heading", { name: "Changes from v1 to v2" })).toBeDefined();
+  });
+
+  test("shows both versions side by side with removals and additions marked", async () => {
+    stubFetch(twoVersions);
+    const { container } = renderFull();
+
+    await compare("Compare version 2 with version 1");
+    await userEvent.click(await screen.findByRole("button", { name: "Side by side" }));
+
+    await screen.findByText("Old footnote");
+    expect([...container.querySelectorAll(".diff del")].map((node) => node.textContent)).toEqual([
+      "Q3",
+      "Old footnote",
+    ]);
+    expect([...container.querySelectorAll(".diff ins")].map((node) => node.textContent)).toEqual([
+      "Q4",
+    ]);
+  });
+
+  test("returns to the artifact when the comparison closes or a version is selected", async () => {
+    stubFetch(twoVersions);
+    renderFull();
+
+    await compare("Compare version 2 with version 1");
+    await userEvent.click(await screen.findByRole("button", { name: "Close comparison" }));
+    expect(await screen.findByTitle("Preview of Sales chart")).toBeDefined();
+
+    await userEvent.click(screen.getByRole("button", { name: "Compare version 2 with version 1" }));
+    await screen.findByRole("heading", { name: "Changes from v1 to v2" });
+    await userEvent.click(screen.getByRole("button", { name: "Version 1" }));
+    expect(await screen.findByTitle("Preview of Sales chart")).toBeDefined();
+    expect(screen.queryByRole("heading", { name: /^Changes from/ })).toBeNull();
+  });
+});
+
 describe("comments panel", () => {
   test("opens the panel and turns comment mode on in the frame", async () => {
     stubFetch(answer);
