@@ -2,11 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ARTIFACT_DRAG_TYPE, LONG_PRESS_MS } from "./ArtifactCard.tsx";
-import { Gallery } from "./Gallery.tsx";
+import { clearChangeMarks, Gallery } from "./Gallery.tsx";
 import type { GalleryFilters, GallerySort } from "./router.ts";
 import { artifact, restoreFetch, StubEventSource, stubFetch, stubFetchWith } from "./testing.ts";
 
-afterEach(restoreFetch);
+afterEach(() => {
+  restoreFetch();
+  clearChangeMarks();
+});
 beforeEach(() => StubEventSource.install());
 
 /** Announces a change and waits for whatever the page does about it. */
@@ -449,6 +452,64 @@ describe("live updates", () => {
     await announce({ type: "comment.changed", artifactId: "artifact-1" });
 
     expect(calls).toBe(before);
+  });
+
+  test("marks an artifact that arrives while the reader watches, until they open it", async () => {
+    let listed = [artifact({ id: "artifact-1", title: "First" })];
+    stubFetch(() => ({ body: { items: listed, nextCursor: null } }));
+    const opened: string[] = [];
+    renderGallery({ onOpen: (id) => opened.push(id) });
+    await screen.findByText("First");
+    // What was there when the reader arrived is not news.
+    expect(screen.queryByText("new")).toBeNull();
+
+    listed = [artifact({ id: "artifact-2", title: "Second" }), ...listed];
+    await announce({ type: "artifact.created", id: "artifact-2" });
+
+    const card = (await screen.findByText("Second")).closest("li");
+    if (!card) throw new Error("No card");
+    expect(within(card).getByText("new")).toBeDefined();
+    expect(card.className).toContain("changed");
+
+    await userEvent.click(within(card).getByRole("link"));
+    expect(opened).toEqual(["artifact-2"]);
+    expect(within(card).queryByText("new")).toBeNull();
+  });
+
+  test("marks an artifact that gets a new version, and not one that only changed status", async () => {
+    let listed = [
+      artifact({ id: "artifact-1", title: "First" }),
+      artifact({ id: "artifact-2", title: "Second" }),
+    ];
+    stubFetch(() => ({ body: { items: listed, nextCursor: null } }));
+    renderGallery();
+    await screen.findByText("First");
+
+    listed = [
+      artifact({ id: "artifact-1", title: "First", currentVersionId: "v2", versionCount: 2 }),
+      artifact({ id: "artifact-2", title: "Second", status: "solved" }),
+    ];
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+
+    expect(await screen.findByText("new version")).toBeDefined();
+    const second = screen.getByText("Second").closest("li");
+    if (!second) throw new Error("No card");
+    expect(within(second).queryByText(/^new/)).toBeNull();
+  });
+
+  test("keeps the marks when the reader leaves the gallery and comes back", async () => {
+    let listed = [artifact({ id: "artifact-1", title: "First" })];
+    stubFetch(() => ({ body: { items: listed, nextCursor: null } }));
+    const first = renderGallery();
+    await screen.findByText("First");
+    listed = [artifact({ id: "artifact-1", title: "First", currentVersionId: "v2" })];
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+    await screen.findByText("new version");
+
+    first.unmount();
+    renderGallery();
+
+    expect(await screen.findByText("new version")).toBeDefined();
   });
 
   test("catches up after the stream comes back", async () => {

@@ -396,6 +396,11 @@ label {
   border-color: var(--accent);
 }
 
+.card.changed {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 .card-link {
   display: grid;
   grid-template-columns: 2.75rem 1fr;
@@ -786,6 +791,12 @@ label {
   border: 1px solid var(--line);
   font-size: 0.68rem;
   color: var(--ink-muted);
+}
+
+.badge.change {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 
 .badge.solved {

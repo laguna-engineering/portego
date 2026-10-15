@@ -26,6 +26,35 @@ const SORT_LABELS: Record<GallerySort, string> = {
 
 type Load = { status: "loading" } | { status: "ready" } | { status: "error"; message: string };
 
+export type ChangeMark = "new" | "version";
+
+// Outside the component so the marks survive opening an artifact and coming
+// back. A page load clears them.
+const changeMarks = new Map<string, ChangeMark>();
+
+export function clearChangeMarks() {
+  changeMarks.clear();
+}
+
+/**
+ * Marks the artifacts that were announced as created, or whose current version
+ * differs from the one last shown, and records what is shown now.
+ */
+function noteChanges(loaded: Artifact[], shown: Map<string, string>, created: Set<string>) {
+  for (const item of loaded) {
+    const shownVersion = shown.get(item.id);
+    if (created.delete(item.id)) changeMarks.set(item.id, "new");
+    else if (
+      shownVersion !== undefined &&
+      shownVersion !== item.currentVersionId &&
+      changeMarks.get(item.id) !== "new"
+    ) {
+      changeMarks.set(item.id, "version");
+    }
+    shown.set(item.id, item.currentVersionId);
+  }
+}
+
 export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
   const { query, status, archived, sort, folderId } = filters;
   // The route builds a new array on every navigation. Ids have no commas, so
@@ -45,8 +74,11 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
   const [organizing, setOrganizing] = useState<"folder" | "tags" | null>(null);
   const [changingStatus, setChangingStatus] = useState(false);
   const [statusProblem, setStatusProblem] = useState<string | null>(null);
+  const [marks, setMarks] = useState<ReadonlyMap<string, ChangeMark>>(() => new Map(changeMarks));
   const moved = useRef(false);
   const request = useRef(0);
+  const shownVersions = useRef(new Map<string, string>());
+  const created = useRef(new Set<string>());
 
   const loadFirstPage = useCallback(
     async (quiet = false) => {
@@ -55,6 +87,9 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
         setLoad({ status: "loading" });
         // A selection belongs to the view it was made in.
         setSelectedIds([]);
+        // Changes are spotted against what this view showed, so a new view starts over.
+        shownVersions.current.clear();
+        created.current.clear();
       }
       try {
         const page = await fetchArtifacts({
@@ -67,6 +102,8 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
         });
         // A slower earlier request must not overwrite a later one.
         if (attempt !== request.current) return;
+        noteChanges(page.items, shownVersions.current, created.current);
+        setMarks(new Map(changeMarks));
         setItems(page.items);
         setSelectedIds((current) =>
           current.filter((id) => page.items.some((item) => item.id === id)),
@@ -93,6 +130,7 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
   useLiveEvents((event) => {
     // A comment or an entry changes nothing a card shows.
     if (event.type === "comment.changed" || event.type === "entry.changed") return;
+    if (event.type === "artifact.created") created.current.add(event.id);
     // A gallery showing more than its first page is a place the reader walked
     // to. Rebuilding it underneath them would lose that, so it asks first.
     if (expanded) {
@@ -179,6 +217,8 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
         tagIds: filters.tagIds,
         cursor,
       });
+      noteChanges(page.items, shownVersions.current, created.current);
+      setMarks(new Map(changeMarks));
       setItems((current) => [...current, ...page.items]);
       setCursor(page.nextCursor);
       setExpanded(true);
@@ -188,6 +228,12 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
     } finally {
       setLoadingMore(false);
     }
+  }
+
+  function open(id: string) {
+    changeMarks.delete(id);
+    setMarks(new Map(changeMarks));
+    onOpen(id);
   }
 
   const watchedFolderId = folderId !== null && folderId !== ROOT_FOLDER_ID ? folderId : null;
@@ -312,7 +358,8 @@ export function Gallery({ filters, onFilter, onOpen, onUpload }: GalleryProps) {
             <ArtifactCard
               key={artifact.id}
               artifact={artifact}
-              onOpen={onOpen}
+              change={marks.get(artifact.id) ?? null}
+              onOpen={open}
               selection={selectedIds}
               onToggleSelected={toggleSelected}
               onSelectionMoved={() => setSelectedIds([])}

@@ -1,6 +1,7 @@
 import { type DragEvent, useEffect, useRef } from "react";
 import type { Artifact } from "./api.ts";
 import { excerpt, formatBytes } from "./format.ts";
+import type { ChangeMark } from "./Gallery.tsx";
 import { TickIcon } from "./Icons.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
 import { artifactPath } from "./router.ts";
@@ -19,6 +20,8 @@ const PRESS_SLOP = 8;
 
 export type ArtifactCardProps = {
   artifact: Artifact;
+  /** A change that arrived while the gallery was open and the reader has not opened yet. */
+  change: ChangeMark | null;
   onOpen: (id: string) => void;
   /** The selected artifact ids, in the order they were selected. */
   selection: readonly string[];
@@ -58,6 +61,7 @@ function showDragCount(event: DragEvent<HTMLAnchorElement>, others: number) {
 
 export function ArtifactCard({
   artifact,
+  change,
   onOpen,
   selection,
   onToggleSelected,
@@ -83,7 +87,7 @@ export function ArtifactCard({
   );
 
   return (
-    <li className={selected ? "card selected" : "card"}>
+    <li className={`card${selected ? " selected" : ""}${change ? " changed" : ""}`}>
       <a
         className="card-link"
         href={artifactPath(artifact.id)}
@@ -153,6 +157,9 @@ export function ArtifactCard({
           <span className="card-title">
             {artifact.title}
             {selected ? <span className="card-selected">, selected</span> : null}
+            {change ? (
+              <span className="badge change">{change === "new" ? "new" : "new version"}</span>
+            ) : null}
             {artifact.versionCount > 1 ? (
               <span className="badge">v{artifact.versionCount}</span>
             ) : null}
