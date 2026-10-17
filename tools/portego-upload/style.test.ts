@@ -60,6 +60,18 @@ describe("artifact validation", () => {
     ]);
   });
 
+  test("ignores network words in data blocks, which the browser never runs", () => {
+    const page = (script: string) =>
+      validateArtifactHtml(
+        `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>Data</title></head><body><h1>Data</h1>${script}</body></html>`,
+      );
+    expect(
+      page('<script type="application/json">{"text":"refresh with fetch(url)"}</script>').valid,
+    ).toBe(true);
+    expect(page('<script type="module">fetch("/api")</script>').valid).toBe(false);
+    expect(page('<script type=" Text/JavaScript ">fetch("/api")</script>').valid).toBe(false);
+  });
+
   test("rejects CSS imports", () => {
     const result = validateArtifactHtml(
       '<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>Imported</title><style>@import url("x.css");</style></head><body><h1>Imported</h1></body></html>',

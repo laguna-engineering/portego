@@ -555,6 +555,23 @@ function inspectCss(css: string, add: (issue: ValidationIssue) => void): void {
   }
 }
 
+const javascriptTypes = new Set([
+  "module",
+  "text/javascript",
+  "application/javascript",
+  "application/ecmascript",
+  "application/x-javascript",
+  "text/ecmascript",
+  "text/jscript",
+  "text/livescript",
+]);
+
+// The browser treats a script with any other type, such as application/json, as a data block and never runs it.
+function scriptRuns(type: string | undefined): boolean {
+  const essence = type?.split(";")[0]?.trim().toLowerCase() ?? "";
+  return essence === "" || javascriptTypes.has(essence);
+}
+
 export function validateArtifactHtml(html: string, maxBytes = DEFAULT_MAX_BYTES): ValidationResult {
   const issues: ValidationIssue[] = [];
   const seen = new Set<string>();
@@ -660,7 +677,7 @@ export function validateArtifactHtml(html: string, maxBytes = DEFAULT_MAX_BYTES)
 
     if (node.tagName === "style") inspectCss(textContent(node), add);
     if (attrs.style) inspectCss(attrs.style, add);
-    if (node.tagName === "script") {
+    if (node.tagName === "script" && scriptRuns(attrs.type)) {
       const script = textContent(node);
       if (
         /\b(fetch|WebSocket|EventSource)\s*\(|\bXMLHttpRequest\b|\.sendBeacon\s*\(/.test(script)
