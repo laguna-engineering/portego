@@ -6,8 +6,21 @@ export type Entry = {
   key: string;
   value: unknown;
   updatedAt: Date;
-  author: { id: string; name: string; email: string };
+  /** A guest has no email. Their id is guestAuthorId's. */
+  author: { id: string; name: string; email: string | null; guest?: true };
 };
+
+/** User ids have no colon, so this prefix cannot name a user. */
+const GUEST_PREFIX = "guest:";
+
+/** The author id of someone who opened a public link and gave a name. */
+export function guestAuthorId(guestId: string): string {
+  return `${GUEST_PREFIX}${guestId}`;
+}
+
+function guestIdOf(authorId: string): string | null {
+  return authorId.startsWith(GUEST_PREFIX) ? authorId.slice(GUEST_PREFIX.length) : null;
+}
 
 export type EntryStore = {
   /** Oldest change first. */
@@ -24,6 +37,8 @@ export type EntryStore = {
     value: string;
     notify: boolean;
     inApp: boolean;
+    /** Required for a guest, whose name is on each of their rows. Guests never notify. */
+    guestName?: string;
   }) => Entry;
   /** Returns false when the author had no value for the key. */
   remove: (artifactId: string, authorId: string, key: string) => boolean;
@@ -42,13 +57,21 @@ type Row = {
   updatedAt: number;
   authorId: string;
   authorName: string;
-  authorEmail: string;
+  authorEmail: string | null;
+  guest: number;
 };
 
 const SELECT_ENTRY = `
-  select artifactEntries.*, ${USER_NAME} as authorName, "user".email as authorEmail
+  select artifactEntries.artifactId, artifactEntries.key, artifactEntries.value,
+    artifactEntries.updatedAt, artifactEntries.authorId, ${USER_NAME} as authorName,
+    "user".email as authorEmail, 0 as guest
   from artifactEntries join "user" on "user".id = artifactEntries.authorId
     ${JOIN_DISPLAY_NAME}`;
+
+const SELECT_GUEST_ENTRY = `
+  select artifactId, key, value, updatedAt, '${GUEST_PREFIX}' || guestId as authorId,
+    guestName as authorName, null as authorEmail, 1 as guest
+  from artifactGuestEntries`;
 
 function toEntry(row: Row): Entry {
   return {
@@ -56,7 +79,12 @@ function toEntry(row: Row): Entry {
     key: row.key,
     value: JSON.parse(row.value),
     updatedAt: new Date(row.updatedAt),
-    author: { id: row.authorId, name: row.authorName, email: row.authorEmail },
+    author: {
+      id: row.authorId,
+      name: row.authorName,
+      email: row.authorEmail,
+      ...(row.guest === 1 && { guest: true as const }),
+    },
   };
 }
 
@@ -69,6 +97,13 @@ export function createEntryStore(options: { database: Database }): EntryStore {
   const { database } = options;
 
   const get = (artifactId: string, authorId: string, key: string): Entry | null => {
+    const guestId = guestIdOf(authorId);
+    if (guestId !== null) {
+      const row = database
+        .query(`${SELECT_GUEST_ENTRY} where artifactId = ? and guestId = ? and key = ?`)
+        .get(artifactId, guestId, key) as Row | null;
+      return row ? toEntry(row) : null;
+    }
     const row = database
       .query(
         `${SELECT_ENTRY} where artifactEntries.artifactId = ? and artifactEntries.authorId = ?
@@ -84,8 +119,9 @@ export function createEntryStore(options: { database: Database }): EntryStore {
     list(artifactId) {
       const rows = database
         .query(
-          `${SELECT_ENTRY} where artifactEntries.artifactId = ?
-           order by artifactEntries.updatedAt, artifactEntries.authorId, artifactEntries.key`,
+          `${SELECT_ENTRY} where artifactEntries.artifactId = ?1
+           union all ${SELECT_GUEST_ENTRY} where artifactId = ?1
+           order by updatedAt, authorId, key`,
         )
         .all(artifactId) as Row[];
       return rows.map(toEntry);
@@ -93,6 +129,21 @@ export function createEntryStore(options: { database: Database }): EntryStore {
 
     set(input) {
       const now = Date.now();
+      const guestId = guestIdOf(input.authorId);
+      if (guestId !== null) {
+        if (input.guestName === undefined) throw new Error("A guest's entry needs their name");
+        database
+          .query(
+            `insert into artifactGuestEntries (artifactId, guestId, guestName, key, value, updatedAt)
+             values (?, ?, ?, ?, ?, ?)
+             on conflict (artifactId, guestId, key)
+             do update set value = excluded.value, updatedAt = excluded.updatedAt`,
+          )
+          .run(input.artifactId, guestId, input.guestName, input.key, input.value, now);
+        const entry = get(input.artifactId, input.authorId, input.key);
+        if (!entry) throw new Error(`Entry ${input.key} disappeared right after it was written`);
+        return entry;
+      }
       database
         .query(
           `insert into artifactEntries (artifactId, authorId, key, value, updatedAt, notifiedAt, activityId,
@@ -120,6 +171,16 @@ export function createEntryStore(options: { database: Database }): EntryStore {
     },
 
     remove(artifactId, authorId, key) {
+      const guestId = guestIdOf(authorId);
+      if (guestId !== null) {
+        return (
+          database
+            .query(
+              "delete from artifactGuestEntries where artifactId = ? and guestId = ? and key = ?",
+            )
+            .run(artifactId, guestId, key).changes > 0
+        );
+      }
       const result = database
         .query("delete from artifactEntries where artifactId = ? and authorId = ? and key = ?")
         .run(artifactId, authorId, key);
@@ -127,6 +188,15 @@ export function createEntryStore(options: { database: Database }): EntryStore {
     },
 
     count(artifactId, authorId) {
+      const guestId = guestIdOf(authorId);
+      if (guestId !== null) {
+        const row = database
+          .query(
+            "select count(*) as n from artifactGuestEntries where artifactId = ? and guestId = ?",
+          )
+          .get(artifactId, guestId) as { n: number };
+        return row.n;
+      }
       const row = database
         .query("select count(*) as n from artifactEntries where artifactId = ? and authorId = ?")
         .get(artifactId, authorId) as { n: number };
@@ -136,8 +206,12 @@ export function createEntryStore(options: { database: Database }): EntryStore {
     valueBytes(artifactId, except) {
       const row = database
         .query(
-          `select coalesce(sum(length(cast(value as blob))), 0) as n from artifactEntries
-           where artifactId = ? and not (authorId = ? and key = ?)`,
+          `select coalesce(sum(length(cast(value as blob))), 0) as n from (
+             select authorId, key, value from artifactEntries where artifactId = ?1
+             union all
+             select '${GUEST_PREFIX}' || guestId, key, value from artifactGuestEntries
+             where artifactId = ?1
+           ) where not (authorId = ?2 and key = ?3)`,
         )
         .get(artifactId, except.authorId, except.key) as { n: number };
       return row.n;

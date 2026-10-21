@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readBridgeMessage, readerIsActing } from "./preview-bridge.ts";
+import { readBridgeMessage, readerIsActing, toPageEntry } from "./preview-bridge.ts";
 
 function selectionMessage(overrides: Record<string, unknown> = {}) {
   return {
@@ -167,5 +167,30 @@ describe("readerIsActing", () => {
       if (descriptor) Object.defineProperty(navigator, "userActivation", descriptor);
       else delete (navigator as { userActivation?: unknown }).userActivation;
     }
+  });
+});
+
+describe("toPageEntry", () => {
+  const entry = {
+    key: "rsvp",
+    value: "yes",
+    updatedAt: "2026-10-21T10:00:00.000Z",
+    author: { id: "user-1", name: "A Person", email: "person@acme.example" },
+  };
+
+  test("gives the page a member's name and id, without the email", () => {
+    expect(toPageEntry(entry)).toEqual({
+      key: "rsvp",
+      value: "yes",
+      authorId: "user-1",
+      author: "A Person",
+      updatedAt: entry.updatedAt,
+    });
+  });
+
+  // A guest can type any name, including a member's.
+  test("marks a guest's name, so a guest cannot pass for a member", () => {
+    const guest = { ...entry, author: { id: "guest:g1", name: "A Person", guest: true as const } };
+    expect(toPageEntry(guest).author).toBe("A Person (guest)");
   });
 });

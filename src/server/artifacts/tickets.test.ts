@@ -68,7 +68,7 @@ describe("verifyUploadTicket", () => {
     const { token } = mintPreviewToken(SECRET, {
       artifactId: "artifact-1",
       versionId: "version-1",
-      viewerId: "user-1",
+      viewer: { userId: "user-1" },
     });
     expect(verifyUploadTicket(SECRET, token).valid).toBe(false);
   });

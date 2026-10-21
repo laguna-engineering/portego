@@ -79,6 +79,14 @@ describe("readRoute", () => {
     expect(readRoute(new URL("http://app.test/u/"))).toEqual({ name: "unknown" });
   });
 
+  test("reads a public link's token, which is the whole path after /s/", () => {
+    expect(readRoute(new URL("http://app.test/s/abc_-123"))).toEqual({
+      name: "shared",
+      token: "abc_-123",
+    });
+    expect(readRoute(new URL("http://app.test/s/"))).toEqual({ name: "unknown" });
+  });
+
   test("reads the version an artifact link points at", () => {
     expect(readRoute(new URL("http://app.test/a/abc-123?version=v%2F2"))).toEqual({
       name: "artifact",

@@ -41,6 +41,8 @@ export type Artifact = {
   archivedAt: Date | null;
   archivedBy: string | null;
   visibility: ArtifactVisibility;
+  /** The secret in the artifact's public link. Null when it has none. A private artifact has none. */
+  shareToken: string | null;
   /** How many versions exist. The current one is the highest numbered. */
   versionCount: number;
   currentVersionId: string;
@@ -210,6 +212,7 @@ type Row = {
   archivedAt: number | null;
   archivedBy: string | null;
   visibility: ArtifactVisibility;
+  shareToken: string | null;
   versionCount: number;
   currentVersionId: string;
 };
@@ -335,8 +338,11 @@ export type ArtifactStore = {
     actorId: string,
     options?: { inApp?: boolean },
   ) => Artifact | null;
-  /** Null when the artifact is gone. */
+  /** Making it private also removes its public link. Null when the artifact is gone. */
   setVisibility: (id: string, visibility: ArtifactVisibility) => Artifact | null;
+  /** Null removes the public link. Null when the artifact is gone. */
+  setShareToken: (id: string, token: string | null) => Artifact | null;
+  getByShareToken: (token: string) => Artifact | null;
   countPrivate: () => number;
   list: (options: ListOptions) => ListResult;
   get: (id: string) => Artifact | null;
@@ -636,9 +642,27 @@ export function createArtifactStore(options: {
 
     setVisibility(id, visibility) {
       database
-        .query("update artifacts set visibility = ?, updatedAt = ? where id = ?")
+        .query(
+          `update artifacts set visibility = ?1, updatedAt = ?2,
+             shareToken = case when ?1 = 'private' then null else shareToken end
+           where id = ?3`,
+        )
         .run(visibility, Date.now(), id);
       return get(id);
+    },
+
+    setShareToken(id, token) {
+      database
+        .query("update artifacts set shareToken = ?, updatedAt = ? where id = ?")
+        .run(token, Date.now(), id);
+      return get(id);
+    },
+
+    getByShareToken(token) {
+      const row = database
+        .query(`${SELECT_ARTIFACT} where artifacts.shareToken = ?`)
+        .get(token) as Row | null;
+      return row ? toArtifact(row) : null;
     },
 
     countPrivate() {
@@ -817,6 +841,17 @@ export function createArtifactStore(options: {
           )
           .run(intoId, fromId);
         database.query("delete from artifactEntries where artifactId = ?").run(fromId);
+        database
+          .query(
+            `insert into artifactGuestEntries (artifactId, guestId, guestName, key, value, updatedAt)
+             select ?, guestId, guestName, key, value, updatedAt from artifactGuestEntries
+             where artifactId = ?
+             on conflict (artifactId, guestId, key) do update
+               set value = excluded.value, updatedAt = excluded.updatedAt
+               where excluded.updatedAt > artifactGuestEntries.updatedAt`,
+          )
+          .run(intoId, fromId);
+        database.query("delete from artifactGuestEntries where artifactId = ?").run(fromId);
         // Nothing points at the old row any more, so the cascade removes nothing.
         database.query("delete from artifacts where id = ?").run(fromId);
 

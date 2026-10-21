@@ -46,6 +46,7 @@ describe("applyMigrations", () => {
       "archivedBy",
       "folderId",
       "visibility",
+      "shareToken",
     ]);
   });
 

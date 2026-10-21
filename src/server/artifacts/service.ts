@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { EventBus } from "../events/bus.ts";
 import { CONVERTER_VERSION, htmlToMarkdown } from "../markdown/convert.ts";
 import { markdownToHtml } from "../markdown/render.ts";
@@ -17,7 +18,7 @@ import type {
 } from "../storage/artifacts.ts";
 import { ContentMissingError, InvalidCursorError } from "../storage/artifacts.ts";
 import type { Comment, CommentAnchor, CommentStore } from "../storage/comments.ts";
-import type { Entry, EntryStore } from "../storage/entries.ts";
+import { type Entry, type EntryStore, guestAuthorId } from "../storage/entries.ts";
 import type { ArtifactOrganization } from "../storage/organization.ts";
 import type {
   NameHit,
@@ -61,11 +62,13 @@ export const DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 /** What a client is allowed to see. The storage key stays on the server. */
 export type ArtifactSummary = Omit<
   Artifact,
-  "storageKey" | "createdBy" | "createdByName" | "createdByEmail"
+  "storageKey" | "createdBy" | "createdByName" | "createdByEmail" | "shareToken"
 > &
   ArtifactOrganization & {
     /** Who uploaded it. A name, because a card shows a person and not an id. */
     creator: { id: string; name: string; email: string };
+    /** Whether anyone with its public link can open it. The link itself goes only to the creator. */
+    publicLink: boolean;
   };
 
 export type VersionSummary = Omit<
@@ -174,6 +177,26 @@ export const ENTRIES_PER_AUTHOR = 200;
 export const ENTRY_VALUES_MAX_BYTES = 1024 * 1024;
 /** Writes one person may make to one artifact's entries per minute. */
 export const ENTRY_WRITES_PER_MINUTE = 60;
+/**
+ * Guests one public link may admit, and writes all of its guests may make
+ * together, per minute. A guest who takes a new name starts a new author, so
+ * the per-person limits alone would not hold them back.
+ */
+export const GUESTS_PER_MINUTE = 30;
+export const GUEST_ENTRY_WRITES_PER_MINUTE = 300;
+export const GUEST_NAME_MAX_LENGTH = 80;
+
+/** Someone who opened a public link and gave a name, as their signed guest token says. */
+export type Guest = { artifactId: string; guestId: string; name: string };
+
+/** An entry as someone with a public link reads it: no email, and no other ids than authors'. */
+export type PublicEntry = {
+  key: string;
+  value: unknown;
+  updatedAt: Date;
+  author: { id: string; name: string; guest?: true };
+  format?: "comment";
+};
 
 /**
  * Anchors arrive as untrusted JSON (an HTTP body or an MCP tool argument), so
@@ -259,6 +282,20 @@ export type ArtifactService = {
   ) => Promise<{ artifact: ArtifactSummary } & CachedMarkdown>;
   /** Only the artifact's creator can change its visibility. */
   setVisibility: (id: string, visibility: unknown, actorId: string) => ArtifactSummary;
+  /** The secret in the public link, for the creator only. Null when there is no working link. */
+  shareToken: (id: string, actorId: string) => string | null;
+  /**
+   * Gives the artifact a public link, or keeps the one it has, and shares a
+   * private artifact with everyone signed in. Creator only.
+   */
+  createShareLink: (id: string, actorId: string) => { artifact: ArtifactSummary; token: string };
+  /** Removes the public link. The artifact stays shared with everyone signed in. Creator only. */
+  revokeShareLink: (id: string, actorId: string) => ArtifactSummary;
+  /**
+   * The artifact a public link opens. NOT_FOUND for every reason it does not
+   * open, so a caller learns nothing about why.
+   */
+  sharedArtifact: (token: string) => ArtifactSummary;
   setStatus: (
     id: string,
     status: ArtifactStatus,
@@ -307,18 +344,39 @@ export type ArtifactService = {
   ) => Entry;
   /** Removes the author's value for a key. Removing a key they never set is not an error. */
   clearEntry: (id: string, input: { authorId: string; key: string }) => void;
+  /** Checks the name someone with a public link gives, and makes them a new guest. */
+  startGuest: (shareToken: string, name: unknown) => Guest;
+  /** The entries and schema of the artifact a public link opens. */
+  sharedEntries: (shareToken: string) => { entries: PublicEntry[]; schema: unknown };
+  /** As setEntry, for a guest of the artifact the public link opens. */
+  setGuestEntry: (shareToken: string, guest: Guest, key: string, value: unknown) => PublicEntry;
+  clearGuestEntry: (shareToken: string, guest: Guest, key: string) => void;
   maxUploadBytes: number;
   maxImages: number;
   maxImageBytesTotal: number;
   /** False when the deployment turned private artifacts off. */
   privateArtifacts: boolean;
+  /** True when the deployment lets artifacts be opened with a public link. */
+  publicLinks: boolean;
 };
 
-function toSummary(artifact: Artifact, organization?: ArtifactOrganization): ArtifactSummary {
-  const { storageKey: _hidden, createdBy, createdByName, createdByEmail, ...summary } = artifact;
+function toSummary(
+  artifact: Artifact,
+  publicLinks: boolean,
+  organization?: ArtifactOrganization,
+): ArtifactSummary {
+  const {
+    storageKey: _hidden,
+    shareToken,
+    createdBy,
+    createdByName,
+    createdByEmail,
+    ...summary
+  } = artifact;
   return {
     ...summary,
     creator: { id: createdBy, name: createdByName, email: createdByEmail },
+    publicLink: publicLinks && shareToken !== null && artifact.archivedAt === null,
     folder: organization?.folder ?? null,
     tags: organization?.tags ?? [],
   };
@@ -336,9 +394,15 @@ function toVersionSummary(version: ArtifactVersion): VersionSummary {
   return { ...summary, creator: { id: createdBy, name: createdByName, email: createdByEmail } };
 }
 
-function toResult(result: ListResult, assignments: Map<string, ArtifactOrganization>) {
+function toResult(
+  result: ListResult,
+  publicLinks: boolean,
+  assignments: Map<string, ArtifactOrganization>,
+) {
   return {
-    items: result.items.map((artifact) => toSummary(artifact, assignments.get(artifact.id))),
+    items: result.items.map((artifact) =>
+      toSummary(artifact, publicLinks, assignments.get(artifact.id)),
+    ),
     nextCursor: result.nextCursor,
   };
 }
@@ -362,6 +426,11 @@ export function createArtifactService(options: {
    * already exist, because they would otherwise stay hidden. Defaults to true.
    */
   privateArtifacts?: boolean;
+  /**
+   * True lets a creator give an artifact a public link. False keeps existing
+   * links stored but stops them working. Defaults to false.
+   */
+  publicLinks?: boolean;
   /** Where a committed change is announced. Absent in tests that ignore it. */
   events?: EventBus;
   /** Adds shared folder and tag metadata, and files an upload that asks for it. */
@@ -372,8 +441,9 @@ export function createArtifactService(options: {
 }): ArtifactService {
   const { store, markdownStore, commentStore, entryStore, searchStore, organization } = options;
   const assignments = organization?.assignments ?? (() => new Map<string, ArtifactOrganization>());
+  const publicLinks = options.publicLinks ?? false;
   const summary = (artifact: Artifact) =>
-    toSummary(artifact, assignments([artifact.id]).get(artifact.id));
+    toSummary(artifact, publicLinks, assignments([artifact.id]).get(artifact.id));
   const maxUploadBytes = options.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   const maxImages = options.maxImages ?? DEFAULT_MAX_IMAGES;
   const maxImageBytesTotal = options.maxImageBytesTotal ?? DEFAULT_MAX_IMAGE_BYTES_TOTAL;
@@ -397,6 +467,8 @@ export function createArtifactService(options: {
   // Published after the write returns, so a failed write announces nothing.
   const publish = options.events?.publish ?? (() => {});
   const entryWrites = createWriteLimiter(ENTRY_WRITES_PER_MINUTE, 60_000);
+  const guestStarts = createWriteLimiter(GUESTS_PER_MINUTE, 60_000);
+  const guestWrites = createWriteLimiter(GUEST_ENTRY_WRITES_PER_MINUTE, 60_000);
   // A version's schema never changes, so each one is parsed once.
   const entrySchemas = new Map<string, EntrySchema | null>();
   const entrySchema = (versionId: string): EntrySchema | null => {
@@ -436,6 +508,19 @@ export function createArtifactService(options: {
     return artifact;
   };
 
+  // Every reason a link does not open is the same NOT_FOUND.
+  const sharedArtifactOf = (artifact: Artifact | null): Artifact => {
+    if (
+      !publicLinks ||
+      !artifact ||
+      artifact.archivedAt !== null ||
+      artifact.visibility === "private"
+    ) {
+      throw new ServiceError("NOT_FOUND", "No such artifact.");
+    }
+    return artifact;
+  };
+
   const writableKey = (id: string, authorId: string, key: string) => {
     const artifact = visible(id, { userId: authorId });
     if (!isEntryKey(key)) {
@@ -445,6 +530,101 @@ export function createArtifactService(options: {
       );
     }
     return artifact;
+  };
+
+  const writeEntry = (
+    artifact: Artifact,
+    input: {
+      authorId: string;
+      key: string;
+      value: unknown;
+      inApp?: boolean;
+      guestName?: string;
+    },
+  ): Entry => {
+    const id = artifact.id;
+    if (input.value === undefined) throw new ServiceError("INVALID_INPUT", "Give a value.");
+    const value = JSON.stringify(input.value);
+    if (Buffer.byteLength(value) > ENTRY_VALUE_MAX_BYTES) {
+      throw new ServiceError(
+        "INVALID_INPUT",
+        `A value is at most ${ENTRY_VALUE_MAX_BYTES} bytes of JSON.`,
+      );
+    }
+    // Entries belong to the artifact, so the current version's schema is the
+    // one they have to fit, whichever version the writer is looking at.
+    const schema = entrySchema(artifact.currentVersionId);
+    if (schema !== null) {
+      const problem = checkEntry(schema, input.key, input.value);
+      if (problem) throw new ServiceError("INVALID_INPUT", problem);
+    }
+    const existing = entryStore.get(id, input.authorId, input.key);
+    if (!existing && entryStore.count(id, input.authorId) >= ENTRIES_PER_AUTHOR) {
+      throw new ServiceError(
+        "INVALID_INPUT",
+        `One person can hold at most ${ENTRIES_PER_AUTHOR} entries on an artifact.`,
+      );
+    }
+    const otherBytes = entryStore.valueBytes(id, { authorId: input.authorId, key: input.key });
+    if (otherBytes + Buffer.byteLength(value) > ENTRY_VALUES_MAX_BYTES) {
+      throw new ServiceError(
+        "INVALID_INPUT",
+        `An artifact's entry values are at most ${ENTRY_VALUES_MAX_BYTES} bytes of JSON together.`,
+      );
+    }
+    limitWrites(id, input.authorId);
+    // A page may write the same value again on every click; that does not notify again.
+    // A guest's entries stay out of the activity feed, which lists members.
+    const notify =
+      input.guestName === undefined &&
+      schema !== null &&
+      notifiesKey(schema, input.key) &&
+      (existing === null || JSON.stringify(existing.value) !== value);
+    const entry = entryStore.set({
+      artifactId: id,
+      authorId: input.authorId,
+      key: input.key,
+      value,
+      notify,
+      inApp: input.inApp ?? false,
+      ...(input.guestName === undefined ? {} : { guestName: input.guestName }),
+    });
+    publish({
+      type: "entry.changed",
+      artifactId: id,
+      ...(notify && { activity: true as const }),
+    });
+    return entry;
+  };
+
+  const listEntries = (artifact: Artifact) => {
+    const parsed = entrySchema(artifact.currentVersionId);
+    return entryStore
+      .list(artifact.id)
+      .map((entry) =>
+        parsed && isCommentKey(parsed, entry.key)
+          ? { ...entry, format: "comment" as const }
+          : entry,
+      );
+  };
+
+  /** The linked artifact, and the guest's author id once their token is checked against it. */
+  const guestWrite = (shareToken: string, guest: Guest, key: string) => {
+    const artifact = store.getByShareToken(shareToken);
+    const shared = sharedArtifactOf(artifact);
+    if (shared.id !== guest.artifactId) {
+      throw new ServiceError("UNAUTHENTICATED", "Give your name again to add to this artifact.");
+    }
+    if (!isEntryKey(key)) {
+      throw new ServiceError(
+        "INVALID_INPUT",
+        `A key is 1 to ${ENTRY_KEY_MAX_LENGTH} printable characters with no spaces.`,
+      );
+    }
+    if (!guestWrites.allow(shared.id)) {
+      throw new ServiceError("RATE_LIMITED", "This artifact is busy. Try again shortly.");
+    }
+    return { artifact: shared, authorId: guestAuthorId(guest.guestId) };
   };
 
   const limitWrites = (id: string, authorId: string) => {
@@ -461,11 +641,16 @@ export function createArtifactService(options: {
     maxImages,
     maxImageBytesTotal,
     privateArtifacts,
+    publicLinks,
 
     list(viewer, input = {}) {
       try {
         const result = store.list({ ...input, viewerId: viewer.userId });
-        return toResult(result, assignments(result.items.map((artifact) => artifact.id)));
+        return toResult(
+          result,
+          publicLinks,
+          assignments(result.items.map((artifact) => artifact.id)),
+        );
       } catch (cause) {
         if (cause instanceof InvalidCursorError) {
           throw new ServiceError("INVALID_CURSOR", "The pagination cursor is not valid.");
@@ -503,7 +688,7 @@ export function createArtifactService(options: {
       const summaries = new Map<string, ArtifactSummary>();
       for (const id of ids) {
         const artifact = store.get(id);
-        if (artifact) summaries.set(id, toSummary(artifact, filed.get(id)));
+        if (artifact) summaries.set(id, toSummary(artifact, publicLinks, filed.get(id)));
       }
       const withArtifact = (hits: SearchHit[]) =>
         hits.flatMap((hit) => {
@@ -744,6 +929,90 @@ export function createArtifactService(options: {
       return summary(artifact);
     },
 
+    shareToken(id, actorId) {
+      const artifact = visible(id, { userId: actorId });
+      requireCreator(artifact, actorId);
+      return publicLinks ? artifact.shareToken : null;
+    },
+
+    createShareLink(id, actorId) {
+      if (!publicLinks) {
+        throw new ServiceError("FORBIDDEN", "This deployment does not allow public links.");
+      }
+      let artifact = visible(id, { userId: actorId });
+      requireCreator(artifact, actorId);
+      if (artifact.visibility === "private") {
+        artifact = store.setVisibility(id, "shared") ?? artifact;
+      }
+      const token = artifact.shareToken ?? randomBytes(24).toString("base64url");
+      if (artifact.shareToken === null) {
+        artifact = store.setShareToken(id, token) ?? artifact;
+      }
+      publish({ type: "artifact.changed", id });
+      return { artifact: summary(artifact), token };
+    },
+
+    revokeShareLink(id, actorId) {
+      requireCreator(visible(id, { userId: actorId }), actorId);
+      const artifact = store.setShareToken(id, null);
+      if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+      publish({ type: "artifact.changed", id });
+      return summary(artifact);
+    },
+
+    sharedArtifact(token) {
+      return summary(sharedArtifactOf(token === "" ? null : store.getByShareToken(token)));
+    },
+
+    startGuest(shareToken, name) {
+      const artifact = sharedArtifactOf(store.getByShareToken(shareToken));
+      const checked = typeof name === "string" ? name.trim() : "";
+      if (
+        checked === "" ||
+        checked.length > GUEST_NAME_MAX_LENGTH ||
+        /[\p{Cc}\p{Cf}]/u.test(checked)
+      ) {
+        throw new ServiceError(
+          "INVALID_INPUT",
+          `A name is 1 to ${GUEST_NAME_MAX_LENGTH} characters.`,
+        );
+      }
+      if (!guestStarts.allow(artifact.id)) {
+        throw new ServiceError("RATE_LIMITED", "Too many people at once. Try again shortly.");
+      }
+      return {
+        artifactId: artifact.id,
+        guestId: randomBytes(16).toString("base64url"),
+        name: checked,
+      };
+    },
+
+    sharedEntries(shareToken) {
+      const artifact = sharedArtifactOf(store.getByShareToken(shareToken));
+      const schema = entryStore.schema(artifact.currentVersionId);
+      return {
+        entries: listEntries(artifact).map(publicEntry),
+        schema: schema === null ? null : JSON.parse(schema),
+      };
+    },
+
+    setGuestEntry(shareToken, guest, key, value) {
+      const { artifact, authorId } = guestWrite(shareToken, guest, key);
+      const entry = writeEntry(artifact, { authorId, key, value, guestName: guest.name });
+      const parsed = entrySchema(artifact.currentVersionId);
+      return publicEntry(
+        parsed && isCommentKey(parsed, key) ? { ...entry, format: "comment" as const } : entry,
+      );
+    },
+
+    clearGuestEntry(shareToken, guest, key) {
+      const { artifact, authorId } = guestWrite(shareToken, guest, key);
+      limitWrites(artifact.id, authorId);
+      if (entryStore.remove(artifact.id, authorId, key)) {
+        publish({ type: "entry.changed", artifactId: artifact.id });
+      }
+    },
+
     // Every admitted user who can see an artifact may move its status, archive
     // it, restore it, and comment on it. There are no roles here, so the record
     // of who did what is what matters, and every change carries the actor.
@@ -832,68 +1101,15 @@ export function createArtifactService(options: {
     entries(id, viewer) {
       const artifact = visible(id, viewer);
       const schema = entryStore.schema(artifact.currentVersionId);
-      const parsed = entrySchema(artifact.currentVersionId);
-      const entries = entryStore
-        .list(id)
-        .map((entry) =>
-          parsed && isCommentKey(parsed, entry.key)
-            ? { ...entry, format: "comment" as const }
-            : entry,
-        );
-      return { entries, schema: schema === null ? null : JSON.parse(schema) };
+      return {
+        entries: listEntries(artifact),
+        schema: schema === null ? null : JSON.parse(schema),
+      };
     },
 
     setEntry(id, input) {
       const artifact = writableKey(id, input.authorId, input.key);
-      if (input.value === undefined) throw new ServiceError("INVALID_INPUT", "Give a value.");
-      const value = JSON.stringify(input.value);
-      if (Buffer.byteLength(value) > ENTRY_VALUE_MAX_BYTES) {
-        throw new ServiceError(
-          "INVALID_INPUT",
-          `A value is at most ${ENTRY_VALUE_MAX_BYTES} bytes of JSON.`,
-        );
-      }
-      // Entries belong to the artifact, so the current version's schema is the
-      // one they have to fit, whichever version the writer is looking at.
-      const schema = entrySchema(artifact.currentVersionId);
-      if (schema !== null) {
-        const problem = checkEntry(schema, input.key, input.value);
-        if (problem) throw new ServiceError("INVALID_INPUT", problem);
-      }
-      const existing = entryStore.get(id, input.authorId, input.key);
-      if (!existing && entryStore.count(id, input.authorId) >= ENTRIES_PER_AUTHOR) {
-        throw new ServiceError(
-          "INVALID_INPUT",
-          `One person can hold at most ${ENTRIES_PER_AUTHOR} entries on an artifact.`,
-        );
-      }
-      const otherBytes = entryStore.valueBytes(id, { authorId: input.authorId, key: input.key });
-      if (otherBytes + Buffer.byteLength(value) > ENTRY_VALUES_MAX_BYTES) {
-        throw new ServiceError(
-          "INVALID_INPUT",
-          `An artifact's entry values are at most ${ENTRY_VALUES_MAX_BYTES} bytes of JSON together.`,
-        );
-      }
-      limitWrites(id, input.authorId);
-      // A page may write the same value again on every click; that does not notify again.
-      const notify =
-        schema !== null &&
-        notifiesKey(schema, input.key) &&
-        (existing === null || JSON.stringify(existing.value) !== value);
-      const entry = entryStore.set({
-        artifactId: id,
-        authorId: input.authorId,
-        key: input.key,
-        value,
-        notify,
-        inApp: input.inApp ?? false,
-      });
-      publish({
-        type: "entry.changed",
-        artifactId: id,
-        ...(notify && { activity: true as const }),
-      });
-      return entry;
+      return writeEntry(artifact, input);
     },
 
     clearEntry(id, input) {
@@ -1053,5 +1269,19 @@ function createWriteLimiter(limit: number, windowMs: number) {
       recent.set(key, times);
       return true;
     },
+  };
+}
+
+function publicEntry(entry: Entry & { format?: "comment" }): PublicEntry {
+  return {
+    key: entry.key,
+    value: entry.value,
+    updatedAt: entry.updatedAt,
+    author: {
+      id: entry.author.id,
+      name: entry.author.name,
+      ...(entry.author.guest && { guest: true as const }),
+    },
+    ...(entry.format && { format: entry.format }),
   };
 }

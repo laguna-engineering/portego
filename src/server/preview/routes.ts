@@ -1,10 +1,23 @@
 import { type Context, Hono } from "hono";
 import { ServiceError } from "../artifacts/errors.ts";
 import { isImageName } from "../artifacts/images.ts";
-import type { ArtifactService } from "../artifacts/service.ts";
+import type { ArtifactService, Viewer } from "../artifacts/service.ts";
 import { withBridge } from "./bridge.ts";
 import { previewHeaders, previewImageHeaders } from "./headers.ts";
 import { type PreviewSubject, verifyPreviewToken } from "./tokens.ts";
+
+/**
+ * The read rights a token's viewer has right now. A public link is looked up
+ * again on every request, so revoking it closes previews already issued.
+ */
+function viewerOf(service: ArtifactService, subject: PreviewSubject): Viewer {
+  if ("userId" in subject.viewer) return { userId: subject.viewer.userId };
+  const shared = service.sharedArtifact(subject.viewer.shareToken);
+  if (shared.id !== subject.artifactId) {
+    throw new ServiceError("NOT_FOUND", "No such artifact.");
+  }
+  return { userId: null };
+}
 
 export type PreviewOptions = {
   service: ArtifactService;
@@ -56,7 +69,7 @@ export function previewRoutes(options: PreviewOptions): Hono {
     try {
       const { content } = await options.service.source(
         subject.artifactId,
-        { userId: subject.viewerId },
+        viewerOf(options.service, subject),
         subject.versionId,
       );
       // The response declares UTF-8, so the browser reads the upload as UTF-8
@@ -87,7 +100,7 @@ export function previewRoutes(options: PreviewOptions): Hono {
     try {
       const image = await options.service.image(
         subject.artifactId,
-        { userId: subject.viewerId },
+        viewerOf(options.service, subject),
         subject.versionId,
         name,
       );

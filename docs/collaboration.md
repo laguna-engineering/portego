@@ -32,6 +32,13 @@ it. The API's rules are in [api.md](api.md#visibility). A deployment can turn
 private artifacts off with `PRIVATE_ARTIFACTS=false`; the client then does not
 offer them.
 
+A deployment with `PUBLIC_LINKS=true` replaces the Make private control with
+Share. Its creator chooses who can see the artifact: only them, everyone
+signed in, or anyone with the link. A public link opens the artifact without
+signing in, and the creator can copy or revoke it there. Someone who opens the
+link and adds an entry gives a name first. Members see that entry under the
+name, marked as a guest. Guest entries do not appear in the activity feed.
+
 ## Comments
 
 Comments are append-only rows. Two people commenting at the same moment write

@@ -34,6 +34,7 @@ import {
   ReopenIcon,
   RestoreIcon,
   SearchIcon,
+  ShareIcon,
   TagIcon,
   TextIcon,
   UnlockIcon,
@@ -50,11 +51,13 @@ import {
   type SelectionRect,
   sendToPreview,
   showFragment,
+  toPageEntry,
   usePreviewBridge,
 } from "./preview-bridge.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
 import { type ArtifactTarget, artifactPath, type GalleryFilters } from "./router.ts";
 import { type FindResult, SearchPopover, useSearchShortcut } from "./Search.tsx";
+import { SharePopover } from "./Share.tsx";
 import { effectiveLevel, useSubscription, WatchPopover, watchLabel } from "./Watch.tsx";
 
 export type ArtifactFullProps = {
@@ -65,6 +68,8 @@ export type ArtifactFullProps = {
   currentUserId: string;
   /** False when the deployment has no private artifacts. */
   privateArtifacts: boolean;
+  /** True when the deployment lets a creator share an artifact by public link. */
+  publicLinks: boolean;
   onHome: () => void;
   onOpenFolder: (folderId: string) => void;
   /** Shows the gallery with these filters, e.g. all results of a search. */
@@ -154,6 +159,7 @@ export function ArtifactFull({
   avatar,
   currentUserId,
   privateArtifacts,
+  publicLinks,
   onHome,
   onOpenFolder,
   onOpenGallery,
@@ -173,7 +179,9 @@ export function ArtifactFull({
   const [changing, setChanging] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [organizing, setOrganizing] = useState<"tags" | "folder" | "watch" | "search" | null>(null);
+  const [organizing, setOrganizing] = useState<
+    "tags" | "folder" | "watch" | "search" | "share" | null
+  >(null);
   const [selection, setSelection] = useState<CommentAnchor | null>(null);
   /** What is selected in the artifact right now, and where, for the overlay. */
   const [live, setLive] = useState<{ anchor: CommentAnchor; rect: SelectionRect } | null>(null);
@@ -290,17 +298,7 @@ export function ArtifactFull({
     [comments],
   );
 
-  const pageEntries = useMemo(
-    (): PageEntry[] =>
-      entries.map((entry) => ({
-        key: entry.key,
-        value: entry.value,
-        authorId: entry.author.id,
-        author: entry.author.name,
-        updatedAt: entry.updatedAt,
-      })),
-    [entries],
-  );
+  const pageEntries = useMemo((): PageEntry[] => entries.map(toPageEntry), [entries]);
 
   // The change reaches the page as the next entries update.
   const changeEntry = useCallback(
@@ -590,23 +588,35 @@ export function ArtifactFull({
           disabled: changing,
           onSelect: () => void change(() => setArtifactArchived(artifact.id, !artifact.archivedAt)),
         },
-        ...(privateArtifacts && artifact.creator.id === currentUserId
+        ...(publicLinks && artifact.creator.id === currentUserId
           ? [
               {
-                id: "visibility",
-                label: artifact.visibility === "private" ? "Share with everyone" : "Make private",
-                icon: artifact.visibility === "private" ? <UnlockIcon /> : <LockIcon />,
-                disabled: changing,
-                onSelect: () =>
-                  void change(() =>
-                    setArtifactVisibility(
-                      artifact.id,
-                      artifact.visibility === "private" ? "shared" : "private",
-                    ),
-                  ),
+                id: "share",
+                label: "Share",
+                icon: <ShareIcon />,
+                pressed: organizing === "share",
+                expanded: organizing === "share",
+                active: artifact.publicLink,
+                onSelect: () => setOrganizing(organizing === "share" ? null : "share"),
               },
             ]
-          : []),
+          : privateArtifacts && artifact.creator.id === currentUserId
+            ? [
+                {
+                  id: "visibility",
+                  label: artifact.visibility === "private" ? "Share with everyone" : "Make private",
+                  icon: artifact.visibility === "private" ? <UnlockIcon /> : <LockIcon />,
+                  disabled: changing,
+                  onSelect: () =>
+                    void change(() =>
+                      setArtifactVisibility(
+                        artifact.id,
+                        artifact.visibility === "private" ? "shared" : "private",
+                      ),
+                    ),
+                },
+              ]
+            : []),
         {
           id: "download",
           label: "Download source",
@@ -702,6 +712,7 @@ export function ArtifactFull({
             {artifact.status === "solved" ? <span className="badge solved">solved</span> : null}
             {artifact.archivedAt ? <span className="badge">archived</span> : null}
             {artifact.visibility === "private" ? <span className="badge">private</span> : null}
+            {artifact.publicLink ? <span className="badge">public link</span> : null}
           </h1>
           {viewedVersion && versions.length > 1 ? (
             <button
@@ -739,6 +750,14 @@ export function ArtifactFull({
       ) : null}
       {organizing === "folder" ? (
         <FolderPicker artifacts={[artifact]} onChanged={setArtifact} onClose={closeOrganizing} />
+      ) : null}
+      {organizing === "share" ? (
+        <SharePopover
+          artifact={artifact}
+          privateArtifacts={privateArtifacts}
+          onChanged={setArtifact}
+          onClose={closeOrganizing}
+        />
       ) : null}
       {organizing === "watch" ? (
         <WatchPopover

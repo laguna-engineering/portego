@@ -4,11 +4,12 @@ import type { Auth } from "./auth/auth.ts";
 
 /** Same paths the client router treats as one artifact's page. */
 const ARTIFACT_PATH = /^\/a\/([^/]+)(?:\/full)?\/?$/;
+const SHARED_PATH = /^\/s\/([^/]+)\/?$/;
 const EXCERPT_LENGTH = 200;
 
 export type PageMeta = {
   title: string;
-  /** Present only for a signed-in request. */
+  /** Present only for a signed-in request, or for a public link. */
   description: string | null;
 };
 
@@ -23,7 +24,19 @@ export async function pageMeta(
   headers: Headers,
   deps: { auth: Auth; artifacts: ArtifactService },
 ): Promise<PageMeta | null> {
-  const id = artifactIdFromPath(path);
+  const token = segmentFromPath(path, SHARED_PATH);
+  if (token !== null) {
+    // The public link already shows its holder the title and description.
+    try {
+      const artifact = deps.artifacts.sharedArtifact(token);
+      return { title: artifact.title, description: artifact.description?.trim() || null };
+    } catch (error) {
+      if (error instanceof ServiceError) return null;
+      throw error;
+    }
+  }
+
+  const id = segmentFromPath(path, ARTIFACT_PATH);
   if (id === null) return null;
 
   try {
@@ -44,8 +57,8 @@ export async function pageMeta(
   }
 }
 
-function artifactIdFromPath(path: string): string | null {
-  const match = path.match(ARTIFACT_PATH);
+function segmentFromPath(path: string, pattern: RegExp): string | null {
+  const match = path.match(pattern);
   if (!match?.[1]) return null;
   try {
     return decodeURIComponent(match[1]);

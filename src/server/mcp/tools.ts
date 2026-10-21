@@ -797,7 +797,8 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
     key: z.string(),
     value: z.unknown(),
     updatedAt: z.string(),
-    author: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+    // A guest who wrote through a public link has no email.
+    author: z.object({ id: z.string(), name: z.string(), email: z.string().nullable() }),
   };
   const entryJson = (entry: Entry) => ({
     key: entry.key,

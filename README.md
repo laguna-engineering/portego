@@ -174,6 +174,7 @@ name, logos, and colors.
 | `ARTIFACT_MAX_IMAGES` | `20`      | Image files one upload may carry. Each image is at most 10 MiB. |
 | `ARTIFACT_IMAGES_MAX_BYTES` | `52428800` | Combined size of one upload's images, in bytes (50 MiB). |
 | `PRIVATE_ARTIFACTS` | `true`     | `false` turns private artifacts off. The server does not start while private artifacts exist. |
+| `PUBLIC_LINKS` | `false`          | `true` lets a creator share an artifact with anyone who has its link, without signing in. Turning it off stops every link and keeps them for when it is on again. |
 | `AUTH_PROVIDERS` | none           | Enabled provider ids, comma separated. Known ids: `google`, `oidc`. |
 | `AUTH_ALLOWED_EMAIL_DOMAINS` | none | Domains admitted after authentication. |
 | `AUTH_ALLOW_ALL_AUTHENTICATED` | `false` | Admit every authenticated identity. |

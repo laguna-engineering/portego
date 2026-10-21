@@ -1,5 +1,5 @@
 import { type RefObject, useEffect } from "react";
-import type { CommentAnchor } from "./api.ts";
+import type { CommentAnchor, Entry } from "./api.ts";
 
 /**
  * The parent's side of the conversation with a preview. The document in the
@@ -55,6 +55,17 @@ export type PageEntry = {
   author: string;
   updatedAt: string;
 };
+
+/** A guest's name is whatever they typed, so the page sees it marked as a guest's. */
+export function toPageEntry(entry: Entry): PageEntry {
+  return {
+    key: entry.key,
+    value: entry.value,
+    authorId: entry.author.id,
+    author: entry.author.guest ? `${entry.author.name} (guest)` : entry.author.name,
+    updatedAt: entry.updatedAt,
+  };
+}
 
 const QUOTE_LIMIT = 500;
 const CONTEXT_LIMIT = 100;

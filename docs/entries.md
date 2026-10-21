@@ -183,6 +183,14 @@ described in [security.md](security.md).
 
 Every route needs a session, and the author comes from it.
 
+An artifact with a public link also takes entries from guests: people who
+opened the link and gave a name. The routes are under `/api/shared/:token`;
+see [api.md](api.md#public-links). A guest's entry has the same limits and
+schema checks. Its author is `{ id: "guest:…", name, email: null, guest: true }`.
+A guest who gives a name again is a new author, so the per-person limits apply
+to each name. A per-link limit on new guests and on guest writes, and the
+artifact's total size, hold back the rest. Guest writes never notify.
+
 ## MCP
 
 | Tool | Purpose |

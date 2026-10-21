@@ -359,6 +359,30 @@ export const migrations: readonly Migration[] = [
     id: "017-search-text-version",
     sql: "alter table searchDocuments add column textVersion text;",
   },
+  {
+    // A token in a link that opens the artifact without signing in.
+    id: "018-artifact-share-token",
+    sql: `
+      alter table artifacts add column shareToken text;
+      create unique index artifacts_share_token on artifacts (shareToken);
+    `,
+  },
+  {
+    // Entries from people who opened a public link and gave a name. They
+    // have no user row, so they cannot share artifactEntries and its key.
+    id: "019-artifact-guest-entries",
+    sql: `
+      create table artifactGuestEntries (
+        artifactId text not null references artifacts ("id") on delete cascade,
+        guestId text not null,
+        guestName text not null,
+        key text not null,
+        value text not null,
+        updatedAt integer not null,
+        primary key (artifactId, guestId, key)
+      );
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

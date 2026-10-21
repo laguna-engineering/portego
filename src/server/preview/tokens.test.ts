@@ -7,7 +7,7 @@ import {
 } from "./tokens.ts";
 
 const SECRET = "session-secret-session-secret-32";
-const SUBJECT = { artifactId: "artifact-1", versionId: "version-1", viewerId: "user-1" };
+const SUBJECT = { artifactId: "artifact-1", versionId: "version-1", viewer: { userId: "user-1" } };
 
 describe("verifyPreviewToken", () => {
   test("accepts a token this deployment issued", () => {
@@ -41,9 +41,24 @@ describe("verifyPreviewToken", () => {
   test("refuses a token whose viewer was swapped for another user", () => {
     const { token } = mintPreviewToken(SECRET, SUBJECT);
     const [version, id, versionId, , expiry, signature] = token.split(".");
-    const creator = Buffer.from("user-2", "utf8").toString("base64url");
+    const creator = Buffer.from("user:user-2", "utf8").toString("base64url");
     const forged = [version, id, versionId, creator, expiry, signature].join(".");
     expect(verifyPreviewToken(SECRET, forged)).toEqual({ valid: false, reason: "signature" });
+  });
+
+  // A public link must not become a session's rights by relabeling its viewer.
+  test("refuses a public link token relabeled as issued to a user", () => {
+    const { token } = mintPreviewToken(SECRET, { ...SUBJECT, viewer: { shareToken: "secret" } });
+    const [version, id, versionId, , expiry, signature] = token.split(".");
+    const user = Buffer.from("user:secret", "utf8").toString("base64url");
+    const forged = [version, id, versionId, user, expiry, signature].join(".");
+    expect(verifyPreviewToken(SECRET, forged)).toEqual({ valid: false, reason: "signature" });
+  });
+
+  test("keeps the public link a token was issued for, so the content host can check it again", () => {
+    const subject = { ...SUBJECT, viewer: { shareToken: "link-secret" } };
+    const { token } = mintPreviewToken(SECRET, subject);
+    expect(verifyPreviewToken(SECRET, token)).toEqual({ valid: true, ...subject });
   });
 
   test("refuses a token whose expiry was pushed further out", () => {
@@ -88,7 +103,7 @@ describe("verifyPreviewToken", () => {
     const subject = {
       artifactId: "artifact.with.dots",
       versionId: "version.with.dots",
-      viewerId: "user-1",
+      viewer: { userId: "user-1" },
     };
     const { token } = mintPreviewToken(SECRET, subject);
     expect(verifyPreviewToken(SECRET, token)).toEqual({ valid: true, ...subject });

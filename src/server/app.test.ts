@@ -356,6 +356,18 @@ describe("GET * (social tags)", () => {
     }
   });
 
+  test("keeps a public link's secret path out of the referrer of links on its page", async () => {
+    const server = await createTestServer({ serveClient: true });
+    try {
+      const shared = await server.app.request("/s/some-secret");
+      expect(shared.headers.get("referrer-policy")).toBe("no-referrer");
+      const app = await server.app.request("/a/does-not-exist");
+      expect(app.headers.get("referrer-policy")).toBeNull();
+    } finally {
+      server.cleanup();
+    }
+  });
+
   test("falls back to the generic tags for an unknown artifact id", async () => {
     const server = await createTestServer({ serveClient: true });
     try {
@@ -365,6 +377,38 @@ describe("GET * (social tags)", () => {
       expect(body).toContain("<title>Test App</title>");
       expect(body).not.toContain('name="description"');
       expect(body).not.toContain("og:description");
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("gives a public link's title and description to an unfurler, until it is revoked", async () => {
+    const server = await createTestServer({ serveClient: true, publicLinks: true });
+    try {
+      const cookie = await server.signIn();
+      const upload = await uploadArtifact(server, cookie, {
+        title: "Team lunch",
+        description: "Pick a day",
+      });
+      const { artifact } = (await upload.json()) as { artifact: { id: string } };
+      const link = await server.app.request(`/api/artifacts/${artifact.id}/link`, {
+        method: "POST",
+        headers: { cookie, origin: TEST_BASE_URL },
+      });
+      const { url } = (await link.json()) as { url: string };
+      const path = new URL(url).pathname;
+
+      const body = await (await server.app.request(path)).text();
+      expect(body).toContain('<meta property="og:title" content="Team lunch" />');
+      expect(body).toContain('<meta property="og:description" content="Pick a day" />');
+
+      await server.app.request(`/api/artifacts/${artifact.id}/link`, {
+        method: "DELETE",
+        headers: { cookie, origin: TEST_BASE_URL },
+      });
+      const revoked = await (await server.app.request(path)).text();
+      expect(revoked).toContain('<meta property="og:title" content="Test App" />');
+      expect(revoked).not.toContain("Team lunch");
     } finally {
       server.cleanup();
     }

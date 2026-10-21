@@ -62,6 +62,7 @@ function fullProps(overrides: Partial<ArtifactFullProps> = {}): ArtifactFullProp
     avatar: null,
     currentUserId: "user-1",
     privateArtifacts: true,
+    publicLinks: false,
     onHome: () => {},
     onOpenFolder: () => {},
     onOpenGallery: () => {},
@@ -238,6 +239,62 @@ describe("actions", () => {
 
     await screen.findByRole("button", { name: "Mark solved" });
     expect(screen.queryByRole("button", { name: "Make private" })).toBeNull();
+  });
+
+  describe("with public links", () => {
+    const LINK = "http://localhost/s/secret";
+
+    test("replaces Make private with Share, which creates, copies, and revokes a link", async () => {
+      const sent: { method: string; path: string }[] = [];
+      stubFetch((path, init) => {
+        if (!path.endsWith("/link")) return answer(path);
+        const method = init?.method ?? "GET";
+        sent.push({ method, path });
+        if (method === "POST") {
+          return { body: { artifact: artifact({ publicLink: true }), url: LINK } };
+        }
+        if (method === "DELETE") return { body: { artifact: artifact({ publicLink: false }) } };
+        return { body: { url: LINK } };
+      });
+      renderFull({ publicLinks: true });
+
+      await userEvent.click(await screen.findByRole("button", { name: "Share" }));
+      expect(screen.queryByRole("button", { name: "Make private" })).toBeNull();
+      const dialog = screen.getByRole("dialog", { name: "Share" });
+      expect(
+        within(dialog).getByRole("button", { name: /Everyone signed in/, pressed: true }),
+      ).toBeDefined();
+
+      await userEvent.click(within(dialog).getByRole("button", { name: /Anyone with the link/ }));
+      expect(await within(dialog).findByDisplayValue(LINK)).toBeDefined();
+      expect(await screen.findByText("public link")).toBeDefined();
+
+      await userEvent.click(within(dialog).getByRole("button", { name: "Revoke link" }));
+      expect(
+        await within(dialog).findByRole("button", { name: /Everyone signed in/, pressed: true }),
+      ).toBeDefined();
+      expect(within(dialog).queryByRole("textbox", { name: "Public link" })).toBeNull();
+      expect(sent.map(({ method }) => method)).toContain("POST");
+      expect(sent.at(-1)).toEqual({ method: "DELETE", path: "/api/artifacts/artifact-1/link" });
+    });
+
+    test("offers Only me only where private artifacts are allowed", async () => {
+      stubFetch(answer);
+      renderFull({ publicLinks: true, privateArtifacts: false });
+
+      await userEvent.click(await screen.findByRole("button", { name: "Share" }));
+      const dialog = screen.getByRole("dialog", { name: "Share" });
+      expect(within(dialog).queryByRole("button", { name: /Only me/ })).toBeNull();
+      expect(within(dialog).getByRole("button", { name: /Anyone with the link/ })).toBeDefined();
+    });
+
+    test("does not offer sharing to anyone but the creator", async () => {
+      stubFetch(answer);
+      renderFull({ publicLinks: true, currentUserId: "user-2" });
+
+      await screen.findByRole("button", { name: "Mark solved" });
+      expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+    });
   });
 
   test("offers the source as a download that keeps the original name", async () => {
