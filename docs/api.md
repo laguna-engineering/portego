@@ -15,10 +15,14 @@ An artifact is `shared`, which every signed-in user can see, or `private`,
 which only its creator can see. Every route that names someone else's private
 artifact refuses with `PRIVATE`; see [Visibility](#visibility).
 
+A shared artifact can also have a public link, which opens it for anyone who
+has the link, without a session; see [Public links](#public-links).
+
 `GET /api/me` returns the signed-in user, the limits the client needs to
 check an upload before sending it, `features.privateArtifacts`, which is
-false when the deployment turned private artifacts off, and the deployment's
-`appName`, which names the root of the folder tree.
+false when the deployment turned private artifacts off,
+`features.publicLinks`, which is true when the deployment turned public links
+on, and the deployment's `appName`, which names the root of the folder tree.
 
 ## Endpoints
 
@@ -32,6 +36,14 @@ false when the deployment turned private artifacts off, and the deployment's
 | `PATCH` | `/api/artifacts/:id/archived` | Archive or restore |
 | `PATCH` | `/api/artifacts/:id/organization` | Set its folder or tags |
 | `PATCH` | `/api/artifacts/:id/visibility` | Make it private or shared (creator only) |
+| `GET` | `/api/artifacts/:id/link` | Its public link, or `null` (creator only) |
+| `POST` | `/api/artifacts/:id/link` | Give it a public link, or keep the one it has (creator only) |
+| `DELETE` | `/api/artifacts/:id/link` | Revoke its public link (creator only) |
+| `GET` | `/api/shared/:token` | What a public link opens, without a session |
+| `POST` | `/api/shared/:token/guest` | Give a name before adding entries through a public link |
+| `GET` | `/api/shared/:token/entries` | The entries of the artifact a public link opens |
+| `PUT` | `/api/shared/:token/entries` | Set a guest's entry |
+| `DELETE` | `/api/shared/:token/entries?key=…` | Remove a guest's entry |
 | `GET` | `/api/folders` | List the shared folder tree |
 | `POST` | `/api/folders` | Create a shared folder |
 | `PATCH` | `/api/folders/:id` | Rename or move a folder |
@@ -294,6 +306,42 @@ A private artifact is visible only to its creator. For anyone else:
 
 Comments and entries other people added while it was shared are kept. They
 see them again if the artifact is shared again.
+
+Making an artifact private also revokes its public link.
+
+### Public links
+
+A deployment with `PUBLIC_LINKS=true` lets the creator of an artifact give it
+a public link, `<APP_URL>/s/<token>`. The token is 192 random bits. Anyone
+with the link can open the artifact's current version and add entries,
+without signing in. Everyone signed in still sees the artifact as before.
+
+- `POST /api/artifacts/:id/link` returns `{ artifact, url }`. It makes a
+  private artifact shared. Asking again returns the same link.
+- `GET /api/artifacts/:id/link` returns `{ url }`, which is `null` when there
+  is no link. Only the creator can read the link. Other members see
+  `publicLink: true` on the artifact.
+- `DELETE /api/artifacts/:id/link` returns `{ artifact }`. The artifact stays
+  shared with everyone signed in. A link made after that is a new one.
+
+The public routes take the token from the path and need no session:
+
+- `GET /api/shared/:token` returns `{ artifact, preview }`. `artifact` holds
+  the title, description, creator's name, and `updatedAt`, and nothing else.
+  `preview` is a preview URL for the current version. A signed-in caller
+  also gets `artifactId`, and the client opens the artifact page instead.
+- `POST /api/shared/:token/guest` takes `{ "name": "…" }` (1 to 80
+  characters) and returns `{ guest: { id, name }, token }`. The client sends
+  the token as `Authorization: Guest <token>` with each write.
+- `GET /api/shared/:token/entries` returns `{ entries, schema }`. Authors
+  carry an `id` and a `name`, never an email.
+- `PUT` and `DELETE /api/shared/:token/entries` work as the member routes do,
+  for the guest the token names.
+
+A revoked link, an unknown one, an archived or private artifact, and a
+deployment with public links off all answer `NOT_FOUND`. A preview opened
+through a link checks the link again on each request, so revoking it also
+stops previews already issued.
 
 ### Comments
 

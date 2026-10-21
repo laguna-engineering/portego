@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { activityRoutes } from "./activity/routes.ts";
-import { artifactRoutes, handleServiceError, uploadRoutes } from "./artifacts/routes.ts";
+import {
+  artifactRoutes,
+  handleServiceError,
+  sharedRoutes,
+  uploadRoutes,
+} from "./artifacts/routes.ts";
 import type { ArtifactService } from "./artifacts/service.ts";
 import { createUploadTicketIssuer } from "./artifacts/tickets.ts";
 import type { Auth } from "./auth/auth.ts";
@@ -134,7 +139,10 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
         avatar: avatarUrl(options.profiles, id),
       },
       limits: { maxUploadBytes: options.artifacts.maxUploadBytes },
-      features: { privateArtifacts: options.artifacts.privateArtifacts },
+      features: {
+        privateArtifacts: options.artifacts.privateArtifacts,
+        publicLinks: options.artifacts.publicLinks,
+      },
       appName: options.authConfig.appName,
     });
   });
@@ -152,15 +160,19 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   app.route("/api/activity", activityRoutes(options.activity));
   app.route("/api", organizationRoutes(options.organization));
 
+  const issuePreview = createPreviewIssuer({
+    secret: options.signingSecret,
+    contentOrigin: options.contentOrigin,
+  });
+  // Public link reads need no session, like the upload route above.
+  app.route("/api/shared", sharedRoutes(options.artifacts, issuePreview, options.signingSecret));
   app.route(
     "/api/artifacts",
     artifactRoutes(
       options.artifacts,
-      createPreviewIssuer({
-        secret: options.signingSecret,
-        contentOrigin: options.contentOrigin,
-      }),
+      issuePreview,
       options.organization,
+      (token) => `${appOrigin}/s/${token}`,
     ),
   );
 
@@ -206,6 +218,8 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
       // The sandbox leaves an artifact free to navigate its own frame, which
       // would carry whatever the page knows to another site in the URL.
       c.header("Content-Security-Policy", frameSourcePolicy(options.contentOrigin));
+      // A public link's path is its secret. Other sites must not see it.
+      if (c.req.path.startsWith("/s/")) c.header("Referrer-Policy", "no-referrer");
       return c.html(withSocialTags(indexHtml, meta, { appOrigin, path: c.req.path, appName }));
     });
   }

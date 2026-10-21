@@ -233,6 +233,32 @@ Anyone who holds a link to an artifact can therefore read its title, and can
 tell whether the id exists. Artifact ids are UUIDv7 with 74 random bits, so a
 title is visible only to someone who was given the link.
 
+## Public links
+
+With `PUBLIC_LINKS=true`, an artifact's creator can give it a public link,
+`/s/<token>`, with a token of 192 random bits. The link is a capability: anyone
+who has it can read the artifact's current version, its entries with author
+names, and the title, description, and creator's name. They can add entries
+under a name they give. They get no id, no email, no comments, and no other
+version.
+
+- Only the creator can read the link. Other members see that one exists.
+- The page served for `/s/*` sends `Referrer-Policy: no-referrer`, so a link
+  followed from it does not carry the token to another site.
+- The page for a working link carries the artifact's title and description in
+  its social tags, so the link unfurls in chat apps. A revoked link gets the
+  generic tags, but a chat app may keep a preview it already made.
+- A preview issued through a link names the link, and the content host looks
+  the link up again on every request. Revoking the link, making the artifact
+  private, archiving it, or turning `PUBLIC_LINKS` off stops it at once rather
+  than after the preview expires.
+- A guest's name is signed into a guest token with a key derived from the
+  session secret, so a guest cannot write as someone else. The token does not
+  expire. It works only while the link does.
+- The name is whatever the guest typed, and nothing checks it. The entries
+  panel shows it with "(guest)", and an artifact's page receives it as
+  "<name> (guest)", so a guest cannot pass for a member there.
+
 ## Known limitations
 
 - A preview URL is a capability. Anyone holding it can read that one artifact

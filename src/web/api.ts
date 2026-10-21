@@ -34,6 +34,8 @@ export type Artifact = {
   status: ArtifactStatus;
   archivedAt: string | null;
   visibility: ArtifactVisibility;
+  /** Whether anyone with its public link can open it. */
+  publicLink: boolean;
   versionCount: number;
   currentVersionId: string;
   /** Null when the artifact is unfiled. */
@@ -136,7 +138,7 @@ export type Session = {
   user: User;
   limits: { maxUploadBytes: number };
   /** Optional features the deployment turned on. */
-  features: { privateArtifacts: boolean };
+  features: { privateArtifacts: boolean; publicLinks: boolean };
   appName: string;
 };
 
@@ -311,6 +313,89 @@ export function setArtifactVisibility(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ visibility }),
   }).then((body) => body.artifact);
+}
+
+/** The artifact's public link, for its creator. Null when it has none. */
+export function fetchShareLink(id: string): Promise<string | null> {
+  return request<{ url: string | null }>(`/api/artifacts/${encodeURIComponent(id)}/link`).then(
+    (body) => body.url,
+  );
+}
+
+/** Keeps the link the artifact has. Shares a private artifact with everyone signed in. */
+export function createShareLink(id: string): Promise<{ artifact: Artifact; url: string }> {
+  return request(`/api/artifacts/${encodeURIComponent(id)}/link`, { method: "POST" });
+}
+
+export function revokeShareLink(id: string): Promise<Artifact> {
+  return request<{ artifact: Artifact }>(`/api/artifacts/${encodeURIComponent(id)}/link`, {
+    method: "DELETE",
+  }).then((body) => body.artifact);
+}
+
+/** What a public link opens, read without a session. */
+export type SharedArtifact = {
+  /** Only for a signed-in member, who can open the artifact itself. */
+  artifactId?: string;
+  artifact: {
+    title: string;
+    description: string | null;
+    creator: { name: string };
+    updatedAt: string;
+  };
+  preview: Preview;
+};
+
+export function fetchSharedArtifact(token: string): Promise<SharedArtifact> {
+  return request(`/api/shared/${encodeURIComponent(token)}`);
+}
+
+/** Someone with a public link who gave a name. `token` goes with each of their writes. */
+export type Guest = { id: string; name: string; token: string };
+
+export function joinAsGuest(shareToken: string, name: string): Promise<Guest> {
+  return request<{ guest: { id: string; name: string }; token: string }>(
+    `/api/shared/${encodeURIComponent(shareToken)}/guest`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    },
+  ).then((body) => ({ ...body.guest, token: body.token }));
+}
+
+export function fetchSharedEntries(
+  shareToken: string,
+): Promise<{ entries: Entry[]; schema: unknown }> {
+  return request(`/api/shared/${encodeURIComponent(shareToken)}/entries`);
+}
+
+export function setSharedEntry(
+  shareToken: string,
+  guest: Guest,
+  key: string,
+  value: unknown,
+): Promise<Entry> {
+  return request<{ entry: Entry }>(`/api/shared/${encodeURIComponent(shareToken)}/entries`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", authorization: `Guest ${guest.token}` },
+    body: JSON.stringify({ key, value }),
+  }).then((body) => body.entry);
+}
+
+export async function clearSharedEntry(shareToken: string, guest: Guest, key: string) {
+  const res = await fetch(
+    `/api/shared/${encodeURIComponent(shareToken)}/entries?key=${encodeURIComponent(key)}`,
+    { method: "DELETE", headers: { authorization: `Guest ${guest.token}` } },
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as ApiErrorBody | null;
+    throw new ApiError(
+      body?.error.code ?? "UNKNOWN",
+      body?.error.message ?? "Could not remove that entry.",
+      res.status,
+    );
+  }
 }
 
 /** Without `parentId` the folder is created at the top level. */
@@ -532,7 +617,8 @@ export type Entry = {
   key: string;
   value: unknown;
   updatedAt: string;
-  author: { id: string; name: string; email: string };
+  /** A guest wrote through a public link and has no email. A public link's reader sees no emails. */
+  author: { id: string; name: string; email?: string | null; guest?: true };
   /** Set when the artifact's schema formats this value like a comment. */
   format?: "comment";
 };

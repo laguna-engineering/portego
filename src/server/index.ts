@@ -39,6 +39,7 @@ const artifacts = createArtifactService({
   maxImages: env.ARTIFACT_MAX_IMAGES,
   maxImageBytesTotal: env.ARTIFACT_IMAGES_MAX_BYTES,
   privateArtifacts: env.PRIVATE_ARTIFACTS,
+  publicLinks: env.PUBLIC_LINKS,
   events,
 });
 

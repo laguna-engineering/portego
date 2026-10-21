@@ -2282,24 +2282,43 @@ button.link {
   z-index: 1;
 }
 
-.popover.watch {
+.popover.watch,
+.popover.share {
   width: 19rem;
 }
 
-.watch-option {
+.watch-option,
+.share-option {
   align-items: flex-start;
   padding: 0.4rem 0.5rem;
   white-space: normal;
 }
 
-.watch-option-text {
+.watch-option-text,
+.share-option-text {
   display: grid;
   gap: 0.1rem;
 }
 
-.watch-option .hint {
+.watch-option .hint,
+.share-option .hint {
   font-size: 0.72rem;
   font-weight: 400;
+}
+
+.share-link {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.share-link input {
+  width: 100%;
+  font-size: 0.8rem;
+}
+
+.share-link-actions {
+  display: flex;
+  gap: 0.4rem;
 }
 
 /* Opens toward the gallery, away from the folder tree. */

@@ -89,8 +89,12 @@ export function Entries({ artifactId, currentUserId, onEntries }: EntriesProps) 
               )}
             </p>
             <p className="comment-meta">
-              <MemberLink id={entry.author.id}>{entry.author.name}</MemberLink> ·{" "}
-              <RelativeTime iso={entry.updatedAt} />
+              {entry.author.guest ? (
+                <span>{entry.author.name} (guest)</span>
+              ) : (
+                <MemberLink id={entry.author.id}>{entry.author.name}</MemberLink>
+              )}{" "}
+              · <RelativeTime iso={entry.updatedAt} />
               {entry.author.id === currentUserId ? (
                 <button type="button" className="link" onClick={() => void remove(entry.key)}>
                   Remove

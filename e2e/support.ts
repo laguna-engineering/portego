@@ -23,8 +23,10 @@ export type BrowserApp = {
   stop: () => Promise<void>;
 };
 
-export async function startBrowserApp(): Promise<BrowserApp> {
-  const server = await createLiveTestServer({ serveClient: true });
+export async function startBrowserApp(
+  options: { publicLinks?: boolean } = {},
+): Promise<BrowserApp> {
+  const server = await createLiveTestServer({ serveClient: true, ...options });
   const browser = await chromium.launch();
   const contexts: BrowserContext[] = [];
 

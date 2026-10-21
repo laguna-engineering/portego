@@ -45,6 +45,8 @@ export type Route =
       find: string | null;
     }
   | { name: "profile" }
+  /** An artifact opened with its public link. It needs no session. */
+  | { name: "shared"; token: string }
   /** Another member's profile, or the user's own as others see it. */
   | { name: "member"; id: string }
   /** The MCP authorization pages. They carry the signed OAuth query through. */
@@ -66,6 +68,8 @@ export function readRoute(url: URL): Route {
       find: url.searchParams.get("find") || null,
     };
   }
+  const shared = url.pathname.match(/^\/s\/([^/]+)\/?$/);
+  if (shared?.[1]) return { name: "shared", token: decodeURIComponent(shared[1]) };
   if (url.pathname === "/profile") return { name: "profile" };
   const member = url.pathname.match(/^\/u\/([^/]+)\/?$/);
   if (member?.[1]) return { name: "member", id: decodeURIComponent(member[1]) };

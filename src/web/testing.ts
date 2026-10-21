@@ -47,6 +47,7 @@ export function artifact(overrides: Partial<Artifact> = {}): Artifact {
     status: "open",
     archivedAt: null,
     visibility: "shared",
+    publicLink: false,
     versionCount: 1,
     currentVersionId: id,
     folder: null,

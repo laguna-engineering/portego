@@ -51,6 +51,12 @@ const schema = z
       .enum(["true", "false"])
       .default("true")
       .transform((value) => value === "true"),
+    // true lets an artifact's creator share it with anyone who has its link,
+    // signed in or not. With it false, existing links stop working.
+    PUBLIC_LINKS: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== "production") return;

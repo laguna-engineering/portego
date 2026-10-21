@@ -4,8 +4,10 @@ import { currentUser, requireUser } from "../auth/middleware.ts";
 import type { OrganizationService } from "../organization/service.ts";
 import type { PreviewIssuer } from "../preview/tokens.ts";
 import { LIST_SORTS, type ListSort, type TagMatch } from "../storage/artifacts.ts";
+import { guestAuthorId } from "../storage/entries.ts";
 import type { ErrorCode } from "./errors.ts";
 import { ServiceError } from "./errors.ts";
+import { mintGuestToken, verifyGuestToken } from "./guests.ts";
 import type { ArtifactService, UploadResult } from "./service.ts";
 import { verifyUploadTicket } from "./tickets.ts";
 
@@ -72,6 +74,7 @@ export function artifactRoutes(
   service: ArtifactService,
   issuePreview: PreviewIssuer,
   organization: OrganizationService,
+  shareUrl: (token: string) => string,
 ): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
 
@@ -156,7 +159,7 @@ export function artifactRoutes(
     const preview = issuePreview({
       artifactId: artifact.id,
       versionId: version.id,
-      viewerId: currentUser(c).id,
+      viewer: { userId: currentUser(c).id },
     });
     return c.json({ url: preview.url, expiresAt: preview.expiresAt });
   });
@@ -190,6 +193,21 @@ export function artifactRoutes(
       artifact: service.setVisibility(c.req.param("id"), body.visibility, currentUser(c).id),
     });
   });
+
+  // The link is a secret, so only the creator reads it, and only from here.
+  routes.get("/:id/link", (c) => {
+    const token = service.shareToken(c.req.param("id"), currentUser(c).id);
+    return c.json({ url: token === null ? null : shareUrl(token) });
+  });
+
+  routes.post("/:id/link", (c) => {
+    const { artifact, token } = service.createShareLink(c.req.param("id"), currentUser(c).id);
+    return c.json({ artifact, url: shareUrl(token) });
+  });
+
+  routes.delete("/:id/link", (c) =>
+    c.json({ artifact: service.revokeShareLink(c.req.param("id"), currentUser(c).id) }),
+  );
 
   routes.patch("/:id/organization", async (c) => {
     const body = await readJson(c);
@@ -412,4 +430,85 @@ export async function readJson(c: Context<AppEnv>): Promise<Record<string, unkno
 function readField(form: FormData, name: string): string | null {
   const value = form.get(name);
   return typeof value === "string" ? value : null;
+}
+
+/**
+ * What someone with an artifact's public link reads. It takes the link's
+ * secret, not a session, and answers only for the artifact's current version.
+ */
+export function sharedRoutes(
+  service: ArtifactService,
+  issuePreview: PreviewIssuer,
+  secret: string,
+): Hono<AppEnv> {
+  const routes = new Hono<AppEnv>();
+
+  const guest = (c: Context<AppEnv>) => {
+    const header = c.req.header("authorization") ?? "";
+    const verified =
+      header.slice(0, 6).toLowerCase() === "guest "
+        ? verifyGuestToken(secret, header.slice(6).trim())
+        : null;
+    if (!verified) {
+      throw new ServiceError("UNAUTHENTICATED", "Give your name to add to this artifact.");
+    }
+    return verified;
+  };
+
+  routes.get("/:token", (c) => {
+    const token = c.req.param("token");
+    const artifact = service.sharedArtifact(token);
+    const preview = issuePreview({
+      artifactId: artifact.id,
+      versionId: artifact.currentVersionId,
+      viewer: { shareToken: token },
+    });
+    c.header("Cache-Control", "private, no-store");
+    return c.json({
+      // A member can open the artifact itself. Anyone else gets no id.
+      ...(c.get("user") ? { artifactId: artifact.id } : {}),
+      artifact: {
+        title: artifact.title,
+        description: artifact.description,
+        creator: { name: artifact.creator.name },
+        updatedAt: artifact.updatedAt,
+      },
+      preview: { url: preview.url, expiresAt: preview.expiresAt },
+    });
+  });
+
+  routes.post("/:token/guest", async (c) => {
+    const body = await readJson(c);
+    const started = service.startGuest(c.req.param("token"), body.name);
+    return c.json({
+      guest: { id: guestAuthorId(started.guestId), name: started.name },
+      token: mintGuestToken(secret, started),
+    });
+  });
+
+  routes.get("/:token/entries", (c) => {
+    c.header("Cache-Control", "private, no-store");
+    return c.json(service.sharedEntries(c.req.param("token")));
+  });
+
+  routes.put("/:token/entries", async (c) => {
+    const author = guest(c);
+    const body = await readJson(c);
+    if (typeof body.key !== "string") {
+      throw new ServiceError("INVALID_INPUT", "Send the entry's `key` as a string.");
+    }
+    return c.json({
+      entry: service.setGuestEntry(c.req.param("token"), author, body.key, body.value),
+    });
+  });
+
+  routes.delete("/:token/entries", (c) => {
+    const author = guest(c);
+    const key = c.req.query("key");
+    if (key === undefined) throw new ServiceError("INVALID_INPUT", "Name the entry with ?key=.");
+    service.clearGuestEntry(c.req.param("token"), author, key);
+    return c.body(null, 204);
+  });
+
+  return routes;
 }

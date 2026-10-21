@@ -20,6 +20,7 @@ import { MemberProfile } from "./Member.tsx";
 import { Profile } from "./Profile.tsx";
 import { artifactPath, galleryPath, ROOT_FOLDER_ID, useRoute } from "./router.ts";
 import { SearchField } from "./Search.tsx";
+import { SharedArtifact } from "./SharedArtifact.tsx";
 import { SignIn } from "./SignIn.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
 
@@ -81,6 +82,9 @@ export function App() {
   // Without it, every move between the gallery and an artifact would close the
   // last listener's connection and open another. Signing out drops it.
   useLiveEvents(() => {}, state.status === "signed-in");
+
+  // The same page whether or not the reader is signed in: it shows only what the link opens.
+  if (route.name === "shared") return <SharedArtifact token={route.token} />;
 
   if (state.status === "loading") {
     return (
@@ -187,6 +191,7 @@ export function App() {
         avatar={session.user.avatar}
         currentUserId={session.user.id}
         privateArtifacts={session.features.privateArtifacts}
+        publicLinks={session.features.publicLinks}
         onHome={() => navigate("/")}
         onOpenFolder={(folderId) => navigate(galleryPath({ folderId }))}
         onOpenGallery={(filters) => navigate(galleryPath(filters))}

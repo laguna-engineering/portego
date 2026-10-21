@@ -32,7 +32,7 @@
   "dependencies": {
     "@better-auth/cimd": "1.7.4",
     "@better-auth/mcp": "1.7.4",
-    "@modelcontextprotocol/sdk": "1.31.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
     "better-auth": "1.7.4",
     "diff": "9.0.0",
     "hono": "4.13.7",
@@ -58,7 +58,7 @@
     "jose": "6.2.3",
     "playwright": "1.62.1",
     "typescript": "7.0.2",
-    "vite": "8.2.2"
+    "vite": "8.2.4"
   },
   "overrides": {
     "shell-quote": "1.11.0"

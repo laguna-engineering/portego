@@ -33,6 +33,12 @@ describe("parseEnv", () => {
     expect(() => parseEnv({ PRIVATE_ARTIFACTS: "no" })).toThrow(/PRIVATE_ARTIFACTS/);
   });
 
+  test("keeps public links off unless the deployment turns them on", () => {
+    expect(parseEnv({}).PUBLIC_LINKS).toBe(false);
+    expect(parseEnv({ PUBLIC_LINKS: "true" }).PUBLIC_LINKS).toBe(true);
+    expect(() => parseEnv({ PUBLIC_LINKS: "yes" })).toThrow(/PUBLIC_LINKS/);
+  });
+
   test("allows a missing SESSION_SECRET outside production so a clean checkout runs", () => {
     expect(parseEnv({ NODE_ENV: "development" }).SESSION_SECRET).toBeUndefined();
   });
