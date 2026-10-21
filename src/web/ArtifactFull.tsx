@@ -358,7 +358,11 @@ export function ArtifactFull({
         sendToPreview(frameRef.current, { type: "mode", enabled: panelOpen });
         sendToPreview(frameRef.current, { type: "highlights", anchors: highlights });
         sendToPreview(frameRef.current, { type: "comments", comments: pageComments });
-        sendToPreview(frameRef.current, { type: "entries", entries: pageEntries });
+        sendToPreview(frameRef.current, {
+          type: "entries",
+          entries: pageEntries,
+          viewerId: currentUserId,
+        });
       } else if (message.type === "selection") {
         setLive(
           message.anchor && message.rect ? { anchor: message.anchor, rect: message.rect } : null,
@@ -378,7 +382,7 @@ export function ArtifactFull({
         setPanelOpen(true);
       }
     },
-    [panelOpen, highlights, pageComments, pageEntries, changeEntry],
+    [panelOpen, highlights, pageComments, pageEntries, currentUserId, changeEntry],
   );
 
   usePreviewBridge(frameRef, handleBridgeMessage);
@@ -423,8 +427,12 @@ export function ArtifactFull({
   }, [pageComments]);
 
   useEffect(() => {
-    sendToPreview(frameRef.current, { type: "entries", entries: pageEntries });
-  }, [pageEntries]);
+    sendToPreview(frameRef.current, {
+      type: "entries",
+      entries: pageEntries,
+      viewerId: currentUserId,
+    });
+  }, [pageEntries, currentUserId]);
 
   // Takes the selection into the composer, like the comment control in the
   // margin of a document. The panel opens if it was closed.

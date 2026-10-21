@@ -26,7 +26,8 @@ export type BridgeCommand =
   | { type: "highlights"; anchors: (CommentAnchor & { id: string })[] }
   | { type: "reveal"; id: string }
   | { type: "comments"; comments: PageComment[] }
-  | { type: "entries"; entries: PageEntry[] }
+  /** `viewerId` is the reader's `authorId`, or null for a guest who has not given a name. */
+  | { type: "entries"; entries: PageEntry[]; viewerId: string | null }
   /** Marks every match of `query` and makes match `index` current. An empty query clears. */
   | { type: "find"; query: string; index: number };
 

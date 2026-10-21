@@ -998,6 +998,38 @@ describe("the whole flow in a browser", () => {
 
     await context.close();
   });
+  test("tells the artifact which entries are the reader's, after a reload too", async () => {
+    const schema = {
+      keys: { "vote:{item}": { params: { item: { enum: ["P-01"] } }, value: { const: true } } },
+    };
+    const id = await uploadArtifact(app, {
+      title: "Own votes",
+      html: `<!doctype html><html><head><title>Own votes</title>
+<script type="application/json" id="portego-entries">${JSON.stringify(schema)}</script>
+</head><body><button id="vote">Vote</button><p id="mine">waiting</p>
+<script>
+  window.addEventListener("portego:entries", (event) => {
+    const mine = event.detail.filter((entry) => entry.authorId === window.portego.viewerId);
+    document.getElementById("mine").textContent = mine.length + " mine";
+  });
+  document.getElementById("vote").addEventListener("click", () => window.portego.set("vote:P-01", true));
+</script></body></html>`,
+    });
+
+    const context = await app.signedIn();
+    const page = await context.newPage();
+    await page.goto(`${app.server.origin}/a/${id}`);
+    const frame = page.frameLocator('iframe[title="Preview of Own votes"]');
+    await frame.getByText("0 mine").waitFor();
+    await frame.getByRole("button", { name: "Vote" }).click();
+    await frame.getByText("1 mine").waitFor();
+
+    // The frame has no storage, so only the application can say who is reading.
+    await page.reload();
+    await page.frameLocator('iframe[title="Preview of Own votes"]').getByText("1 mine").waitFor();
+
+    await context.close();
+  });
 });
 
 /**
