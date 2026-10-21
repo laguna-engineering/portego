@@ -588,7 +588,8 @@ export function ArtifactFull({
           disabled: changing,
           onSelect: () => void change(() => setArtifactArchived(artifact.id, !artifact.archivedAt)),
         },
-        ...(publicLinks && artifact.creator.id === currentUserId
+        // A private artifact here is the reader's own.
+        ...(publicLinks
           ? [
               {
                 id: "share",
@@ -755,6 +756,7 @@ export function ArtifactFull({
         <SharePopover
           artifact={artifact}
           privateArtifacts={privateArtifacts}
+          isCreator={artifact.creator.id === currentUserId}
           onChanged={setArtifact}
           onClose={closeOrganizing}
         />

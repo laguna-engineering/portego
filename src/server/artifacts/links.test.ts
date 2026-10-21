@@ -117,17 +117,68 @@ describe("public links", () => {
     expect(await createLink(id)).toBe(await createLink(id));
   });
 
-  test("are readable and changeable only by the creator", async () => {
+  test("let any member who sees a shared artifact read, make, and revoke its link", async () => {
     await start();
     const id = await upload();
-    await createLink(id);
+    const made = await request(other, `/api/artifacts/${id}/link`, { method: "POST" });
+    expect(made.status).toBe(200);
+    const { url } = (await made.json()) as { url: string };
+    expect(await (await request(owner, `/api/artifacts/${id}/link`)).json()).toEqual({ url });
+
+    const revoked = await request(other, `/api/artifacts/${id}/link`, { method: "DELETE" });
+    expect(await revoked.json()).toMatchObject({
+      artifact: { visibility: "shared", publicLink: false },
+    });
+    // Colleagues read the link from its route, never from a listing.
+    const listed = await request(other, "/api/artifacts");
+    expect(JSON.stringify(await listed.json())).not.toContain("shareToken");
+  });
+
+  test("leave a private artifact's link to its creator", async () => {
+    await start();
+    const id = await upload({ visibility: "private" });
     for (const method of ["GET", "POST", "DELETE"]) {
       const res = await request(other, `/api/artifacts/${id}/link`, { method });
       expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ error: { code: "PRIVATE" } });
     }
-    // Colleagues learn that a link exists, never the link itself.
-    const listed = await request(other, "/api/artifacts");
-    expect(JSON.stringify(await listed.json())).not.toContain("shareToken");
+  });
+
+  test("tell the creator when someone else makes or revokes the link, whatever they follow", async () => {
+    await start();
+    const id = await upload();
+    // The creator stops watching, so only the link rule can reach them.
+    await request(owner, `/api/activity/subscriptions/artifacts/${id}`, {
+      method: "PUT",
+      body: { level: "none" },
+    });
+    await request(other, `/api/artifacts/${id}/link`, { method: "POST" });
+    await request(other, `/api/artifacts/${id}/link`, { method: "DELETE" });
+
+    const res = await request(owner, "/api/activity?scope=following");
+    const { items } = (await res.json()) as {
+      items: { kind: string; change?: string; actor: { name: string }; reason: unknown }[];
+    };
+    expect(
+      items.map(({ kind, change, actor, reason }) => ({ kind, change, actor: actor.name, reason })),
+    ).toEqual([
+      { kind: "link.changed", change: "revoked", actor: "B Person", reason: { kind: "uploaded" } },
+      { kind: "link.changed", change: "created", actor: "B Person", reason: { kind: "uploaded" } },
+    ]);
+  });
+
+  test("record a link change only when the link appears or goes", async () => {
+    await start();
+    const id = await upload();
+    await createLink(id);
+    await createLink(id);
+    await request(owner, `/api/artifacts/${id}/link`, { method: "DELETE" });
+    await request(owner, `/api/artifacts/${id}/link`, { method: "DELETE" });
+    const res = await request(other, "/api/activity?scope=everyone");
+    const { items } = (await res.json()) as { items: { kind: string; change?: string }[] };
+    expect(items.filter((item) => item.kind === "link.changed").map((item) => item.change)).toEqual(
+      ["revoked", "created"],
+    );
   });
 
   test("stop working when revoked, including a preview already issued", async () => {

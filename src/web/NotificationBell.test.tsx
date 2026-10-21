@@ -141,6 +141,8 @@ describe("list", () => {
         item({ id: "d", kind: "comment.created", reply: false }),
         item({ id: "e", kind: "version.created", versionNumber: 3 }),
         item({ id: "f", kind: "entry.changed", key: "note:P-01" }),
+        item({ id: "h", kind: "link.changed", change: "created" }),
+        item({ id: "i", kind: "link.changed", change: "revoked" }),
         item({ id: "g", kind: "artifact.created", createdAt: EARLIER }),
       ],
       readAt: READ,
@@ -158,9 +160,13 @@ describe("list", () => {
       "B Person commented on Plan",
       "B Person uploaded version 3 of Plan",
       "B Person wrote note:P-01 on Plan",
+      "B Person shared Plan with anyone who has the link",
+      "B Person revoked the public link to Plan",
       "B Person uploaded Plan",
     ]);
     expect(rows.map((row) => row.hasAttribute("data-unread"))).toEqual([
+      true,
+      true,
       true,
       true,
       true,

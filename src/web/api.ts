@@ -453,6 +453,7 @@ export type ActivityItem = {
   | { kind: "comment.created"; reply: boolean }
   | { kind: "status.changed"; change: "solved" | "reopened" | "archived" | "restored" }
   | { kind: "entry.changed"; key: string }
+  | { kind: "link.changed"; change: "created" | "revoked" }
 );
 
 /** The last seven days, newest first. `readAt` is when the reader last opened the list. */

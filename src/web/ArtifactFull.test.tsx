@@ -288,12 +288,14 @@ describe("actions", () => {
       expect(within(dialog).getByRole("button", { name: /Anyone with the link/ })).toBeDefined();
     });
 
-    test("does not offer sharing to anyone but the creator", async () => {
+    test("lets another member share by link, but not make it private", async () => {
       stubFetch(answer);
       renderFull({ publicLinks: true, currentUserId: "user-2" });
 
-      await screen.findByRole("button", { name: "Mark solved" });
-      expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+      await userEvent.click(await screen.findByRole("button", { name: "Share" }));
+      const dialog = screen.getByRole("dialog", { name: "Share" });
+      expect(within(dialog).queryByRole("button", { name: /Only me/ })).toBeNull();
+      expect(within(dialog).getByRole("button", { name: /Anyone with the link/ })).toBeDefined();
     });
   });
 

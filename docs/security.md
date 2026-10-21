@@ -242,7 +242,9 @@ names, and the title, description, and creator's name. They can add entries
 under a name they give. They get no id, no email, no comments, and no other
 version.
 
-- Only the creator can read the link. Other members see that one exists.
+- Any member who can see a shared artifact can make, read, or revoke its link.
+  The creator is notified when someone else does. Listings and search never
+  carry the link, only that one exists.
 - The page served for `/s/*` sends `Referrer-Policy: no-referrer`, so a link
   followed from it does not carry the token to another site.
 - The page for a working link carries the artifact's title and description in
