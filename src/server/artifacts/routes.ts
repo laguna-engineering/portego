@@ -194,19 +194,23 @@ export function artifactRoutes(
     });
   });
 
-  // The link is a secret, so only the creator reads it, and only from here.
+  // The link is a secret, so it is read only from here, never from a listing.
   routes.get("/:id/link", (c) => {
     const token = service.shareToken(c.req.param("id"), currentUser(c).id);
     return c.json({ url: token === null ? null : shareUrl(token) });
   });
 
   routes.post("/:id/link", (c) => {
-    const { artifact, token } = service.createShareLink(c.req.param("id"), currentUser(c).id);
+    const { artifact, token } = service.createShareLink(c.req.param("id"), currentUser(c).id, {
+      inApp: true,
+    });
     return c.json({ artifact, url: shareUrl(token) });
   });
 
   routes.delete("/:id/link", (c) =>
-    c.json({ artifact: service.revokeShareLink(c.req.param("id"), currentUser(c).id) }),
+    c.json({
+      artifact: service.revokeShareLink(c.req.param("id"), currentUser(c).id, { inApp: true }),
+    }),
   );
 
   routes.patch("/:id/organization", async (c) => {

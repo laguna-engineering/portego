@@ -340,8 +340,13 @@ export type ArtifactStore = {
   ) => Artifact | null;
   /** Making it private also removes its public link. Null when the artifact is gone. */
   setVisibility: (id: string, visibility: ArtifactVisibility) => Artifact | null;
-  /** Null removes the public link. Null when the artifact is gone. */
-  setShareToken: (id: string, token: string | null) => Artifact | null;
+  /** Null removes the public link. Records who did it. Null when the artifact is gone. */
+  setShareToken: (
+    id: string,
+    token: string | null,
+    actorId: string,
+    options?: { inApp?: boolean },
+  ) => Artifact | null;
   getByShareToken: (token: string) => Artifact | null;
   countPrivate: () => number;
   list: (options: ListOptions) => ListResult;
@@ -651,10 +656,29 @@ export function createArtifactStore(options: {
       return get(id);
     },
 
-    setShareToken(id, token) {
-      database
-        .query("update artifacts set shareToken = ?, updatedAt = ? where id = ?")
-        .run(token, Date.now(), id);
+    setShareToken(id, token, actorId, options = {}) {
+      const now = Date.now();
+      database.transaction(() => {
+        const before = get(id);
+        database
+          .query("update artifacts set shareToken = ?, updatedAt = ? where id = ?")
+          .run(token, now, id);
+        if (before && (before.shareToken === null) !== (token === null)) {
+          database
+            .query(
+              `insert into artifactLinkChanges (id, artifactId, change, actorId, createdAt, inApp)
+               values (?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              Bun.randomUUIDv7(),
+              id,
+              token === null ? "revoked" : "created",
+              actorId,
+              now,
+              options.inApp ? 1 : 0,
+            );
+        }
+      })();
       return get(id);
     },
 

@@ -67,7 +67,7 @@ export type ArtifactSummary = Omit<
   ArtifactOrganization & {
     /** Who uploaded it. A name, because a card shows a person and not an id. */
     creator: { id: string; name: string; email: string };
-    /** Whether anyone with its public link can open it. The link itself goes only to the creator. */
+    /** Whether anyone with its public link can open it. The link itself is read from its own route. */
     publicLink: boolean;
   };
 
@@ -282,15 +282,20 @@ export type ArtifactService = {
   ) => Promise<{ artifact: ArtifactSummary } & CachedMarkdown>;
   /** Only the artifact's creator can change its visibility. */
   setVisibility: (id: string, visibility: unknown, actorId: string) => ArtifactSummary;
-  /** The secret in the public link, for the creator only. Null when there is no working link. */
+  /** The secret in the public link, for anyone who can see the artifact. Null when there is no working link. */
   shareToken: (id: string, actorId: string) => string | null;
   /**
-   * Gives the artifact a public link, or keeps the one it has, and shares a
-   * private artifact with everyone signed in. Creator only.
+   * Gives the artifact a public link, or keeps the one it has. Anyone who can
+   * see a shared artifact may. A private one is its creator's alone, and
+   * becomes shared with everyone signed in.
    */
-  createShareLink: (id: string, actorId: string) => { artifact: ArtifactSummary; token: string };
-  /** Removes the public link. The artifact stays shared with everyone signed in. Creator only. */
-  revokeShareLink: (id: string, actorId: string) => ArtifactSummary;
+  createShareLink: (
+    id: string,
+    actorId: string,
+    options?: { inApp?: boolean },
+  ) => { artifact: ArtifactSummary; token: string };
+  /** Removes the public link. The artifact stays shared with everyone signed in. */
+  revokeShareLink: (id: string, actorId: string, options?: { inApp?: boolean }) => ArtifactSummary;
   /**
    * The artifact a public link opens. NOT_FOUND for every reason it does not
    * open, so a caller learns nothing about why.
@@ -931,30 +936,30 @@ export function createArtifactService(options: {
 
     shareToken(id, actorId) {
       const artifact = visible(id, { userId: actorId });
-      requireCreator(artifact, actorId);
       return publicLinks ? artifact.shareToken : null;
     },
 
-    createShareLink(id, actorId) {
+    // A private artifact is visible only to its creator, so only they get past
+    // `visible` to share it.
+    createShareLink(id, actorId, options = {}) {
       if (!publicLinks) {
         throw new ServiceError("FORBIDDEN", "This deployment does not allow public links.");
       }
       let artifact = visible(id, { userId: actorId });
-      requireCreator(artifact, actorId);
       if (artifact.visibility === "private") {
         artifact = store.setVisibility(id, "shared") ?? artifact;
       }
       const token = artifact.shareToken ?? randomBytes(24).toString("base64url");
       if (artifact.shareToken === null) {
-        artifact = store.setShareToken(id, token) ?? artifact;
+        artifact = store.setShareToken(id, token, actorId, options) ?? artifact;
       }
       publish({ type: "artifact.changed", id });
       return { artifact: summary(artifact), token };
     },
 
-    revokeShareLink(id, actorId) {
-      requireCreator(visible(id, { userId: actorId }), actorId);
-      const artifact = store.setShareToken(id, null);
+    revokeShareLink(id, actorId, options = {}) {
+      visible(id, { userId: actorId });
+      const artifact = store.setShareToken(id, null, actorId, options);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
       return summary(artifact);

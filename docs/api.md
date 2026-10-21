@@ -36,9 +36,9 @@ on, and the deployment's `appName`, which names the root of the folder tree.
 | `PATCH` | `/api/artifacts/:id/archived` | Archive or restore |
 | `PATCH` | `/api/artifacts/:id/organization` | Set its folder or tags |
 | `PATCH` | `/api/artifacts/:id/visibility` | Make it private or shared (creator only) |
-| `GET` | `/api/artifacts/:id/link` | Its public link, or `null` (creator only) |
-| `POST` | `/api/artifacts/:id/link` | Give it a public link, or keep the one it has (creator only) |
-| `DELETE` | `/api/artifacts/:id/link` | Revoke its public link (creator only) |
+| `GET` | `/api/artifacts/:id/link` | Its public link, or `null` |
+| `POST` | `/api/artifacts/:id/link` | Give it a public link, or keep the one it has |
+| `DELETE` | `/api/artifacts/:id/link` | Revoke its public link |
 | `GET` | `/api/shared/:token` | What a public link opens, without a session |
 | `POST` | `/api/shared/:token/guest` | Give a name before adding entries through a public link |
 | `GET` | `/api/shared/:token/entries` | The entries of the artifact a public link opens |
@@ -311,18 +311,23 @@ Making an artifact private also revokes its public link.
 
 ### Public links
 
-A deployment with `PUBLIC_LINKS=true` lets the creator of an artifact give it
-a public link, `<APP_URL>/s/<token>`. The token is 192 random bits. Anyone
+A deployment with `PUBLIC_LINKS=true` lets anyone who can see an artifact give
+it a public link, `<APP_URL>/s/<token>`. Only its creator can see a private
+artifact, so only they can share one this way. The token is 192 random bits. Anyone
 with the link can open the artifact's current version and add entries,
 without signing in. Everyone signed in still sees the artifact as before.
 
 - `POST /api/artifacts/:id/link` returns `{ artifact, url }`. It makes a
   private artifact shared. Asking again returns the same link.
 - `GET /api/artifacts/:id/link` returns `{ url }`, which is `null` when there
-  is no link. Only the creator can read the link. Other members see
-  `publicLink: true` on the artifact.
+  is no link. The link appears nowhere else: listings, search, and the
+  artifact itself carry only `publicLink: true`.
 - `DELETE /api/artifacts/:id/link` returns `{ artifact }`. The artifact stays
   shared with everyone signed in. A link made after that is a new one.
+
+Each link made or revoked is a `link.changed` activity item. It reaches the
+artifact's creator whatever they watch, because it decides who outside the
+company can read what they made.
 
 The public routes take the token from the path and need no session:
 
@@ -387,9 +392,10 @@ removed comment or cleared entry is no longer listed.
 ```
 
 `kind` is `artifact.created`, `version.created` (with `versionNumber`),
-`comment.created` (with `reply`), `status.changed` (with `change`), or
-`entry.changed` (with `key`). `id` is the id of the version, comment, status
-change, or entry write. An entry gets a new `id` each time its value changes. `readAt` is when the caller
+`comment.created` (with `reply`), `status.changed` (with `change`),
+`entry.changed` (with `key`), or `link.changed` (with `change`: `created` or
+`revoked`). `id` is the id of the version, comment, status or link change, or
+entry write. An entry gets a new `id` each time its value changes. `readAt` is when the caller
 last called `POST /api/activity/read`, or null if never; items after it are
 unread. The read marker is per user and only moves forward.
 
@@ -405,8 +411,8 @@ Each person watches an artifact or a folder at one of three levels:
 
 - `all`: every kind of item above.
 - `versions`: new artifacts and new versions only.
-- `none`: nothing, except replies to the person's own comments, which always
-  reach them.
+- `none`: nothing, except replies to the person's own comments, and changes
+  to the public link of an artifact they created, which always reach them.
 
 Uploading an artifact or a version, or commenting, sets the person's level on
 that artifact to `all`. It does so through MCP and upload tickets too. When the

@@ -383,6 +383,21 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    // Each public link made or revoked, for the activity feed.
+    id: "020-artifact-link-changes",
+    sql: `
+      create table artifactLinkChanges (
+        id text not null primary key,
+        artifactId text not null references artifacts ("id") on delete cascade,
+        change text not null check (change in ('created', 'revoked')),
+        actorId text not null references "user" ("id"),
+        createdAt integer not null,
+        inApp integer not null default 0
+      );
+      create index artifactLinkChanges_created_at on artifactLinkChanges (createdAt);
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

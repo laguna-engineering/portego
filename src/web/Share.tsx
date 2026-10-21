@@ -30,15 +30,18 @@ function audienceOf(artifact: Artifact): Audience {
   return artifact.publicLink ? "link" : "shared";
 }
 
-/** Who can see the artifact, chosen by its creator under the Share control. */
+/** Who can see the artifact, chosen under the Share control. */
 export function SharePopover({
   artifact,
   privateArtifacts,
+  isCreator,
   onChanged,
   onClose,
 }: {
   artifact: Artifact;
   privateArtifacts: boolean;
+  /** Only the creator can make it private. Anyone else can add or revoke the link. */
+  isCreator: boolean;
   onChanged: (artifact: Artifact) => void;
   onClose: () => void;
 }) {
@@ -135,24 +138,24 @@ export function SharePopover({
       />
       <div ref={panel} className="popover share" role="dialog" aria-label="Share">
         <div className="popover-options">
-          {AUDIENCES.filter(({ audience }) => privateArtifacts || audience !== "private").map(
-            ({ audience, name, description }) => (
-              <button
-                key={audience}
-                type="button"
-                className="popover-option share-option"
-                aria-pressed={audience === current}
-                disabled={busy}
-                onClick={() => choose(audience)}
-              >
-                <span className="share-option-text">
-                  <span>{name}</span>
-                  <span className="hint">{description}</span>
-                </span>
-                {audience === current ? <TickIcon /> : null}
-              </button>
-            ),
-          )}
+          {AUDIENCES.filter(
+            ({ audience }) => audience !== "private" || (privateArtifacts && isCreator),
+          ).map(({ audience, name, description }) => (
+            <button
+              key={audience}
+              type="button"
+              className="popover-option share-option"
+              aria-pressed={audience === current}
+              disabled={busy}
+              onClick={() => choose(audience)}
+            >
+              <span className="share-option-text">
+                <span>{name}</span>
+                <span className="hint">{description}</span>
+              </span>
+              {audience === current ? <TickIcon /> : null}
+            </button>
+          ))}
         </div>
         {current === "link" ? (
           <div className="share-link">

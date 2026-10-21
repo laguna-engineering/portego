@@ -30,6 +30,10 @@ function describe(item: ActivityItem): string {
         : `${item.change} ${artifact.title}`;
     case "entry.changed":
       return `wrote ${item.key} on ${artifact.title}`;
+    case "link.changed":
+      return item.change === "created"
+        ? `shared ${artifact.title} with anyone who has the link`
+        : `revoked the public link to ${artifact.title}`;
   }
 }
 

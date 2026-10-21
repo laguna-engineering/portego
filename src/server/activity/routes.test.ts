@@ -107,7 +107,9 @@ function told(item: Item): string {
           ? ` ${item.change}`
           : item.kind === "entry.changed"
             ? ` ${item.key}`
-            : "";
+            : item.kind === "link.changed"
+              ? ` ${item.change}`
+              : "";
   return `${item.actor.name} ${item.kind}${detail} on ${item.artifact.title}`;
 }
 
