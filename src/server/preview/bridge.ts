@@ -34,6 +34,7 @@ export const BRIDGE_SCRIPT = `(() => {
   window.portego = {
     comments: [],
     entries: [],
+    viewerId: null,
     set: (key, value) => send({ type: "set", key, value }),
     clear: (key) => send({ type: "clear", key }),
     renderComment: (text, element) => renderCommentNodes(parseComment(String(text)), element),
@@ -343,6 +344,7 @@ export const BRIDGE_SCRIPT = `(() => {
     } else if (message.type === "entries") {
       const entries = Array.isArray(message.entries) ? message.entries : [];
       window.portego.entries = entries;
+      window.portego.viewerId = typeof message.viewerId === "string" ? message.viewerId : null;
       window.dispatchEvent(new CustomEvent("portego:entries", { detail: entries }));
       land();
     } else if (message.type === "find") {

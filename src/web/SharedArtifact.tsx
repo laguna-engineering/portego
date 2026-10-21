@@ -112,8 +112,12 @@ export function SharedArtifact({ token }: { token: string }) {
   const pageEntries = useMemo((): PageEntry[] => entries.map(toPageEntry), [entries]);
 
   useEffect(() => {
-    sendToPreview(frameRef.current, { type: "entries", entries: pageEntries });
-  }, [pageEntries]);
+    sendToPreview(frameRef.current, {
+      type: "entries",
+      entries: pageEntries,
+      viewerId: guest?.id ?? null,
+    });
+  }, [pageEntries, guest]);
 
   const write = useCallback(
     async (as: Guest, change: Change) => {
@@ -139,7 +143,11 @@ export function SharedArtifact({ token }: { token: string }) {
     (message: BridgeMessage) => {
       if (message.type === "ready") {
         sendToPreview(frameRef.current, { type: "comments", comments: [] });
-        sendToPreview(frameRef.current, { type: "entries", entries: pageEntries });
+        sendToPreview(frameRef.current, {
+          type: "entries",
+          entries: pageEntries,
+          viewerId: guest?.id ?? null,
+        });
       } else if (message.type === "open") {
         openFromPreview(message.url);
       } else if (message.type === "hash") {

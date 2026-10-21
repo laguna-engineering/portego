@@ -1179,7 +1179,7 @@ describe("entries", () => {
     delete (navigator as { userActivation?: unknown }).userActivation;
   });
 
-  test("gives the artifact its entries, without anyone's email", async () => {
+  test("gives the artifact its entries and the reader's id, without anyone's email", async () => {
     stubFetch((path) =>
       path.endsWith("/entries") ? { body: { entries: [ENTRY], schema: null } } : answer(path),
     );
@@ -1202,6 +1202,8 @@ describe("entries", () => {
           updatedAt: ENTRY.updatedAt,
         },
       ],
+      // The frame has no storage, so this is how the page finds the reader's own entries after a reload.
+      viewerId: "user-1",
     });
     expect(JSON.stringify(sent)).not.toContain("someone@acme.example");
   });

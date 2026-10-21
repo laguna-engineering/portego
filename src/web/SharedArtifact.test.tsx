@@ -119,6 +119,25 @@ describe("an artifact opened with its public link", () => {
     ]);
   });
 
+  test("tells the artifact the reader's id once they give a name, so it can find their own entries", async () => {
+    stubShared();
+    render(<SharedArtifact token={TOKEN} />);
+    const frame = (await screen.findByTitle("Preview of Team lunch")) as HTMLIFrameElement;
+    const sent: unknown[] = [];
+    (frame.contentWindow as Window).postMessage = ((message: unknown) => {
+      sent.push(message);
+    }) as Window["postMessage"];
+
+    await sendFromFrame(frame, { type: "ready" });
+    expect(sent).toContainEqual({ portego: 1, type: "entries", entries: [], viewerId: null });
+
+    await sendFromFrame(frame, { type: "set", key: "rsvp", value: "yes" });
+    await userEvent.type(await screen.findByLabelText("Your name"), "Dana");
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText("Adding as Dana.");
+    expect(sent).toContainEqual({ portego: 1, type: "entries", entries: [], viewerId: GUEST.id });
+  });
+
   test("remembers the name on this link, so a returning reader is not asked again", async () => {
     window.localStorage.setItem(`portego-guest:${TOKEN}`, JSON.stringify(GUEST));
     const sent = stubShared();

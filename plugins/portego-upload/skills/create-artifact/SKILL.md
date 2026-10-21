@@ -24,6 +24,7 @@ When the artifact lets readers vote, answer a poll, tick a checklist, or propose
 Portego gives the page `window.portego`:
 
 - `window.portego.entries`: every entry, as `{ key, value, authorId, author, updatedAt }`. `author` is a name; use `authorId` to tell people apart.
+- `window.portego.viewerId`: the reader's `authorId`, so the page can find the reader's own entries. It is set before each `portego:entries` event, and is null for someone on a public link who has not given a name yet. The page has no storage of its own, so do not try to remember the reader in `localStorage`.
 - A `portego:entries` event on `window`, with the list in `event.detail`, fired after load and after every change. Render from this event; the list is empty until it first fires.
 - `window.portego.set(key, value)` and `window.portego.clear(key)`, which change the reader's own entry. Portego makes the change only while the reader's click is active, so call them from a click handler, never on load or on a timer.
 - `window.portego.renderComment(text, element)`, which fills `element` with `text` formatted like a comment in Portego: http(s) links, `` `code` ``, `*bold*`, `_italic_`, and `~strikethrough~`. Use it to show free text readers wrote, such as a proposal's description, never `innerHTML`.
