@@ -1890,10 +1890,11 @@ button.link {
 /* Version diff ---------------------------------------------------------- */
 
 /* Stays at the top while the comparison scrolls. The negative margin and
-   matching padding cover the scroll container's padding. */
+   matching padding cover the scroll container's padding. Sticky offsets count
+   from inside that padding, so top is negative too, or text shows above it. */
 .diff-controls {
   position: sticky;
-  top: 0;
+  top: -1rem;
   z-index: 1;
   /* The side columns share the rest equally, so the modes sit in the center. */
   display: grid;
