@@ -1855,7 +1855,7 @@ button.link {
 }
 
 /* The row below the masthead: the artifact on the left, the comments panel
-   sliding over its right edge without displacing it. */
+   sliding over its right edge. */
 .full-body {
   position: relative;
   display: flex;
@@ -1873,6 +1873,29 @@ button.link {
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+
+/* With room to spare, the artifact narrows to make room for the open panel.
+   Centered content moves left by half the panel's width into its empty margin.
+   It follows the panel more slowly on the way in, and the panel covers it
+   meanwhile. It leaves faster on the way out, so no gap opens between them. */
+@media (min-width: 60rem) {
+  .panel-open > .preview-full,
+  .panel-open > .full-text {
+    margin-right: 24rem;
+  }
+}
+
+@media (min-width: 60rem) and (prefers-reduced-motion: no-preference) {
+  .preview-full,
+  .full-text {
+    transition: margin-right 0.18s ease;
+  }
+
+  .panel-open > .preview-full,
+  .panel-open > .full-text {
+    transition: margin-right 0.45s cubic-bezier(0.2, 0.9, 0.3, 1);
+  }
 }
 
 /* The text view scrolls inside the grid row, so the masthead stays put. */

@@ -799,6 +799,8 @@ describe("comments panel", () => {
 
     expect(await screen.findByRole("dialog", { name: "Versions and comments" })).toBeDefined();
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    // The artifact makes room for the panel instead of sitting under it.
+    expect(frame.closest(".full-body")?.classList.contains("panel-open")).toBe(true);
     // Selection only matters in the artifact while a reader can act on it.
     expect(sent).toContainEqual({ portego: 1, type: "mode", enabled: true });
   });

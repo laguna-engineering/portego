@@ -932,7 +932,7 @@ export function ArtifactFull({
       >
         {header}
       </Masthead>
-      <div className="full-body">
+      <div className={panelOpen ? "full-body panel-open" : "full-body"}>
         {body}
         {overlay}
         {recorded ? (

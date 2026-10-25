@@ -46,6 +46,15 @@ function submitOnModEnter(event: React.KeyboardEvent<HTMLTextAreaElement>) {
   event.currentTarget.form?.requestSubmit();
 }
 
+/**
+ * Keeps the whole form in view while the reader types: the textarea, the hint
+ * and the button. Typing only scrolls the caret into view, and focusing the
+ * composer from a selection does not scroll at all.
+ */
+function revealForm(textarea: HTMLTextAreaElement) {
+  textarea.form?.scrollIntoView({ block: "nearest" });
+}
+
 function SubmitHint({ id }: { id: string }) {
   const modifier = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
   return (
@@ -291,7 +300,10 @@ export function Comments({
                   value={replyDraft}
                   disabled={replySending}
                   aria-describedby={`reply-hint-${root.id}`}
-                  onChange={(event) => setReplyDraft(event.target.value)}
+                  onChange={(event) => {
+                    setReplyDraft(event.target.value);
+                    revealForm(event.target);
+                  }}
                   onKeyDown={submitOnModEnter}
                 />
                 <SubmitHint id={`reply-hint-${root.id}`} />
@@ -341,7 +353,10 @@ export function Comments({
           value={draft}
           disabled={sending}
           aria-describedby="comment-hint"
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            revealForm(event.target);
+          }}
           onKeyDown={submitOnModEnter}
         />
         <SubmitHint id="comment-hint" />

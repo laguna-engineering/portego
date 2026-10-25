@@ -116,6 +116,21 @@ describe("writing", () => {
     expect(posted).toEqual(["First\nline", "Second"]);
   });
 
+  test("keeps the whole composer in view while the reader types", async () => {
+    stubFetch(() => ({ body: { comments: [] } }));
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+    const draft = (await screen.findByLabelText("Add a comment")) as HTMLTextAreaElement;
+    const form = draft.form;
+    if (!form) throw new Error("The composer has no form");
+    const revealed: unknown[] = [];
+    form.scrollIntoView = (options) => revealed.push(options);
+
+    await userEvent.type(draft, "Hi");
+
+    // The form, so the hint and the button show too, and only as far as needed.
+    expect(revealed).toEqual([{ block: "nearest" }, { block: "nearest" }]);
+  });
+
   test("names the shortcut with the modifier of the reader's platform", async () => {
     stubFetch(() => ({ body: { comments: [] } }));
     const platform = Object.getOwnPropertyDescriptor(navigator, "platform");

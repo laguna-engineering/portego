@@ -264,6 +264,8 @@ export const BRIDGE_SCRIPT = `(() => {
   document.addEventListener("mouseup", reportSelection);
   // Scrolling moves the selection on screen without changing it.
   document.addEventListener("scroll", reportSelection, true);
+  // So does the frame narrowing to make room for the comments panel.
+  window.addEventListener("resize", reportSelection);
 
   document.addEventListener("click", (event) => {
     if (!painted || ranges.size === 0) return;
