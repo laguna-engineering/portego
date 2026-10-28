@@ -14,9 +14,10 @@ import { MemberLink } from "./Member.tsx";
 import { RelativeTime } from "./RelativeTime.tsx";
 import type { ArtifactTarget } from "./router.ts";
 
-/** What the actor did, to follow their name. */
-function describe(item: ActivityItem): string {
+/** What the actor did, to follow their name. `count` is how many uploads the row stands for. */
+function describe(item: ActivityItem, count = 1): string {
   const { artifact } = item;
+  if (count > 1) return `uploaded ${count} versions of ${artifact.title}`;
   switch (item.kind) {
     case "artifact.created":
       return `uploaded ${artifact.title}`;
@@ -78,6 +79,37 @@ function why(item: ActivityItem): {
 
 function isAfter(item: ActivityItem, readAt: string | null): boolean {
   return readAt === null || Date.parse(item.createdAt) > Date.parse(readAt);
+}
+
+function isUpload(item: ActivityItem): boolean {
+  return item.kind === "artifact.created" || item.kind === "version.created";
+}
+
+/**
+ * Folds consecutive uploads by one person to one artifact into a row that shows the newest.
+ * A row never mixes items from before and after `since`, so what is new stays marked.
+ */
+function group(
+  items: ActivityItem[],
+  since: string | null,
+): { item: ActivityItem; count: number }[] {
+  const rows: { item: ActivityItem; count: number }[] = [];
+  for (const item of items) {
+    const last = rows.at(-1);
+    if (
+      last &&
+      isUpload(item) &&
+      isUpload(last.item) &&
+      item.actor.id === last.item.actor.id &&
+      item.artifact.id === last.item.artifact.id &&
+      isAfter(item, since) === isAfter(last.item, since)
+    ) {
+      last.count += 1;
+    } else {
+      rows.push({ item, count: 1 });
+    }
+  }
+  return rows;
 }
 
 /**
@@ -234,7 +266,7 @@ export function NotificationBell({
               </p>
             ) : (
               <ul>
-                {items.map((item) => (
+                {group(items, openedSince).map(({ item, count }) => (
                   <li
                     key={item.id}
                     className="activity-item"
@@ -244,12 +276,12 @@ export function NotificationBell({
                       <MemberLink id={item.actor.id} onFollow={() => setOpen(false)}>
                         {item.actor.name}
                       </MemberLink>{" "}
-                      {describe(item)}
+                      {describe(item, count)}
                     </span>
                     <button
                       type="button"
                       className="row-button"
-                      aria-label={`${item.actor.name} ${describe(item)}`}
+                      aria-label={`${item.actor.name} ${describe(item, count)}`}
                       onClick={() => {
                         setOpen(false);
                         onOpenArtifact(item.artifact.id, targetOf(item));

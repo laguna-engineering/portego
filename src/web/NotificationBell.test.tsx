@@ -275,6 +275,85 @@ describe("list", () => {
     expect(opened).toEqual([["artifact-1", { versionId: "version-3" }]]);
   });
 
+  describe("uploads", () => {
+    const upload = (
+      number: number,
+      overrides: Partial<Pick<ActivityItem, "createdAt" | "actor" | "artifact">> = {},
+    ) =>
+      number === 1
+        ? item({ id: "version-1", kind: "artifact.created", ...overrides })
+        : item({
+            id: `version-${number}`,
+            kind: "version.created",
+            versionNumber: number,
+            ...overrides,
+          });
+
+    async function rowTexts() {
+      await userEvent.click(await screen.findByRole("button", { name: /^Notifications/ }));
+      return within(screen.getByRole("dialog", { name: "Notifications" }))
+        .getAllByRole("listitem")
+        .map((row) => row.querySelector("span")?.textContent);
+    }
+
+    test("show a run of uploads by one person as one row that opens the newest", async () => {
+      stubServer({ items: [5, 4, 3, 2, 1].map((n) => upload(n)), readAt: READ });
+      const opened: unknown[] = [];
+      renderBell((id, target) => opened.push([id, target]));
+
+      expect(await rowTexts()).toEqual(["B Person uploaded 5 versions of Plan"]);
+      await userEvent.click(screen.getByRole("button", { name: /uploaded 5 versions of Plan/ }));
+      expect(opened).toEqual([["artifact-1", { versionId: "version-5" }]]);
+    });
+
+    test("stay apart for another person, another artifact, or something in between", async () => {
+      const other = { id: "user-3", name: "C Person" };
+      stubServer({
+        items: [
+          upload(6),
+          upload(5, { actor: other }),
+          upload(4),
+          upload(3, { artifact: { id: "artifact-2", title: "Matrix" } }),
+          upload(2),
+          item({ id: "c", kind: "comment.created", reply: false }),
+          upload(1),
+        ],
+        readAt: READ,
+      });
+      renderBell();
+
+      expect(await rowTexts()).toEqual([
+        "B Person uploaded version 6 of Plan",
+        "C Person uploaded version 5 of Plan",
+        "B Person uploaded version 4 of Plan",
+        "B Person uploaded version 3 of Matrix",
+        "B Person uploaded version 2 of Plan",
+        "B Person commented on Plan",
+        "B Person uploaded Plan",
+      ]);
+    });
+
+    test("keep what the reader saw apart from what is new", async () => {
+      stubServer({
+        items: [
+          upload(4),
+          upload(3),
+          upload(2, { createdAt: EARLIER }),
+          upload(1, { createdAt: EARLIER }),
+        ],
+        readAt: READ,
+      });
+      renderBell();
+
+      expect(await rowTexts()).toEqual([
+        "B Person uploaded 2 versions of Plan",
+        "B Person uploaded 2 versions of Plan",
+      ]);
+      const rows = within(screen.getByRole("dialog")).getAllByRole("listitem");
+      expect(rows.map((row) => row.hasAttribute("data-unread"))).toEqual([true, false]);
+    });
+  });
+
   test("opens just the artifact for a new artifact or a status change", async () => {
     stubServer({
       items: [
