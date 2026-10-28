@@ -12,6 +12,7 @@ import {
   type Entry,
   fetchArtifact,
   fetchVersions,
+  markVersionsSeen,
   setArtifactArchived,
   setArtifactStatus,
   setArtifactVisibility,
@@ -925,6 +926,11 @@ export function ArtifactFull({
                   setComparing(null);
                   setViewedVersionId(null);
                   setFrameKey((key) => key + 1);
+                  if (newestVersion.current !== null) {
+                    markVersionsSeen(id, newestVersion.current).catch(() => {
+                      // The bell keeps the uploads unread, as the server still counts them.
+                    });
+                  }
                 },
               }
             : null

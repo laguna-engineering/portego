@@ -876,6 +876,8 @@ export function createArtifactStore(options: {
           )
           .run(intoId, fromId);
         database.query("delete from artifactGuestEntries where artifactId = ?").run(fromId);
+        // The renumbering below changes which versions a seen version number names.
+        database.query("delete from artifactReads where artifactId in (?, ?)").run(intoId, fromId);
         // Nothing points at the old row any more, so the cascade removes nothing.
         database.query("delete from artifacts where id = ?").run(fromId);
 

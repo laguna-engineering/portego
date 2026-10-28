@@ -20,6 +20,7 @@ function item(overrides: Partial<ActivityItem> & Pick<ActivityItem, "kind">): Ac
     actor: { id: "user-2", name: "B Person" },
     artifact: { id: "artifact-1", title: "Plan" },
     reason: { kind: "uploaded" },
+    seen: false,
     ...overrides,
   } as ActivityItem;
 }
@@ -128,6 +129,36 @@ describe("dot", () => {
     });
     await waitFor(() => expect(bell().hasAttribute("data-dot")).toBe(true));
     expect(server.loads).toBe(2);
+  });
+
+  test("stays off for uploads the reader already saw on the artifact's page", async () => {
+    stubServer({
+      items: [item({ kind: "version.created", versionNumber: 2, seen: true })],
+      readAt: READ,
+    });
+    renderBell();
+    await act(async () => {});
+
+    expect(bell().hasAttribute("data-dot")).toBe(false);
+  });
+
+  test("goes off when the reader marks the new version seen, here or elsewhere", async () => {
+    const server = stubServer({
+      items: [item({ kind: "version.created", versionNumber: 2 })],
+      readAt: READ,
+    });
+    renderBell();
+    await screen.findByRole("button", { name: "Notifications, unread" });
+
+    server.feed = {
+      items: [item({ kind: "version.created", versionNumber: 2, seen: true })],
+      readAt: READ,
+    };
+    await act(async () => {
+      StubEventSource.last?.send({ type: "activity.read" });
+    });
+
+    await waitFor(() => expect(bell().hasAttribute("data-dot")).toBe(false));
   });
 });
 
@@ -278,7 +309,7 @@ describe("list", () => {
   describe("uploads", () => {
     const upload = (
       number: number,
-      overrides: Partial<Pick<ActivityItem, "createdAt" | "actor" | "artifact">> = {},
+      overrides: Partial<Pick<ActivityItem, "createdAt" | "actor" | "artifact" | "seen">> = {},
     ) =>
       number === 1
         ? item({ id: "version-1", kind: "artifact.created", ...overrides })
@@ -347,6 +378,21 @@ describe("list", () => {
 
       expect(await rowTexts()).toEqual([
         "B Person uploaded 2 versions of Plan",
+        "B Person uploaded 2 versions of Plan",
+      ]);
+      const rows = within(screen.getByRole("dialog")).getAllByRole("listitem");
+      expect(rows.map((row) => row.hasAttribute("data-unread"))).toEqual([true, false]);
+    });
+
+    test("keep uploads the reader saw on the artifact's page apart from newer ones", async () => {
+      stubServer({
+        items: [upload(3), upload(2, { seen: true }), upload(1, { seen: true })],
+        readAt: READ,
+      });
+      renderBell();
+
+      expect(await rowTexts()).toEqual([
+        "B Person uploaded version 3 of Plan",
         "B Person uploaded 2 versions of Plan",
       ]);
       const rows = within(screen.getByRole("dialog")).getAllByRole("listitem");

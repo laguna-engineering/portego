@@ -66,6 +66,7 @@ on, and the deployment's `appName`, which names the root of the folder tree.
 | `GET` | `/api/events` | Subscribe to changes, as Server-Sent Events |
 | `GET` | `/api/activity` | Recent activity on every artifact, and when you last read it |
 | `POST` | `/api/activity/read` | Mark the activity read up to now |
+| `POST` | `/api/activity/read/artifacts/:id` | Mark an artifact's uploads read up to one version |
 
 ### List
 
@@ -137,9 +138,11 @@ data: {"type":"artifact.created","id":"01J…"}
 : keep-alive
 ```
 
-Six event types are sent: `artifact.created`, `artifact.changed`,
+Seven event types are sent: `artifact.created`, `artifact.changed`,
 `folder.changed`, and `tag.changed` carry `id`; `comment.changed` and
-`entry.changed` carry `artifactId`.
+`entry.changed` carry `artifactId`. `activity.read` carries `userId` and goes
+only to that user's streams: they marked their activity read, so their bell in
+another tab or device can reload.
 
 An event names what changed and carries nothing else. A client reads the new
 state through the ordinary endpoints above, so every answer stays subject to
@@ -384,7 +387,8 @@ removed comment or cleared entry is no longer listed.
       "createdAt": "2026-09-28T12:00:00.000Z",
       "actor": { "id": "…", "name": "A Person" },
       "artifact": { "id": "…", "title": "Plan" },
-      "reason": { "kind": "commented" }
+      "reason": { "kind": "commented" },
+      "seen": false
     }
   ],
   "readAt": "2026-09-28T11:00:00.000Z"
@@ -397,7 +401,16 @@ removed comment or cleared entry is no longer listed.
 `revoked`). `id` is the id of the version, comment, status or link change, or
 entry write. An entry gets a new `id` each time its value changes. `readAt` is when the caller
 last called `POST /api/activity/read`, or null if never; items after it are
-unread. The read marker is per user and only moves forward.
+unread, except those with `seen`. The read marker is per user and only moves forward.
+
+`seen` is true on an upload (`artifact.created` or `version.created`) whose
+version the caller has marked seen. The web app does this when the reader
+refreshes an artifact's page to show a new version. `POST
+/api/activity/read/artifacts/:id` with `{ "versionNumber": 3 }` marks versions
+1 to 3 of that artifact seen and returns `{ "versionNumber": 3 }`, the newest
+version seen. This marker is per user and artifact, and only moves forward. It
+leaves the artifact's comments, status changes, and entries unread. An unknown
+version, or an artifact the caller cannot see, is `NOT_FOUND`.
 
 `reason` says why an item reaches the caller: `uploaded`, `commented`, or
 `chosen` for a level set on the artifact, `folder` (with `folder`, the watched

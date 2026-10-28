@@ -29,6 +29,8 @@ export type Activity = {
   artifact: { id: string; title: string };
   /** Null when the item does not reach the user's bell. */
   reason: ActivityReason | null;
+  /** An upload the user has seen on the artifact's page. It is read whatever the read marker says. */
+  seen: boolean;
 } & (
   | { kind: "artifact.created" }
   | { kind: "version.created"; versionNumber: number }
@@ -55,6 +57,12 @@ export type ActivityStore = {
   readAt: (userId: string) => Date | null;
   /** Moves the user's read marker forward to `at`. It never moves back. */
   markRead: (userId: string, at: number) => Date;
+  /**
+   * Marks the uploads of an artifact up to version `versionNumber` seen by the
+   * user, and returns the newest version seen. It never moves back. Null when
+   * the artifact has no such version or the user cannot see it.
+   */
+  markVersionsSeen: (userId: string, artifactId: string, versionNumber: number) => number | null;
   subscriptions: SubscriptionStore;
 };
 
@@ -77,6 +85,7 @@ type Row = {
   byLevel: 0 | 1;
   replyToViewer: 0 | 1;
   linkToCreator: 0 | 1;
+  seen: 0 | 1;
 };
 
 // Built from the rows that already record each change, so there is nothing
@@ -105,7 +114,9 @@ const SELECT_ACTIVITY = `
         else 0
       end as byLevel,
       coalesce(parentComment.authorId = ?, 0) as replyToViewer,
-      activity.source = 'link' and artifacts.createdBy = ? as linkToCreator
+      activity.source = 'link' and artifacts.createdBy = ? as linkToCreator,
+      coalesce(activity.source = 'version'
+        and activity.versionNumber <= artifactReads.versionNumber, 0) as seen
     from (
       select 'version' as source, id, createdAt, createdBy as actorId, artifactId, inApp,
         number as versionNumber, null as parentId, null as change, null as entryKey
@@ -128,6 +139,8 @@ const SELECT_ACTIVITY = `
       ${JOIN_DISPLAY_NAME}
       left join artifactSubscriptions on artifactSubscriptions.artifactId = activity.artifactId
         and artifactSubscriptions.userId = ?
+      left join artifactReads on artifactReads.artifactId = activity.artifactId
+        and artifactReads.userId = ?
       left join watched on watched.folderId = artifacts.folderId
       left join folders via on via.id = watched.viaId
       left join artifactComments parentComment on parentComment.id = activity.parentId
@@ -156,6 +169,7 @@ function toActivity(row: Row): Activity {
     actor: { id: row.actorId, name: row.actorName },
     artifact: { id: row.artifactId, title: row.artifactTitle },
     reason: reasonOf(row),
+    seen: row.seen === 1,
   };
   if (row.source === "comment") {
     return { ...base, kind: "comment.created", reply: row.parentId !== null };
@@ -199,6 +213,7 @@ export function createActivityStore(options: { database: Database }): ActivitySt
           userId,
           userId,
           userId,
+          userId,
           scope === "everyone" ? 1 : 0,
           limit,
         ) as Row[];
@@ -215,6 +230,25 @@ export function createActivityStore(options: { database: Database }): ActivitySt
         )
         .run(userId, at);
       return readAt(userId) as Date;
+    },
+
+    markVersionsSeen(userId, artifactId, versionNumber) {
+      const exists = database
+        .query(
+          `select 1 from artifactVersions join artifacts on artifacts.id = artifactVersions.artifactId
+           where artifactVersions.artifactId = ? and artifactVersions.number = ? and ${VISIBLE}`,
+        )
+        .get(artifactId, versionNumber, userId);
+      if (!exists) return null;
+      const row = database
+        .query(
+          `insert into artifactReads (userId, artifactId, versionNumber) values (?, ?, ?)
+           on conflict (userId, artifactId) do update
+             set versionNumber = max(versionNumber, excluded.versionNumber)
+           returning versionNumber`,
+        )
+        .get(userId, artifactId, versionNumber) as { versionNumber: number };
+      return row.versionNumber;
     },
 
     subscriptions: createSubscriptionStore({ database }),

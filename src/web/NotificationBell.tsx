@@ -77,8 +77,8 @@ function why(item: ActivityItem): {
   }
 }
 
-function isAfter(item: ActivityItem, readAt: string | null): boolean {
-  return readAt === null || Date.parse(item.createdAt) > Date.parse(readAt);
+function isUnread(item: ActivityItem, readAt: string | null): boolean {
+  return !item.seen && (readAt === null || Date.parse(item.createdAt) > Date.parse(readAt));
 }
 
 function isUpload(item: ActivityItem): boolean {
@@ -87,7 +87,7 @@ function isUpload(item: ActivityItem): boolean {
 
 /**
  * Folds consecutive uploads by one person to one artifact into a row that shows the newest.
- * A row never mixes items from before and after `since`, so what is new stays marked.
+ * A row never mixes read and unread items, so what is new stays marked.
  */
 function group(
   items: ActivityItem[],
@@ -102,7 +102,7 @@ function group(
       isUpload(last.item) &&
       item.actor.id === last.item.actor.id &&
       item.artifact.id === last.item.artifact.id &&
-      isAfter(item, since) === isAfter(last.item, since)
+      isUnread(item, since) === isUnread(last.item, since)
     ) {
       last.count += 1;
     } else {
@@ -115,7 +115,8 @@ function group(
 /**
  * The masthead's bell. A dot marks activity the reader watches that is newer
  * than the last time they opened the list, and opening it clears the dot
- * everywhere the reader is signed in. The Everyone tab lists everything the
+ * everywhere the reader is signed in. An upload the reader already saw on the
+ * artifact's page does not count. The Everyone tab lists everything the
  * reader can see and never sets the dot. The lists follow the change stream
  * while the page is open.
  */
@@ -169,7 +170,8 @@ export function NotificationBell({
       event.type === "artifact.changed" ||
       event.type === "comment.changed" ||
       (event.type === "entry.changed" && event.activity) ||
-      event.type === "reconnected"
+      event.type === "reconnected" ||
+      event.type === "activity.read"
     ) {
       void load();
       if (showingEveryone) void loadEveryone();
@@ -201,7 +203,7 @@ export function NotificationBell({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open]);
 
-  const unread = feed ? feed.items.some((item) => isAfter(item, feed.readAt)) : false;
+  const unread = feed ? feed.items.some((item) => isUnread(item, feed.readAt)) : false;
 
   async function toggle() {
     if (open) {
@@ -270,7 +272,7 @@ export function NotificationBell({
                   <li
                     key={item.id}
                     className="activity-item"
-                    data-unread={(item.reason && isAfter(item, openedSince)) || undefined}
+                    data-unread={(item.reason && isUnread(item, openedSince)) || undefined}
                   >
                     <span>
                       <MemberLink id={item.actor.id} onFollow={() => setOpen(false)}>

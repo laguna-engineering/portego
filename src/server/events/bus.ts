@@ -1,7 +1,8 @@
 /**
  * What changed. The payload carries identifiers only: a subscriber refetches
  * through the ordinary API, so every answer stays subject to the checks that
- * route already makes, and the stream never holds a body of its own.
+ * route already makes, and the stream never holds a body of its own. An event
+ * with a `userId` reaches only that user's streams.
  */
 export type ChangeEvent =
   | { type: "artifact.created"; id: string }
@@ -10,7 +11,9 @@ export type ChangeEvent =
   /** `activity`: the change shows in the activity feed. */
   | { type: "entry.changed"; artifactId: string; activity?: true }
   | { type: "folder.changed"; id: string }
-  | { type: "tag.changed"; id: string };
+  | { type: "tag.changed"; id: string }
+  /** The user marked activity read, so their bells elsewhere reload. */
+  | { type: "activity.read"; userId: string };
 
 export type EventBus = {
   publish: (event: ChangeEvent) => void;

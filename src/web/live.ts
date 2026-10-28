@@ -13,6 +13,8 @@ export type LiveEvent =
   | { type: "entry.changed"; artifactId: string; activity?: true }
   | { type: "folder.changed"; id: string }
   | { type: "tag.changed"; id: string }
+  /** The reader marked activity read, here or in another tab or device. */
+  | { type: "activity.read" }
   /** The stream came back after a break. Anything may have changed meanwhile. */
   | { type: "reconnected" };
 

@@ -447,6 +447,8 @@ export type ActivityItem = {
   artifact: { id: string; title: string };
   /** Why the item reaches the reader's bell. Null when it does not. */
   reason: ActivityReason | null;
+  /** An upload the reader has seen on the artifact's page. It is read whatever `readAt` says. */
+  seen: boolean;
 } & (
   | { kind: "artifact.created" }
   | { kind: "version.created"; versionNumber: number }
@@ -506,6 +508,21 @@ export function setSubscription(
 
 export function markActivityRead(): Promise<{ readAt: string }> {
   return request<{ readAt: string }>("/api/activity/read", { method: "POST" });
+}
+
+/** Marks the uploads of an artifact up to `versionNumber` read in the reader's bell. */
+export function markVersionsSeen(
+  artifactId: string,
+  versionNumber: number,
+): Promise<{ versionNumber: number }> {
+  return request<{ versionNumber: number }>(
+    `/api/activity/read/artifacts/${encodeURIComponent(artifactId)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ versionNumber }),
+    },
+  );
 }
 
 /** When each of the user's own actions happened in the last 53 weeks, in epoch ms. */

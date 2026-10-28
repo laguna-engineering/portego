@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.ts";
 import { TEST_BASE_URL } from "../auth/testing.ts";
-import { createLiveTestServer, createTestServer, htmlFile } from "../testing.ts";
+import { createLiveTestServer, createTestServer, htmlFile, WORKSPACE_USER } from "../testing.ts";
 import { createEventBus, type EventBus } from "./bus.ts";
 import { eventRoutes } from "./routes.ts";
 
@@ -136,6 +136,32 @@ describe("the change stream in the application", () => {
 
       const seen = await readUntil(res, /artifact\.created/);
       expect(seen).toContain(artifact.id);
+    } finally {
+      server.cleanup();
+    }
+  });
+
+  test("carries a person's read marker to their own streams only", async () => {
+    const server = await createTestServer();
+    try {
+      const cookie = await server.signIn();
+      const other = await server.signIn({
+        ...WORKSPACE_USER,
+        sub: "google-subject-2",
+        email: "other@acme.example",
+      });
+      const mine = await server.app.request("/api/events", { headers: { cookie } });
+      const theirs = await server.app.request("/api/events", { headers: { cookie: other } });
+
+      await server.app.request("/api/activity/read", {
+        method: "POST",
+        headers: { cookie, origin: TEST_BASE_URL },
+      });
+      // Every stream gets this one, so reading the other stream up to it is enough.
+      server.events.publish({ type: "tag.changed", id: "tag-1" });
+
+      expect(await readUntil(mine, /activity\.read/)).toContain("activity.read");
+      expect(await readUntil(theirs, /tag\.changed/)).not.toContain("activity.read");
     } finally {
       server.cleanup();
     }

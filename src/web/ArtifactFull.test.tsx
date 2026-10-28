@@ -1517,6 +1517,48 @@ describe("change notices", () => {
     expect(screen.queryByText(newVersionPill)).toBeNull();
   });
 
+  test("refreshing marks the new version seen, so the bell stops counting it", async () => {
+    const lists = { versions: [version({ creator: someoneElse })], comments: [] };
+    const marked: unknown[] = [];
+    const json = (body: unknown) =>
+      Promise.resolve(
+        new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } }),
+      );
+    stubFetchWith((path, init) => {
+      const base = path.split("?")[0] ?? path;
+      if (base === "/api/activity/read/artifacts/artifact-1" && init?.method === "POST") {
+        marked.push(JSON.parse(String(init.body)));
+        return json({ versionNumber: 2 });
+      }
+      if (base === "/api/activity") {
+        const upload = {
+          id: "v2",
+          kind: "version.created",
+          versionNumber: 2,
+          createdAt: new Date().toISOString(),
+          actor: { id: someoneElse.id, name: someoneElse.name },
+          artifact: { id: "artifact-1", title: "Sales chart" },
+          reason: { kind: "commented" },
+          seen: marked.length > 0,
+        };
+        return json({ items: lists.versions.length > 1 ? [upload] : [], readAt: null });
+      }
+      if (base.endsWith("/versions")) return json({ versions: lists.versions });
+      return json(answer(path).body);
+    });
+    await renderWithVersions();
+
+    lists.versions = [version({ id: "v2", number: 2, creator: someoneElse }), ...lists.versions];
+    await announce({ type: "artifact.changed", id: "artifact-1" });
+    await screen.findByRole("button", { name: "Notifications, unread" });
+    await userEvent.click(await screen.findByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(marked).toEqual([{ versionNumber: 2 }]));
+    // The server announces the mark on the reader's streams, this page's included.
+    await announce({ type: "activity.read" });
+
+    expect(await screen.findByRole("button", { name: "Notifications" })).toBeDefined();
+  });
+
   test("tells the reader who commented, but not about the comments already there", async () => {
     const lists = { versions: [version()], comments: [comment()] };
     stubLists(lists);

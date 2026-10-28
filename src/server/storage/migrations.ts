@@ -398,6 +398,18 @@ export const migrations: readonly Migration[] = [
       create index artifactLinkChanges_created_at on artifactLinkChanges (createdAt);
     `,
   },
+  {
+    // The newest version each user has seen on an artifact's page, for the bell.
+    id: "021-artifact-reads",
+    sql: `
+      create table artifactReads (
+        userId text not null references "user" ("id") on delete cascade,
+        artifactId text not null references artifacts (id) on delete cascade,
+        versionNumber integer not null,
+        primary key (userId, artifactId)
+      );
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

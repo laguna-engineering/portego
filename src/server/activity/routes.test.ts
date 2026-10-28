@@ -40,6 +40,7 @@ type Item = {
   change?: string;
   key?: string;
   reason: { kind: string; folder?: { id: string; name: string } } | null;
+  seen: boolean;
 };
 
 function send(method: string, path: string, body: unknown, as = cookie) {
@@ -563,6 +564,15 @@ describe("read marker", () => {
     expect((await feed(reader)).readAt).toBeNull();
   });
 
+  test("tells the person's other pages, so their bells reload", async () => {
+    const events: unknown[] = [];
+    const stop = server.events.subscribe((event) => events.push(event));
+    await send("POST", "/api/activity/read", {});
+    stop();
+
+    expect(events).toEqual([{ type: "activity.read", userId: await userId(cookie) }]);
+  });
+
   test("never moves back, so a slow request cannot mark read items unread again", async () => {
     const store = createActivityStore({ database: server.database });
     const id = await userId(cookie);
@@ -571,5 +581,100 @@ describe("read marker", () => {
     store.markRead(id, 1000);
 
     expect(store.readAt(id)?.getTime()).toBe(2000);
+  });
+});
+
+describe("seen versions", () => {
+  function markSeen(artifactId: string, versionNumber: unknown, as = reader) {
+    return send("POST", `/api/activity/read/artifacts/${artifactId}`, { versionNumber }, as);
+  }
+
+  async function seen(sessionCookie = reader): Promise<string[]> {
+    return (await feed(sessionCookie)).items.filter((item) => item.seen).map(told);
+  }
+
+  test("reads the uploads the reader saw on the page, and not the comments or later versions", async () => {
+    const id = await upload("Plan");
+    await upload("Plan", id);
+    await comment(id, "Looks right");
+    await upload("Other");
+
+    const res = await markSeen(id, 2);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ versionNumber: 2 });
+    await upload("Plan", id);
+
+    // A comment needs reading on its own, and version 3 came after the refresh.
+    expect((await seen()).sort()).toEqual([
+      "A Person artifact.created on Plan",
+      "A Person version.created v2 on Plan",
+    ]);
+  });
+
+  test("belongs to one person", async () => {
+    const id = await upload("Plan");
+    await upload("Plan", id);
+
+    expect((await markSeen(id, 2, cookie)).status).toBe(200);
+
+    expect(await seen()).toEqual([]);
+  });
+
+  test("forgets what was seen on merged artifacts, so a renumbered upload never reads as seen", async () => {
+    const into = await upload("Plan");
+    const from = await upload("Plan, again");
+    await upload("Plan", into);
+    await markSeen(into, 2);
+
+    // The upload of "Plan, again" falls between the two of "Plan" and becomes version 2.
+    createArtifactStore({ database: server.database, dataDir: server.dataDir }).mergeInto(
+      into,
+      from,
+    );
+
+    expect(await seen()).toEqual([]);
+  });
+
+  test("never moves back, so a slow request cannot mark seen versions unread again", async () => {
+    const id = await upload("Plan");
+    await upload("Plan", id);
+    await markSeen(id, 2);
+
+    const res = await markSeen(id, 1);
+
+    expect(await res.json()).toEqual({ versionNumber: 2 });
+    expect(await seen()).toContain("A Person version.created v2 on Plan");
+  });
+
+  test("refuses a version that does not exist, someone else's private artifact, and a bad number", async () => {
+    const id = await upload("Plan");
+    const form = new FormData();
+    form.set("file", htmlFile("<p>x</p>"));
+    form.set("title", "Mine");
+    form.set("visibility", "private");
+    const res = await server.app.request("/api/artifacts", {
+      method: "POST",
+      headers: { cookie, origin: TEST_BASE_URL },
+      body: form,
+    });
+    const hidden = ((await res.json()) as { artifact: { id: string } }).artifact.id;
+
+    expect((await markSeen(id, 2)).status).toBe(404);
+    expect((await markSeen(hidden, 1)).status).toBe(404);
+    expect((await markSeen(id, 0)).status).toBe(400);
+    expect((await markSeen(id, "1")).status).toBe(400);
+    expect((await markSeen(id, undefined)).status).toBe(400);
+  });
+
+  test("tells the reader's other pages, and says nothing when it refuses", async () => {
+    const id = await upload("Plan");
+    const events: unknown[] = [];
+    const stop = server.events.subscribe((event) => events.push(event));
+    await markSeen(id, 2);
+    await markSeen(id, 0);
+    await markSeen(id, 1);
+    stop();
+
+    expect(events).toEqual([{ type: "activity.read", userId: await userId(reader) }]);
   });
 });

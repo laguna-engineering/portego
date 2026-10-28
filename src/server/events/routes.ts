@@ -101,6 +101,7 @@ export function eventRoutes(options: EventRouteOptions): Hono<AppEnv> {
         write(`retry: ${RETRY_MS}\n\n`);
         heartbeat = setInterval(() => write(": keep-alive\n\n"), heartbeatMs);
         unsubscribe = bus.subscribe((event: ChangeEvent) => {
+          if ("userId" in event && event.userId !== user.id) return;
           write(`data: ${JSON.stringify(event)}\n\n`);
         });
 

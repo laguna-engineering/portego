@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { ServiceError } from "../artifacts/errors.ts";
 import { type AppEnv, currentUser, requireUser } from "../auth/middleware.ts";
+import type { EventBus } from "../events/bus.ts";
 import type { ActivityStore } from "../storage/activity.ts";
 import { SUBSCRIPTION_LEVELS, type SubscriptionLevel } from "../storage/subscriptions.ts";
 
@@ -10,8 +11,12 @@ export const ACTIVITY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** The feed is a menu, not an archive. A busy week shows its most recent part. */
 export const ACTIVITY_LIMIT = 100;
 
-export function activityRoutes(store: ActivityStore, options: { now?: () => number } = {}) {
+export function activityRoutes(
+  store: ActivityStore,
+  options: { now?: () => number; events?: EventBus } = {},
+) {
   const now = options.now ?? Date.now;
+  const publish = options.events?.publish ?? (() => {});
   const routes = new Hono<AppEnv>();
   routes.use("*", requireUser);
 
@@ -30,7 +35,24 @@ export function activityRoutes(store: ActivityStore, options: { now?: () => numb
     });
   });
 
-  routes.post("/read", (c) => c.json({ readAt: store.markRead(currentUser(c).id, now()) }));
+  routes.post("/read", (c) => {
+    const userId = currentUser(c).id;
+    const readAt = store.markRead(userId, now());
+    publish({ type: "activity.read", userId });
+    return c.json({ readAt });
+  });
+
+  routes.post("/read/artifacts/:id", async (c) => {
+    const versionNumber = await readField(c.req.raw, "versionNumber");
+    if (!Number.isInteger(versionNumber) || (versionNumber as number) < 1) {
+      throw new ServiceError("INVALID_INPUT", "Send a versionNumber, a whole number from 1.");
+    }
+    const userId = currentUser(c).id;
+    const seen = store.markVersionsSeen(userId, c.req.param("id"), versionNumber as number);
+    if (seen === null) throw new ServiceError("NOT_FOUND", "No such version.");
+    publish({ type: "activity.read", userId });
+    return c.json({ versionNumber: seen });
+  });
 
   const { subscriptions } = store;
 
@@ -62,14 +84,18 @@ function found<T>(value: T | null): T {
   return value;
 }
 
-async function readLevel(request: Request): Promise<SubscriptionLevel> {
+async function readField(request: Request, name: string): Promise<unknown> {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     body = null;
   }
-  const level = (body as { level?: unknown } | null)?.level;
+  return (body as Record<string, unknown> | null)?.[name];
+}
+
+async function readLevel(request: Request): Promise<SubscriptionLevel> {
+  const level = await readField(request, "level");
   if (!SUBSCRIPTION_LEVELS.includes(level as SubscriptionLevel)) {
     throw new ServiceError("INVALID_INPUT", `Send a level: ${SUBSCRIPTION_LEVELS.join(", ")}.`);
   }
