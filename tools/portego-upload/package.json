@@ -1,6 +1,6 @@
 {
   "name": "portego-upload",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Create, validate, and upload self-contained HTML artifacts to your Portego deployment.",
   "license": "Apache-2.0",
   "repository": {
