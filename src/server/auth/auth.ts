@@ -2,13 +2,14 @@ import type { Database } from "bun:sqlite";
 import { cimd } from "@better-auth/cimd";
 import { mcp } from "@better-auth/mcp";
 import { betterAuth } from "better-auth";
-import { APIError } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
 import { type GenericOAuthConfig, genericOAuth } from "better-auth/plugins/generic-oauth";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth/types";
 import { fetchClientMetadataResource } from "./client-metadata.ts";
 import { type AuthConfig, MCP_SCOPES, REFRESH_SCOPE } from "./config.ts";
 import { admits, type Identity } from "./policy.ts";
+import { buildGitHubOptions, fetchGitHubLogin } from "./providers/github.ts";
 
 const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 7;
 // Each refresh rotates the token and restarts this lifetime, so it measures inactivity.
@@ -48,11 +49,12 @@ function requireRegisteredProviders(ids: string[]): BetterAuthPlugin {
 }
 
 export function createAuth({ config, database, validateSchema = true }: CreateAuthOptions) {
-  const socialProviders = Object.fromEntries(
-    config.providers.flatMap((provider) =>
+  const socialProviders = Object.fromEntries([
+    ...config.providers.flatMap((provider) =>
       provider.wiring.kind === "social" ? [[provider.id, provider.wiring.options]] : [],
     ),
-  );
+    ...(config.github ? [["github", buildGitHubOptions(config.github)]] : []),
+  ]);
 
   // Every OpenID Connect provider the deployment enabled becomes one entry in
   // the generic OAuth plugin, which registers it beside the built-in providers.
@@ -82,6 +84,15 @@ export function createAuth({ config, database, validateSchema = true }: CreateAu
     // registry keeps each provider's option type inside its own module.
     socialProviders: socialProviders as BetterAuthOptions["socialProviders"],
     emailAndPassword: { enabled: false },
+    account: {
+      // Connected GitHub accounts are the only linked accounts. GitHub's email
+      // plays no part, so it need not match or be verified. The hook below keeps
+      // these options from reaching any other provider.
+      accountLinking: { allowDifferentEmails: true, trustedProviders: ["github"] },
+      additionalFields: {
+        githubLogin: { type: "string", required: false, input: false },
+      },
+    },
     session: {
       expiresIn: SESSION_LIFETIME_SECONDS,
       updateAge: 60 * 60 * 24,
@@ -122,7 +133,41 @@ export function createAuth({ config, database, validateSchema = true }: CreateAu
       // Client ID Metadata Documents are how an MCP client registers here.
       cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
     ],
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        const provider = (ctx.body as { provider?: unknown } | undefined)?.provider;
+        const refused =
+          (ctx.path === "/sign-in/social" && provider === "github") ||
+          (ctx.path === "/link-social" && provider !== "github") ||
+          // It counts every provider, so it would let someone remove the
+          // account they sign in with and keep only GitHub, which cannot sign in.
+          ctx.path === "/unlink-account";
+        if (!refused) return;
+        throw new APIError("FORBIDDEN", {
+          code: "NOT_SUPPORTED",
+          message: "This service does not support that.",
+        });
+      }),
+    },
     databaseHooks: {
+      account: {
+        create: {
+          before: async (account) => {
+            if (account.providerId !== "github") return;
+            try {
+              if (!account.accessToken) throw new Error("GitHub gave no access token");
+              return {
+                data: { ...account, githubLogin: await fetchGitHubLogin(account.accessToken) },
+              };
+            } catch (error) {
+              // False skips the insert, and Better Auth then sends the browser
+              // back with unable_to_link_account instead of a server error.
+              console.warn(`Refused GitHub connection: ${(error as Error).message}`);
+              return false;
+            }
+          },
+        },
+      },
       user: {
         create: {
           before: async (user) => {

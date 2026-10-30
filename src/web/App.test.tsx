@@ -160,6 +160,25 @@ describe("signed in", () => {
     expect(await screen.findByRole("button", { name: "Continue with Google" })).toBeDefined();
   });
 
+  test("a GitHub connection that failed is reported on the profile, not as a sign-in refusal", async () => {
+    window.history.replaceState(null, "", "/profile?github=error&error=access_denied");
+    stubFetch((path) => {
+      if (path === "/api/me") {
+        return {
+          body: { ...SIGNED_IN, features: { privateArtifacts: true, githubAccounts: true } },
+        };
+      }
+      if (path === "/api/me/github-accounts") return { body: { accounts: [] } };
+      return signedIn(path);
+    });
+    render(<App />);
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Access was not granted on GitHub. No account was connected.",
+    );
+    expect(window.location.search).toBe("");
+  });
+
   test("opens the upload dialog from the gallery", async () => {
     stubFetch(signedIn);
     render(<App />);

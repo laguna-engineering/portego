@@ -142,6 +142,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
       features: {
         privateArtifacts: options.artifacts.privateArtifacts,
         publicLinks: options.artifacts.publicLinks,
+        githubAccounts: options.authConfig.github !== null,
       },
       appName: options.authConfig.appName,
     });

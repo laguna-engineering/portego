@@ -48,7 +48,8 @@ export function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const error = params.get("error");
-    if (!error) return;
+    // A failed GitHub connection comes back with an error too. The profile reports it.
+    if (!error || params.has("github")) return;
     setRefusal(refusalMessage(error));
     // Keep the message but drop it from the URL, so a reload does not repeat it.
     params.delete("error");
@@ -239,6 +240,7 @@ export function App() {
             avatar={session.user.avatar}
             onAvatarChange={setAvatar}
             onDisplayNameChange={setNames}
+            githubAccounts={session.features.githubAccounts}
             onSignOut={handleSignOut}
             onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
           />
