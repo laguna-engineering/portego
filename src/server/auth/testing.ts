@@ -95,7 +95,9 @@ export async function createTestAuth(
   };
 
   const database = options.database ?? new Database(":memory:");
-  const auth = createAuth({ config, database });
+  // The tables are created below, after the auth context has started, so
+  // Better Auth's startup check would report them missing.
+  const auth = createAuth({ config, database, validateSchema: false });
   const { runMigrations } = await getMigrations(auth.options);
   await runMigrations();
   return { auth, database, config };
