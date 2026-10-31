@@ -7,7 +7,12 @@ import { afterEach } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 if (!("document" in globalThis)) {
-  GlobalRegistrator.register({ url: "http://localhost:5173/" });
+  // Tests that stub the artifact frame's postMessage need its contentWindow,
+  // which happy-dom only creates when it loads the frame's page.
+  GlobalRegistrator.register({
+    url: "http://localhost:5173/",
+    settings: { enableIframePageLoading: true },
+  });
 }
 
 // Testing Library cleans up after itself when it finds a test framework it

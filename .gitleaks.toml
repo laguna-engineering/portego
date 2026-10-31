@@ -7,6 +7,10 @@ title = "portego"
 [extend]
 useDefault = true
 
+[[allowlists]]
+description = "GitHub advisory IDs, which generic-api-key can report as keys"
+regexes = ['''^GHSA(?:-[0-9a-z]{4}){3}$''']
+
 [[rules]]
 id = "ipv4-address"
 description = "IPv4 literal. Write <host-ipv4> or use a documentation range."
