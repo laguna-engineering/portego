@@ -20,6 +20,7 @@ import {
   uploadAvatar,
 } from "./api.ts";
 import { useNow } from "./clock.ts";
+import { GitHubAccounts } from "./GitHubAccounts.tsx";
 import { ActivityList } from "./Member.tsx";
 import type { ArtifactTarget } from "./router.ts";
 
@@ -324,6 +325,7 @@ export function Profile({
   avatar,
   onAvatarChange,
   onDisplayNameChange,
+  githubAccounts,
   onSignOut,
   onOpenArtifact,
 }: {
@@ -334,6 +336,8 @@ export function Profile({
   avatar: string | null;
   onAvatarChange: (avatar: string | null) => void;
   onDisplayNameChange: (names: DisplayName) => void;
+  /** Whether the deployment lets people connect GitHub accounts. */
+  githubAccounts: boolean;
   onSignOut: () => void;
   onOpenArtifact: (id: string, target: ArtifactTarget) => void;
 }) {
@@ -423,6 +427,7 @@ export function Profile({
             defaultName={defaultName}
             onChange={onDisplayNameChange}
           />
+          {githubAccounts ? <GitHubAccounts /> : null}
         </div>
         <div className="profile-signout">
           <button type="button" onClick={onSignOut}>

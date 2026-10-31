@@ -28,6 +28,15 @@ export type HistoryEntry = {
 
 export type Person = { id: string; name: string; joinedAt: number };
 
+/** `githubId` is GitHub's numeric user id, which stays the same when the login changes. */
+export type GitHubAccount = {
+  id: string;
+  githubId: string;
+  login: string;
+  connectedAt: number;
+  updatedAt: number;
+};
+
 export type ProfileStore = {
   avatar: (userId: string) => Avatar | null;
   /** When the avatar last changed, or null if the user has none. */
@@ -53,7 +62,14 @@ export type ProfileStore = {
   }) => { entries: HistoryEntry[]; total: number };
   /** How many artifacts the viewer can open that the user uploaded to or commented on. */
   artifactCount: (userId: string, viewerId: string) => number;
+  /** Oldest first. */
+  githubAccounts: (userId: string) => GitHubAccount[];
+  /** False when the user has no GitHub account with that id. */
+  removeGitHubAccount: (userId: string, id: string) => boolean;
 };
+
+// Better Auth writes an ISO string. Rows inserted directly hold epoch ms.
+const epochMs = (value: string | number) => (typeof value === "number" ? value : Date.parse(value));
 
 // Version 1 is the upload that created the artifact.
 const HISTORY = `
@@ -162,10 +178,7 @@ export function createProfileStore(options: { database: Database }): ProfileStor
         )
         .get(userId) as { id: string; name: string; createdAt: string | number } | null;
       if (!row) return null;
-      // Better Auth writes an ISO string. Rows inserted directly hold epoch ms.
-      const joinedAt =
-        typeof row.createdAt === "number" ? row.createdAt : Date.parse(row.createdAt);
-      return { id: row.id, name: row.name, joinedAt };
+      return { id: row.id, name: row.name, joinedAt: epochMs(row.createdAt) };
     },
 
     history({ userId, viewerId, kind, offset, limit }) {
@@ -193,6 +206,35 @@ export function createProfileStore(options: { database: Database }): ProfileStor
         .query(`select count(distinct history.artifactId) as count from (${HISTORY}) history`)
         .get(userId, userId, viewerId, null, null) as { count: number };
       return row.count;
+    },
+
+    githubAccounts(userId) {
+      const rows = database
+        .query(
+          `select id, accountId, githubLogin, createdAt, updatedAt from account
+           where userId = ? and providerId = 'github' order by createdAt, id`,
+        )
+        .all(userId) as {
+        id: string;
+        accountId: string;
+        githubLogin: string;
+        createdAt: string | number;
+        updatedAt: string | number;
+      }[];
+      return rows.map((row) => ({
+        id: row.id,
+        githubId: row.accountId,
+        login: row.githubLogin,
+        connectedAt: epochMs(row.createdAt),
+        updatedAt: epochMs(row.updatedAt),
+      }));
+    },
+
+    removeGitHubAccount(userId, id) {
+      const result = database
+        .query("delete from account where id = ? and userId = ? and providerId = 'github'")
+        .run(id, userId);
+      return result.changes > 0;
     },
   };
 }

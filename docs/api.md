@@ -22,7 +22,8 @@ has the link, without a session; see [Public links](#public-links).
 check an upload before sending it, `features.privateArtifacts`, which is
 false when the deployment turned private artifacts off,
 `features.publicLinks`, which is true when the deployment turned public links
-on, and the deployment's `appName`, which names the root of the folder tree.
+on, `features.githubAccounts`, which is true when people can connect GitHub
+accounts, and the deployment's `appName`, which names the root of the folder tree.
 
 ## Endpoints
 

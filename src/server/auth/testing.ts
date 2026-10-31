@@ -44,6 +44,8 @@ export type TestAuthOptions = {
   baseURL?: string;
   /** Providers to enable instead of the offline Google stub. */
   providers?: ResolvedProvider[];
+  /** Lets people connect GitHub accounts. */
+  github?: boolean;
 };
 
 /** An auth instance backed by a throwaway in-memory database. */
@@ -83,6 +85,9 @@ export async function createTestAuth(
     cookiePrefix: "portego",
     useSecureCookies: false,
     providers: options.providers ?? [googleTestProvider(options.hostedDomain)],
+    github: options.github
+      ? { clientId: "test-github-client-id", clientSecret: "test-github-client-secret" }
+      : null,
     admission: options.allowAll
       ? { kind: "all-authenticated" }
       : { kind: "email-domains", domains: options.domains ?? ["acme.example"] },
