@@ -137,6 +137,15 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     events,
     activity: createActivityStore({ database }),
     profiles: createProfileStore({ database }),
+    ...(vardaAccount === undefined
+      ? {}
+      : {
+          varda: {
+            account: vardaAccount,
+            outbox: vardaOutbox,
+            ...(options.varda?.webhookSecret ? { webhookSecret: options.varda.webhookSecret } : {}),
+          },
+        }),
   });
 
   return {
