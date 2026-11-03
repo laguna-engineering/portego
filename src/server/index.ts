@@ -16,6 +16,7 @@ import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 import { createProfileStore } from "./storage/profiles.ts";
 import { createSearchStore } from "./storage/search.ts";
+import { createVardaOutbox } from "./storage/varda-outbox.ts";
 
 const env = parseEnv(Bun.env);
 const authConfig = parseAuthConfig(env, Bun.env);
@@ -28,11 +29,13 @@ const organization = createOrganizationService({
   artifactExists: (id) => artifactStore.get(id) !== null,
   events,
 });
+const vardaOutbox = createVardaOutbox({ database });
+const varda = env.VARDA_ACCOUNT ? { account: env.VARDA_ACCOUNT, outbox: vardaOutbox } : undefined;
 const artifacts = createArtifactService({
   store: artifactStore,
   markdownStore: createMarkdownStore({ database }),
   commentStore: createCommentStore({ database }),
-  entryStore: createEntryStore({ database }),
+  entryStore: createEntryStore({ database, outbox: vardaOutbox }),
   searchStore: createSearchStore({ database }),
   organization,
   maxUploadBytes: env.ARTIFACT_MAX_BYTES,
@@ -41,6 +44,7 @@ const artifacts = createArtifactService({
   privateArtifacts: env.PRIVATE_ARTIFACTS,
   publicLinks: env.PUBLIC_LINKS,
   events,
+  ...(varda ? { varda } : {}),
 });
 
 const app = createApp({

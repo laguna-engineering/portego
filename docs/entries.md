@@ -114,8 +114,11 @@ any well-formed key and value is accepted.
   other than `:`, and two placeholders need literal text between them. A key
   takes the first template it matches.
 - Each rule may have a `description`, `params` (a rule for each placeholder,
-  checked against the matched text), `value` (a rule for the value), and
-  `notify` (see [Notifications](#notifications)).
+  checked against the matched text), `value` (a rule for the value),
+  `notify` (see [Notifications](#notifications)), and `varda`.
+- `"varda": true` sends each change to the key to the Varda integration, on a
+  deployment that has it (see [varda-integration.md](varda-integration.md)).
+  Without the integration, an upload whose schema has it is refused.
 - A rule supports `description`, `type`, `enum`, `const`, `minLength`,
   `maxLength`, `minimum`, `maximum`, `properties`, `required`,
   `additionalProperties` (`true` or `false`), `items`, `minItems`, and

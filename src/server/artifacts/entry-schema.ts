@@ -68,6 +68,8 @@ type KeyRule = {
   params: Record<string, ValueSchema>;
   value: ValueSchema | null;
   notify: boolean | null;
+  /** Changes to the key go to the Varda integration's outbox. */
+  varda: boolean;
 };
 
 export type EntrySchema = { rules: KeyRule[] };
@@ -175,7 +177,7 @@ function keyRule(template: string, definition: unknown): KeyRule {
 
   if (!isRecord(definition)) throw new EntrySchemaError(`${where} is an object.`);
   for (const field of Object.keys(definition)) {
-    if (!["description", "params", "value", "notify"].includes(field)) {
+    if (!["description", "params", "value", "notify", "varda"].includes(field)) {
       throw new EntrySchemaError(`${where}: unknown field "${field}".`);
     }
   }
@@ -184,6 +186,9 @@ function keyRule(template: string, definition: unknown): KeyRule {
   }
   if (definition.notify !== undefined && typeof definition.notify !== "boolean") {
     throw new EntrySchemaError(`${where}.notify is true or false.`);
+  }
+  if (definition.varda !== undefined && typeof definition.varda !== "boolean") {
+    throw new EntrySchemaError(`${where}.varda is true or false.`);
   }
   const params: Record<string, ValueSchema> = {};
   if (definition.params !== undefined) {
@@ -204,6 +209,7 @@ function keyRule(template: string, definition: unknown): KeyRule {
     params,
     value,
     notify: (definition.notify as boolean | undefined) ?? null,
+    varda: (definition.varda as boolean | undefined) ?? false,
   };
 }
 
@@ -325,6 +331,11 @@ export function isCommentKey(schema: EntrySchema, key: string): boolean {
 export function notifiesKey(schema: EntrySchema, key: string): boolean {
   const rule = schema.rules.find((candidate) => candidate.matcher.test(key));
   return rule?.notify ?? rule?.value?.format === "comment";
+}
+
+/** Whether Varda follows changes to this key. */
+export function vardaKey(schema: EntrySchema, key: string): boolean {
+  return schema.rules.find((candidate) => candidate.matcher.test(key))?.varda ?? false;
 }
 
 function checkValue(value: unknown, schema: ValueSchema, where: string): string | null {
