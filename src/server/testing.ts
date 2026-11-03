@@ -74,7 +74,7 @@ export type TestServerOptions = {
   /** Serve the built client from disk, which the browser tests need. */
   serveClient?: boolean;
   /** Turns the Varda integration on, with VARDA_USER as Varda's account. */
-  varda?: { webhookSecret?: string };
+  varda?: { webhookSecret?: string; now?: () => number };
 };
 
 export async function createTestServer(options: TestServerOptions = {}): Promise<TestServer> {
@@ -144,6 +144,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
             account: vardaAccount,
             outbox: vardaOutbox,
             ...(options.varda?.webhookSecret ? { webhookSecret: options.varda.webhookSecret } : {}),
+            ...(options.varda?.now ? { now: options.varda.now } : {}),
           },
         }),
   });
@@ -196,6 +197,7 @@ export async function createLiveTestServer(
     idleTimeout?: number;
     privateArtifacts?: boolean;
     publicLinks?: boolean;
+    varda?: TestServerOptions["varda"];
   } = {},
 ): Promise<LiveTestServer> {
   let handle: TestServer | null = null;
@@ -218,6 +220,7 @@ export async function createLiveTestServer(
       ? {}
       : { privateArtifacts: options.privateArtifacts }),
     ...(options.publicLinks === undefined ? {} : { publicLinks: options.publicLinks }),
+    ...(options.varda ? { varda: options.varda } : {}),
   });
   handle = server;
 

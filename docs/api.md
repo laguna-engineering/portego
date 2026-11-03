@@ -67,6 +67,9 @@ on, and the deployment's `appName`, which names the root of the folder tree.
 | `GET` | `/api/activity` | Recent activity on every artifact, and when you last read it |
 | `POST` | `/api/activity/read` | Mark the activity read up to now |
 | `POST` | `/api/activity/read/artifacts/:id` | Mark an artifact's uploads read up to one version |
+| `POST` | `/api/integrations/varda/github` | GitHub webhook for the Varda integration, signed, no session |
+| `GET` | `/api/integrations/varda/stream` | The Varda integration's events, for Varda's account, with a bearer token |
+| `POST` | `/api/integrations/varda/ack` | Acknowledge Varda integration events |
 
 ### List
 
@@ -160,6 +163,9 @@ without keeping a log.
 
 The stream is refused with 503 `TOO_MANY_STREAMS` above 8 connections for one
 user or 200 in total.
+
+The Varda integration has a stream of its own, with replay, for one account:
+see [varda-integration.md](varda-integration.md).
 
 ### Upload
 

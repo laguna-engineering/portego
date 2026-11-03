@@ -98,6 +98,10 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   // looks for it. Better Auth serves these documents itself.
   app.get("/.well-known/*", (c) => options.auth.handler(c.req.raw));
 
+  const resolvePrincipal = createPrincipalResolver({
+    auth: options.auth,
+    admission: options.authConfig.admission,
+  });
   const mcp = createMcpHandler({
     auth: options.auth,
     service: options.artifacts,
@@ -105,10 +109,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
     resource: options.authConfig.mcp.resource,
     webUrl: (id) => `${appOrigin}/a/${encodeURIComponent(id)}`,
     issueUploadTicket: createUploadTicketIssuer({ secret: options.signingSecret, appOrigin }),
-    resolvePrincipal: createPrincipalResolver({
-      auth: options.auth,
-      admission: options.authConfig.admission,
-    }),
+    resolvePrincipal,
     allowedHosts: [new URL(options.authConfig.baseURL).host],
     allowedOrigins: [appOrigin],
   });
@@ -160,7 +161,17 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   // The change stream. It is registered before the artifact routes only for
   // readability; Hono matches on the path.
   app.route("/api/events", eventRoutes({ bus: options.events }));
-  if (options.varda) app.route("/api/integrations/varda", vardaRoutes(options.varda));
+  if (options.varda) {
+    app.route(
+      "/api/integrations/varda",
+      vardaRoutes({
+        ...options.varda,
+        auth: options.auth,
+        resource: options.authConfig.mcp.resource,
+        resolvePrincipal,
+      }),
+    );
+  }
   app.route("/api/activity", activityRoutes(options.activity, { events: options.events }));
   app.route("/api", organizationRoutes(options.organization));
 
