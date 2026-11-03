@@ -410,6 +410,20 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    // Events for the Varda integration until Varda acknowledges them.
+    // autoincrement keeps ids from repeating after deletes: the stream's
+    // event ids must only increase.
+    id: "022-varda-outbox",
+    sql: `
+      create table vardaOutbox (
+        id integer primary key autoincrement,
+        data text not null,
+        delivery text unique,
+        createdAt integer not null
+      );
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {
