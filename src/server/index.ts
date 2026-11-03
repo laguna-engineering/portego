@@ -60,6 +60,16 @@ const app = createApp({
   events,
   activity: createActivityStore({ database }),
   profiles: createProfileStore({ database }),
+  ...(varda
+    ? {
+        varda: {
+          ...varda,
+          ...(env.VARDA_GITHUB_WEBHOOK_SECRET
+            ? { webhookSecret: env.VARDA_GITHUB_WEBHOOK_SECRET }
+            : {}),
+        },
+      }
+    : {}),
 });
 
 const server = Bun.serve({

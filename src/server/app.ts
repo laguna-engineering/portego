@@ -33,6 +33,7 @@ import { avatarUrl, profileRoutes, userRoutes } from "./profile/routes.ts";
 import { pageMeta, withSocialTags } from "./social.ts";
 import type { ActivityStore } from "./storage/activity.ts";
 import type { ProfileStore } from "./storage/profiles.ts";
+import { type VardaOptions, vardaRoutes } from "./varda/routes.ts";
 
 export type AppOptions = {
   /** Serve the built Vite client from disk. Off in development, where Vite serves it. */
@@ -52,6 +53,8 @@ export type AppOptions = {
   events: EventBus;
   activity: ActivityStore;
   profiles: ProfileStore;
+  /** The Varda integration. Without it, its routes do not exist. */
+  varda?: VardaOptions;
 };
 
 /** The application page's policy: frames may show previews and nothing else. */
@@ -157,6 +160,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   // The change stream. It is registered before the artifact routes only for
   // readability; Hono matches on the path.
   app.route("/api/events", eventRoutes({ bus: options.events }));
+  if (options.varda) app.route("/api/integrations/varda", vardaRoutes(options.varda));
   app.route("/api/activity", activityRoutes(options.activity, { events: options.events }));
   app.route("/api", organizationRoutes(options.organization));
 
