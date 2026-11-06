@@ -133,7 +133,7 @@ Startup fails with the variable name when a required value is absent.
 `SESSION_SECRET` must be at least 32 characters, and `CONTENT_URL` must use a
 different host from `APP_URL`. `CLIENT_DIST` must stay relative: the server
 resolves it from the working directory, which systemd sets to
-`/srv/portego/current`. [.env.example](../.env.example) lists every
+`/srv/portego/current`. [.env.example](/.env.example) lists every
 variable.
 
 ### 6. systemd units
@@ -349,7 +349,7 @@ echo | openssl s_client -connect share.acme.example:443 \
 If a renewal fails, the usual causes are an A record that moved, port 80 closed
 so the http-01 challenge cannot be answered, or the redirect swallowing
 `/.well-known/acme-challenge/`. The port 80 block in
-[deploy/nginx/portego.conf](../deploy/nginx/portego.conf) serves
+[deploy/nginx/portego.conf](/deploy/nginx/portego.conf) serves
 that path from `/var/www/html` before the redirect for that reason. Let's
 Encrypt rate limits are per registered domain per week, so use `--dry-run`
 while debugging.
