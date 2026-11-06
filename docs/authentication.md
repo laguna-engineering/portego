@@ -21,6 +21,7 @@ code.
 | `AUTH_ALLOW_ALL_AUTHENTICATED` | `true` admits every authenticated identity. |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google OAuth client credentials. |
 | `GOOGLE_HOSTED_DOMAIN` | Google Workspace domain, enforced against the `hd` claim. |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | GitHub OAuth app credentials. Set both to let people connect GitHub accounts. |
 | `APP_URL` | Public origin. Callback URLs are built from it. |
 | `SESSION_SECRET` | Signing key. Required in production. |
 
@@ -165,6 +166,32 @@ identity provider, and this application does not call an end-session endpoint,
 so a fresh sign-in may complete without a password prompt. A deployment that
 needs single logout should configure it at the provider.
 
+## GitHub accounts
+
+GitHub is not a way to sign in. A signed-in person connects one or more GitHub
+accounts on their profile, so that tools working from GitHub (a pull request's
+author, for example) can find the Portego account behind it.
+
+Create an OAuth app on GitHub with the callback URL
+`<APP_URL>/api/auth/callback/github`, and set `GITHUB_CLIENT_ID` and
+`GITHUB_CLIENT_SECRET`. Setting only one of them stops startup. `AUTH_PROVIDERS`
+does not name GitHub, and the sign-in page never shows it.
+
+- The connection asks for no scopes. The token can read public profile data
+  only, which is the account's numeric id and its login.
+- The GitHub account's email plays no part. It does not have to match the
+  Portego account's email, and the admission policy never sees it.
+- One GitHub account belongs to one Portego account. Connecting it to a second
+  one is refused.
+- `account.githubLogin` holds the login read when the account was connected.
+  The numeric id in `account.accountId` is what identifies the account; a
+  login can change on GitHub.
+- `GET /api/me/github-accounts` lists the connected accounts and
+  `DELETE /api/me/github-accounts/:id` disconnects one. Better Auth's own
+  `/unlink-account` is refused, because it would also remove the account a
+  person signs in with. `/link-social` is refused for every provider except
+  GitHub, and `/sign-in/social` is refused for GitHub.
+
 ## Adding a provider
 
 A provider is one module under `src/server/auth/providers/` that satisfies
@@ -214,6 +241,10 @@ is a local issuer that serves a discovery document and a JWKS, and signs real
 id tokens with a real key. The conformance tests drive the whole browser flow
 against it, so signature, issuer, audience, and nonce checks are exercised
 without a public identity service.
+
+The GitHub tests replace the global `fetch` for `github.com` and
+`api.github.com` only, so the token exchange and the profile reads run through
+Better Auth's real GitHub code.
 
 ## Known limitations
 

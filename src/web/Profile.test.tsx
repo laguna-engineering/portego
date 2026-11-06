@@ -31,7 +31,11 @@ function stub(
   return requests;
 }
 
-function renderProfile(avatar: string | null = null, displayName: string | null = null) {
+function renderProfile(
+  avatar: string | null = null,
+  displayName: string | null = null,
+  githubAccounts = false,
+) {
   const changes: unknown[] = [];
   render(
     <Profile
@@ -42,6 +46,7 @@ function renderProfile(avatar: string | null = null, displayName: string | null 
       avatar={avatar}
       onAvatarChange={(value) => changes.push(value)}
       onDisplayNameChange={(names) => changes.push(names)}
+      githubAccounts={githubAccounts}
       onSignOut={() => {}}
       onOpenArtifact={() => {}}
     />,
@@ -250,5 +255,28 @@ describe("display name", () => {
     );
     expect(input.value).toBe("Too long");
     expect(changes).toEqual([]);
+  });
+});
+
+describe("GitHub accounts", () => {
+  test("appear only when the deployment lets people connect them", async () => {
+    stub();
+    renderProfile();
+    await screen.findByRole("heading", { name: "Profile" });
+    expect(screen.queryByRole("heading", { name: "GitHub" })).toBeNull();
+  });
+
+  test("sit in the account panel when enabled", async () => {
+    stubFetch((path) => {
+      if (path === "/api/me/github-accounts") return { body: { accounts: [] } };
+      if (path === "/api/me/activity") return { body: { uploads: [], versions: [], comments: [] } };
+      return { body: { entries: [], total: 0, pageSize: 10 } };
+    });
+    renderProfile(null, null, true);
+    const account = screen.getByRole("region", { name: "Account" });
+    expect(within(account).getByRole("heading", { name: "GitHub" })).toBeTruthy();
+    expect(
+      await within(account).findByRole("button", { name: "Connect GitHub account" }),
+    ).toBeTruthy();
   });
 });

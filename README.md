@@ -181,6 +181,7 @@ name, logos, and colors.
 | `GOOGLE_CLIENT_ID` | none         | Required when `google` is enabled.        |
 | `GOOGLE_CLIENT_SECRET` | none     | Required when `google` is enabled.        |
 | `GOOGLE_HOSTED_DOMAIN` | none     | Workspace domain, enforced against the id token `hd` claim. |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | none | GitHub OAuth app. Set both to let people connect GitHub accounts to their profile. GitHub is never a sign-in method. |
 | `OIDC_ISSUER_URL` | none          | Issuer or discovery URL. Required when `oidc` is enabled. |
 | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | none | Required when `oidc` is enabled. |
 | `OIDC_SCOPES`    | `openid profile email` | Scopes the OIDC provider is asked for. |

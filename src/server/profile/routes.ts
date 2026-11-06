@@ -106,6 +106,18 @@ export function profileRoutes(store: ProfileStore, options: { now?: () => number
     c.json(store.activity(currentUser(c).id, now() - PROFILE_ACTIVITY_WINDOW_MS)),
   );
 
+  routes.get("/github-accounts", (c) =>
+    c.json({ accounts: store.githubAccounts(currentUser(c).id) }),
+  );
+
+  routes.delete("/github-accounts/:id", (c) => {
+    const userId = currentUser(c).id;
+    if (!store.removeGitHubAccount(userId, c.req.param("id"))) {
+      throw new ServiceError("NOT_FOUND", "You have no such GitHub account.");
+    }
+    return c.json({ accounts: store.githubAccounts(userId) });
+  });
+
   return routes;
 }
 

@@ -1,5 +1,6 @@
 import type { Env, EnvSource } from "../env.ts";
 import { type AdmissionPolicy, parseAllowedDomains } from "./policy.ts";
+import { type GitHubSettings, readGitHubSettings } from "./providers/github.ts";
 import { type PublicProvider, type ResolvedProvider, resolveProviders } from "./providers/index.ts";
 
 /** Scopes an MCP client can hold. Reads and writes are separate on purpose. */
@@ -31,6 +32,8 @@ export type AuthConfig = {
   cookiePrefix: string;
   useSecureCookies: boolean;
   providers: ResolvedProvider[];
+  /** Null when GitHub accounts cannot be connected. */
+  github: GitHubSettings | null;
   admission: AdmissionPolicy;
   mcp: McpConfig;
 };
@@ -76,6 +79,11 @@ export function parseAuthConfig(env: Env, source: EnvSource): AuthConfig {
   const resolved = resolveProviders(ids, source);
   errors.push(...resolved.errors);
 
+  const github = readGitHubSettings(source);
+  if (!github.ok) {
+    errors.push(`GitHub accounts are enabled but ${github.missing.join(" and ")} is not set`);
+  }
+
   const admission = readAdmissionPolicy(source, errors);
 
   const dynamicRegistration = readBoolean(source.MCP_ALLOW_DYNAMIC_CLIENT_REGISTRATION);
@@ -97,6 +105,7 @@ export function parseAuthConfig(env: Env, source: EnvSource): AuthConfig {
     cookiePrefix: COOKIE_PREFIX,
     useSecureCookies: env.NODE_ENV === "production",
     providers: resolved.providers,
+    github: github.ok ? github.settings : null,
     admission,
     mcp: {
       resource: `${env.APP_URL}/mcp`,
