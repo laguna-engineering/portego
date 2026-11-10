@@ -418,6 +418,17 @@ describe("with teams on", () => {
       "/api/folders",
     );
     expect(member.folders.find((folder) => folder.name === "Nested")?.parentId).toBe(open);
+
+    const id = await upload(cookies.guest, { title: "Nested note", folderId: nested });
+    const read = async (cookie: string) =>
+      (
+        await json<{ artifact: { folder: { parentId: string | null } } }>(
+          cookie,
+          `/api/artifacts/${id}`,
+        )
+      ).artifact.folder.parentId;
+    expect(await read(cookies.guest)).toBeNull();
+    expect(await read(cookies.member)).toBe(open);
   });
 
   test("deleting a folder that has teams is refused while it holds anything", async () => {

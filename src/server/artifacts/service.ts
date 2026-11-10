@@ -21,7 +21,7 @@ import type {
 import { ContentMissingError, InvalidCursorError } from "../storage/artifacts.ts";
 import type { Comment, CommentAnchor, CommentStore } from "../storage/comments.ts";
 import { type Entry, type EntryStore, guestAuthorId } from "../storage/entries.ts";
-import type { ArtifactOrganization } from "../storage/organization.ts";
+import type { ArtifactOrganization, FolderReference } from "../storage/organization.ts";
 import type {
   NameHit,
   SearchHit,
@@ -375,6 +375,13 @@ export type ArtifactService = {
   publicLinks: boolean;
 };
 
+// A guest cannot read the folders above their teams' folders, so those are
+// not named as parents.
+function folderFor(folder: FolderReference | null, reader?: Reader): FolderReference | null {
+  if (!folder?.parentId || !reader || readsFolder(reader, folder.parentId)) return folder;
+  return { ...folder, parentId: null };
+}
+
 function toSummary(
   artifact: Artifact,
   publicLinks: boolean,
@@ -393,7 +400,7 @@ function toSummary(
     ...summary,
     creator: { id: createdBy, name: createdByName, email: reader?.guest ? null : createdByEmail },
     publicLink: publicLinks && shareToken !== null && artifact.archivedAt === null,
-    folder: organization?.folder ?? null,
+    folder: folderFor(organization?.folder ?? null, reader),
     tags: organization?.tags ?? [],
   };
 }
