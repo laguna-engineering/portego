@@ -411,9 +411,23 @@ export const migrations: readonly Migration[] = [
     `,
   },
   {
+    // Events for the Varda integration until Varda acknowledges them.
+    // autoincrement keeps ids from repeating after deletes: the stream's
+    // event ids must only increase.
+    id: "022-varda-outbox",
+    sql: `
+      create table vardaOutbox (
+        id integer primary key autoincrement,
+        data text not null,
+        delivery text unique,
+        createdAt integer not null
+      );
+    `,
+  },
+  {
     // Agents that sign in with a key pair. Each account has a user row and an
     // OAuth client, which hold its name and its one public key.
-    id: "022-service-accounts",
+    id: "023-service-accounts",
     sql: `
       create table serviceAccounts (
         userId text not null primary key references "user" ("id"),

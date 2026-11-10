@@ -69,6 +69,9 @@ the folder tree. `user.admin` is true for a person listed in `PORTEGO_ADMINS`.
 | `GET` | `/api/activity` | Recent activity on every artifact, and when you last read it |
 | `POST` | `/api/activity/read` | Mark the activity read up to now |
 | `POST` | `/api/activity/read/artifacts/:id` | Mark an artifact's uploads read up to one version |
+| `POST` | `/api/integrations/varda/github` | GitHub webhook for the Varda integration, signed, no session |
+| `GET` | `/api/integrations/varda/stream` | The Varda integration's events, for Varda's account, with a bearer token |
+| `POST` | `/api/integrations/varda/ack` | Acknowledge Varda integration events |
 
 ### List
 
@@ -146,10 +149,20 @@ Seven event types are sent: `artifact.created`, `artifact.changed`,
 only to that user's streams: they marked their activity read, so their bell in
 another tab or device can reload.
 
-An event names what changed and carries nothing else. A client reads the new
+An event names what changed and carries no content. A client reads the new
 state through the ordinary endpoints above, so every answer stays subject to
 the checks that route already makes, and the stream itself never holds a body
 one recipient may read and another may not.
+
+An event about an artifact (`artifact.created`, `artifact.changed`,
+`comment.changed`, `entry.changed`) reaches only the streams of people who can
+read that artifact, checked when the event is sent. An id and the time of a
+change still tell someone that a private artifact exists and when it changed,
+so another person's private artifact sends them nothing. The one exception is
+the `artifact.changed` that makes a shared artifact private. It carries
+`"madePrivate": true` and reaches every stream, because everyone could read the
+artifact until then, and a page that has it open hides it when it hears the
+change. `folder.changed` and `tag.changed` reach every stream.
 
 The comment line every 20 seconds is what keeps an idle connection alive
 through a proxy, and it is how the server learns that a client has gone. See
@@ -162,6 +175,9 @@ without keeping a log.
 
 The stream is refused with 503 `TOO_MANY_STREAMS` above 8 connections for one
 user or 200 in total.
+
+The Varda integration has a stream of its own, with replay, for one account:
+see [varda-integration.md](varda-integration.md).
 
 ### Upload
 

@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
+import type { VardaOutbox, VardaRow } from "./varda-outbox.ts";
 
 export type Entry = {
   artifactId: string;
@@ -29,19 +30,31 @@ export type EntryStore = {
   /**
    * Creates or replaces this author's value for the key. `value` is JSON text.
    * With `notify`, the write shows in the activity feed from now on, under a new id.
+   * `outbox` is the data of a Varda outbox row, written in the same transaction.
    */
-  set: (input: {
-    artifactId: string;
-    authorId: string;
-    key: string;
-    value: string;
-    notify: boolean;
-    inApp: boolean;
-    /** Required for a guest, whose name is on each of their rows. Guests never notify. */
-    guestName?: string;
-  }) => Entry;
-  /** Returns false when the author had no value for the key. */
-  remove: (artifactId: string, authorId: string, key: string) => boolean;
+  set: (
+    input: {
+      artifactId: string;
+      authorId: string;
+      key: string;
+      value: string;
+      notify: boolean;
+      inApp: boolean;
+      /** Required for a guest, whose name is on each of their rows. Guests never notify. */
+      guestName?: string;
+    },
+    outbox?: string,
+  ) => { entry: Entry; row: VardaRow | null };
+  /**
+   * `removed` is false when the author had no value for the key. The outbox
+   * row is written, in the same transaction, only when a value was removed.
+   */
+  remove: (
+    artifactId: string,
+    authorId: string,
+    key: string,
+    outbox?: string,
+  ) => { removed: boolean; row: VardaRow | null };
   /** How many keys this author holds on the artifact. */
   count: (artifactId: string, authorId: string) => number;
   /** Bytes of JSON in the artifact's values, leaving out one author's value for one key. */
@@ -93,8 +106,20 @@ function toEntry(row: Row): Entry {
  * Two people writing the same key write two rows, so nobody overwrites anyone
  * else, and a person changing a value replaces only their own.
  */
-export function createEntryStore(options: { database: Database }): EntryStore {
+/** `outbox` must use the same database, or its rows leave the entry's transaction. */
+export function createEntryStore(options: {
+  database: Database;
+  outbox?: VardaOutbox;
+}): EntryStore {
   const { database } = options;
+
+  const outboxRow = (data: string | undefined): VardaRow | null => {
+    if (data === undefined) return null;
+    if (!options.outbox) throw new Error("An outbox row was given, but the store has no outbox");
+    const id = options.outbox.insert(data);
+    if (id === null) throw new Error("An outbox row without a delivery id was not written");
+    return { id, data };
+  };
 
   const get = (artifactId: string, authorId: string, key: string): Entry | null => {
     const guestId = guestIdOf(authorId);
@@ -113,6 +138,66 @@ export function createEntryStore(options: { database: Database }): EntryStore {
     return row ? toEntry(row) : null;
   };
 
+  const write = (input: Parameters<EntryStore["set"]>[0]): Entry => {
+    const now = Date.now();
+    const guestId = guestIdOf(input.authorId);
+    if (guestId !== null) {
+      if (input.guestName === undefined) throw new Error("A guest's entry needs their name");
+      database
+        .query(
+          `insert into artifactGuestEntries (artifactId, guestId, guestName, key, value, updatedAt)
+           values (?, ?, ?, ?, ?, ?)
+           on conflict (artifactId, guestId, key)
+           do update set value = excluded.value, updatedAt = excluded.updatedAt`,
+        )
+        .run(input.artifactId, guestId, input.guestName, input.key, input.value, now);
+      const entry = get(input.artifactId, input.authorId, input.key);
+      if (!entry) throw new Error(`Entry ${input.key} disappeared right after it was written`);
+      return entry;
+    }
+    database
+      .query(
+        `insert into artifactEntries (artifactId, authorId, key, value, updatedAt, notifiedAt, activityId,
+           inApp)
+         values (?, ?, ?, ?, ?, ?, ?, ?)
+         on conflict (artifactId, authorId, key)
+         do update set value = excluded.value, updatedAt = excluded.updatedAt,
+           notifiedAt = coalesce(excluded.notifiedAt, artifactEntries.notifiedAt),
+           activityId = coalesce(excluded.activityId, artifactEntries.activityId),
+           inApp = iif(excluded.notifiedAt is null, artifactEntries.inApp, excluded.inApp)`,
+      )
+      .run(
+        input.artifactId,
+        input.authorId,
+        input.key,
+        input.value,
+        now,
+        input.notify ? now : null,
+        input.notify ? Bun.randomUUIDv7() : null,
+        input.inApp ? 1 : 0,
+      );
+    const entry = get(input.artifactId, input.authorId, input.key);
+    if (!entry) throw new Error(`Entry ${input.key} disappeared right after it was written`);
+    return entry;
+  };
+
+  const removeRow = (artifactId: string, authorId: string, key: string): boolean => {
+    const guestId = guestIdOf(authorId);
+    if (guestId !== null) {
+      return (
+        database
+          .query(
+            "delete from artifactGuestEntries where artifactId = ? and guestId = ? and key = ?",
+          )
+          .run(artifactId, guestId, key).changes > 0
+      );
+    }
+    const result = database
+      .query("delete from artifactEntries where artifactId = ? and authorId = ? and key = ?")
+      .run(artifactId, authorId, key);
+    return result.changes > 0;
+  };
+
   return {
     get,
 
@@ -127,64 +212,15 @@ export function createEntryStore(options: { database: Database }): EntryStore {
       return rows.map(toEntry);
     },
 
-    set(input) {
-      const now = Date.now();
-      const guestId = guestIdOf(input.authorId);
-      if (guestId !== null) {
-        if (input.guestName === undefined) throw new Error("A guest's entry needs their name");
-        database
-          .query(
-            `insert into artifactGuestEntries (artifactId, guestId, guestName, key, value, updatedAt)
-             values (?, ?, ?, ?, ?, ?)
-             on conflict (artifactId, guestId, key)
-             do update set value = excluded.value, updatedAt = excluded.updatedAt`,
-          )
-          .run(input.artifactId, guestId, input.guestName, input.key, input.value, now);
-        const entry = get(input.artifactId, input.authorId, input.key);
-        if (!entry) throw new Error(`Entry ${input.key} disappeared right after it was written`);
-        return entry;
-      }
-      database
-        .query(
-          `insert into artifactEntries (artifactId, authorId, key, value, updatedAt, notifiedAt, activityId,
-             inApp)
-           values (?, ?, ?, ?, ?, ?, ?, ?)
-           on conflict (artifactId, authorId, key)
-           do update set value = excluded.value, updatedAt = excluded.updatedAt,
-             notifiedAt = coalesce(excluded.notifiedAt, artifactEntries.notifiedAt),
-             activityId = coalesce(excluded.activityId, artifactEntries.activityId),
-             inApp = iif(excluded.notifiedAt is null, artifactEntries.inApp, excluded.inApp)`,
-        )
-        .run(
-          input.artifactId,
-          input.authorId,
-          input.key,
-          input.value,
-          now,
-          input.notify ? now : null,
-          input.notify ? Bun.randomUUIDv7() : null,
-          input.inApp ? 1 : 0,
-        );
-      const entry = get(input.artifactId, input.authorId, input.key);
-      if (!entry) throw new Error(`Entry ${input.key} disappeared right after it was written`);
-      return entry;
+    set(input, outbox) {
+      return database.transaction(() => ({ entry: write(input), row: outboxRow(outbox) }))();
     },
 
-    remove(artifactId, authorId, key) {
-      const guestId = guestIdOf(authorId);
-      if (guestId !== null) {
-        return (
-          database
-            .query(
-              "delete from artifactGuestEntries where artifactId = ? and guestId = ? and key = ?",
-            )
-            .run(artifactId, guestId, key).changes > 0
-        );
-      }
-      const result = database
-        .query("delete from artifactEntries where artifactId = ? and authorId = ? and key = ?")
-        .run(artifactId, authorId, key);
-      return result.changes > 0;
+    remove(artifactId, authorId, key, outbox) {
+      return database.transaction(() => {
+        const removed = removeRow(artifactId, authorId, key);
+        return { removed, row: removed ? outboxRow(outbox) : null };
+      })();
     },
 
     count(artifactId, authorId) {

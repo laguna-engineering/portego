@@ -6,7 +6,11 @@
  */
 export type ChangeEvent =
   | { type: "artifact.created"; id: string }
-  | { type: "artifact.changed"; id: string }
+  /**
+   * `madePrivate`: the artifact was shared, so every member could read it,
+   * until this change. The event reaches every stream.
+   */
+  | { type: "artifact.changed"; id: string; madePrivate?: true }
   | { type: "comment.changed"; artifactId: string }
   /** `activity`: the change shows in the activity feed. */
   | { type: "entry.changed"; artifactId: string; activity?: true }
