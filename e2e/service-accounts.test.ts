@@ -43,8 +43,9 @@ describe("approving an agent in the browser", () => {
 
     await page.getByRole("button", { name: "See all service accounts" }).click();
     await page.getByRole("heading", { name: "Service accounts" }).waitFor();
+    // The heading renders before the list loads.
     const row = page.getByRole("row", { name: /Nightly digest/ });
-    expect(await row.getByText("Active").count()).toBe(1);
+    await row.getByText("Active").waitFor();
 
     page.once("dialog", (dialog) => void dialog.accept());
     await row.getByRole("button", { name: "Disable" }).click();
