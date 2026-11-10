@@ -250,6 +250,8 @@ export type ArtifactService = {
     input?: ListInput,
   ) => { items: ArtifactSummary[]; nextCursor: string | null };
   get: (id: string, viewer: Viewer) => ArtifactSummary;
+  /** Whether `viewer` may read the artifact. False when it does not exist. */
+  canRead: (id: string, viewer: Viewer) => boolean;
   search: (viewer: Viewer, input: SearchInput) => SearchResults;
   /**
    * Indexes the text of current versions that have none, or whose text older
@@ -515,10 +517,18 @@ export function createArtifactService(options: {
     });
   };
 
+  const readable = (
+    artifact: Pick<Artifact, "visibility" | "createdBy">,
+    viewer: Viewer,
+  ): boolean => artifact.visibility !== "private" || artifact.createdBy === viewer.userId;
+
+  const madePrivate = (before: Artifact, after: ArtifactVisibility | undefined) =>
+    before.visibility === "shared" && after === "private" ? { madePrivate: true as const } : {};
+
   const visible = (id: string, viewer: Viewer): Artifact => {
     const artifact = store.get(id);
     if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
-    if (artifact.visibility === "private" && artifact.createdBy !== viewer.userId) {
+    if (!readable(artifact, viewer)) {
       throw new ServiceError("PRIVATE", "This artifact is private.");
     }
     return artifact;
@@ -703,6 +713,11 @@ export function createArtifactService(options: {
 
     get(id, viewer) {
       return summary(visible(id, viewer));
+    },
+
+    canRead(id, viewer) {
+      const artifact = store.access(id);
+      return artifact !== null && readable(artifact, viewer);
     },
 
     search(viewer, input) {
@@ -935,7 +950,7 @@ export function createArtifactService(options: {
           visibility === undefined
             ? artifact
             : (store.setVisibility(artifact.id, visibility) ?? artifact);
-        publish({ type: "artifact.changed", id: artifact.id });
+        publish({ type: "artifact.changed", id: artifact.id, ...madePrivate(target, visibility) });
         return { artifact: summary(current), newArtifact: false };
       }
 
@@ -964,10 +979,11 @@ export function createArtifactService(options: {
 
     setVisibility(id, visibility, actorId) {
       const checked = readVisibility(visibility);
-      requireCreator(visible(id, { userId: actorId }), actorId);
+      const before = visible(id, { userId: actorId });
+      requireCreator(before, actorId);
       const artifact = store.setVisibility(id, checked);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
-      publish({ type: "artifact.changed", id });
+      publish({ type: "artifact.changed", id, ...madePrivate(before, checked) });
       return summary(artifact);
     },
 

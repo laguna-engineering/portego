@@ -1,8 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/middleware.ts";
 import { TEST_BASE_URL } from "../auth/testing.ts";
-import { createLiveTestServer, createTestServer, htmlFile, WORKSPACE_USER } from "../testing.ts";
+import {
+  createLiveTestServer,
+  createTestServer,
+  htmlFile,
+  type TestServer,
+  WORKSPACE_USER,
+} from "../testing.ts";
 import { createEventBus, type EventBus } from "./bus.ts";
 import { eventRoutes } from "./routes.ts";
 
@@ -16,7 +22,7 @@ function streamApp(options: { bus: EventBus; heartbeatMs?: number; maxPerUser?: 
     c.set("session", null);
     await next();
   });
-  app.route("/api/events", eventRoutes(options));
+  app.route("/api/events", eventRoutes({ ...options, canRead: () => true }));
   return app;
 }
 
@@ -169,6 +175,141 @@ describe("the change stream in the application", () => {
 });
 
 /**
+ * An event carries only ids, but an id still tells a reader that someone
+ * else's private artifact exists. Each test makes the owner's change, then
+ * publishes a marker every stream receives. Events arrive in the order they
+ * were published, so a stream that reached the marker without the artifact's
+ * id was never sent it.
+ */
+describe("the change stream and private artifacts", () => {
+  const OTHER = { ...WORKSPACE_USER, sub: "google-subject-2", email: "other@acme.example" };
+  let server: TestServer;
+  let ownerCookie: string;
+  let otherCookie: string;
+  let ownerId: string;
+
+  beforeEach(async () => {
+    server = await createTestServer();
+    ownerCookie = await server.signIn();
+    otherCookie = await server.signIn(OTHER);
+    const owner = server.database
+      .query(`select id from "user" where email = ?`)
+      .get(WORKSPACE_USER.email) as { id: string };
+    ownerId = owner.id;
+  });
+
+  afterEach(() => {
+    server.cleanup();
+  });
+
+  async function stream(cookie: string): Promise<Response> {
+    return server.app.request("/api/events", { headers: { cookie } });
+  }
+
+  async function upload(visibility: "shared" | "private"): Promise<string> {
+    const { artifact } = await server.artifacts.upload({
+      bytes: new TextEncoder().encode("<!doctype html><title>Mine</title><p>secret plans</p>"),
+      title: "Mine",
+      visibility,
+      createdBy: ownerId,
+    });
+    return artifact.id;
+  }
+
+  /** Runs `change`, then checks who heard about `artifactId`. */
+  async function expectOwnerOnly(change: () => Promise<string>) {
+    const owner = await stream(ownerCookie);
+    const other = await stream(otherCookie);
+    const artifactId = await change();
+    server.events.publish({ type: "tag.changed", id: "marker" });
+
+    const ownerSaw = await readUntil(owner, /marker/);
+    expect(ownerSaw).toContain(artifactId);
+    const otherSaw = await readUntil(other, /marker/);
+    expect(otherSaw).not.toContain(artifactId);
+  }
+
+  test("creating it", async () => {
+    await expectOwnerOnly(() => upload("private"));
+  });
+
+  test("adding a version", async () => {
+    const id = await upload("private");
+    await expectOwnerOnly(async () => {
+      await server.artifacts.upload({
+        bytes: new TextEncoder().encode("<!doctype html><title>Mine</title><p>v2</p>"),
+        artifactId: id,
+        createdBy: ownerId,
+      });
+      return id;
+    });
+  });
+
+  test("commenting on it", async () => {
+    const id = await upload("private");
+    await expectOwnerOnly(async () => {
+      server.artifacts.addComment(id, { authorId: ownerId, body: "a note" });
+      return id;
+    });
+  });
+
+  test("setting an entry on it", async () => {
+    const id = await upload("private");
+    await expectOwnerOnly(async () => {
+      server.artifacts.setEntry(id, { authorId: ownerId, key: "vote", value: 1 });
+      return id;
+    });
+  });
+
+  // Deleting a folder moves what it held to the parent and announces each move.
+  test("deleting the folder that holds it", async () => {
+    const id = await upload("private");
+    const folder = server.organization.createFolder({ name: "Drafts", actorId: ownerId });
+    server.organization.setArtifactOrganization(id, { folderId: folder.id, actorId: ownerId });
+    await expectOwnerOnly(async () => {
+      server.organization.deleteFolder(folder.id);
+      return id;
+    });
+  });
+
+  test("making it private when it already is", async () => {
+    const id = await upload("private");
+    await expectOwnerOnly(async () => {
+      server.artifacts.setVisibility(id, "private", ownerId);
+      return id;
+    });
+  });
+
+  test("reaching everyone once it is shared", async () => {
+    const id = await upload("private");
+    const other = await stream(otherCookie);
+    server.artifacts.setVisibility(id, "shared", ownerId);
+    expect(await readUntil(other, /artifact\.changed/)).toContain(id);
+  });
+
+  // Everyone could read it until this change, and a page that has it open
+  // hides it on hearing the change.
+  test("reaching everyone when it is made private", async () => {
+    const id = await upload("shared");
+    const other = await stream(otherCookie);
+    server.artifacts.setVisibility(id, "private", ownerId);
+    expect(await readUntil(other, /artifact\.changed/)).toContain(id);
+  });
+
+  test("reaching everyone when a new version makes it private", async () => {
+    const id = await upload("shared");
+    const other = await stream(otherCookie);
+    await server.artifacts.upload({
+      bytes: new TextEncoder().encode("<!doctype html><title>Mine</title><p>v2</p>"),
+      artifactId: id,
+      visibility: "private",
+      createdBy: ownerId,
+    });
+    expect(await readUntil(other, /artifact\.changed/)).toContain(id);
+  });
+});
+
+/**
  * The tests above call the router directly, which proves what the handler
  * writes. This one goes over a socket, which proves the bytes leave the
  * process before the response ends. A stream held in a buffer until close
@@ -209,9 +350,9 @@ describe("the change stream over a connection", () => {
       expect(res.status).toBe(200);
       await Bun.sleep(5000);
 
-      server.events.publish({ type: "entry.changed", artifactId: "quiet" });
+      server.events.publish({ type: "tag.changed", id: "quiet" });
 
-      expect(await readUntil(res, /entry\.changed/)).toContain("quiet");
+      expect(await readUntil(res, /tag\.changed/)).toContain("quiet");
     } finally {
       server.stop();
     }
