@@ -11,6 +11,7 @@ import {
 } from "./artifacts/routes.ts";
 import type { ArtifactService } from "./artifacts/service.ts";
 import { createUploadTicketIssuer } from "./artifacts/tickets.ts";
+import { isAdmin } from "./auth/admins.ts";
 import type { Auth } from "./auth/auth.ts";
 import { type AuthConfig, publicProviders } from "./auth/config.ts";
 import {
@@ -30,6 +31,8 @@ import type { OrganizationService } from "./organization/service.ts";
 import { previewRoutes } from "./preview/routes.ts";
 import { createPreviewIssuer } from "./preview/tokens.ts";
 import { avatarUrl, profileRoutes, userRoutes } from "./profile/routes.ts";
+import { serviceAccountRoutes } from "./service-accounts/routes.ts";
+import type { ServiceAccountService } from "./service-accounts/service.ts";
 import { pageMeta, withSocialTags } from "./social.ts";
 import type { ActivityStore } from "./storage/activity.ts";
 import type { ProfileStore } from "./storage/profiles.ts";
@@ -52,6 +55,8 @@ export type AppOptions = {
   events: EventBus;
   activity: ActivityStore;
   profiles: ProfileStore;
+  /** Null when SERVICE_ACCOUNTS is off. Its routes then do not exist. */
+  serviceAccounts: ServiceAccountService | null;
 };
 
 /** The application page's policy: frames may show previews and nothing else. */
@@ -105,6 +110,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
     resolvePrincipal: createPrincipalResolver({
       auth: options.auth,
       admission: options.authConfig.admission,
+      serviceAccounts: options.serviceAccounts,
     }),
     allowedHosts: [new URL(options.authConfig.baseURL).host],
     allowedOrigins: [appOrigin],
@@ -125,7 +131,8 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
   // The client's first call: who is signed in, the limits it needs to check an
   // upload before sending it, and which optional features the deployment has.
   app.get("/api/me", requireUser, (c) => {
-    const { id, name, email, image } = currentUser(c);
+    const user = currentUser(c);
+    const { id, name, email, image } = user;
     const displayName = options.profiles.displayName(id);
     return c.json({
       user: {
@@ -137,17 +144,25 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
         email,
         image: image ?? null,
         avatar: avatarUrl(options.profiles, id),
+        admin: isAdmin(options.authConfig.admins, user),
       },
       limits: { maxUploadBytes: options.artifacts.maxUploadBytes },
       features: {
         privateArtifacts: options.artifacts.privateArtifacts,
         publicLinks: options.artifacts.publicLinks,
+        serviceAccounts: options.serviceAccounts !== null,
       },
       appName: options.authConfig.appName,
     });
   });
   app.route("/api/me", profileRoutes(options.profiles));
   app.route("/api/users", userRoutes(options.profiles));
+  if (options.serviceAccounts) {
+    app.route(
+      "/api/service-accounts",
+      serviceAccountRoutes(options.serviceAccounts, options.authConfig.admins),
+    );
+  }
 
   // Upload by ticket rather than by session. It is registered outside the
   // artifact routes because every route in there requires a session, and the

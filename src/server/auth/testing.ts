@@ -4,6 +4,7 @@
  */
 import { Database } from "bun:sqlite";
 import { getMigrations } from "better-auth/db/migration";
+import { applyMigrations } from "../storage/migrations.ts";
 import { type Auth, createAuth } from "./auth.ts";
 import type { AuthConfig } from "./config.ts";
 import { buildGoogleOptions, type GoogleSettings } from "./providers/google.ts";
@@ -44,6 +45,8 @@ export type TestAuthOptions = {
   baseURL?: string;
   /** Providers to enable instead of the offline Google stub. */
   providers?: ResolvedProvider[];
+  admins?: string[];
+  serviceAccounts?: boolean;
 };
 
 /** An auth instance backed by a throwaway in-memory database. */
@@ -92,14 +95,27 @@ export async function createTestAuth(
       consentPage: "/mcp/consent",
       allowDynamicClientRegistration: false,
     },
+    admins: options.admins ?? [],
+    serviceAccounts: options.serviceAccounts ?? false,
   };
 
   const database = options.database ?? new Database(":memory:");
-  // The tables are created below, after the auth context has started, so
-  // Better Auth's startup check would report them missing.
-  const auth = createAuth({ config, database, validateSchema: false });
-  const { runMigrations } = await getMigrations(auth.options);
+  // As in production, the schema exists before the instance that serves
+  // requests starts, so that instance seeds the OAuth resource rows at startup.
+  // A service account's client row links to the MCP resource row.
+  // Providers add no tables, and leaving them out keeps OIDC discovery and its
+  // errors to the instance below.
+  const migrator = createAuth({
+    config: { ...config, providers: [] },
+    database,
+    validateSchema: false,
+  });
+  // It starts against an empty schema. The instance below reports a failure.
+  migrator.$context.catch(() => {});
+  const { runMigrations } = await getMigrations(migrator.options);
   await runMigrations();
+  applyMigrations(database);
+  const auth = createAuth({ config, database, validateSchema: false });
   return { auth, database, config };
 }
 

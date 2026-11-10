@@ -1,0 +1,370 @@
+/**
+ * Signs an agent in with a key pair instead of a browser. The private key
+ * stays in the key file. The server holds only the public half, and replaces
+ * it at each renewal, so a copied key stops working when the real agent next
+ * renews.
+ */
+import {
+  createPrivateKey,
+  generateKeyPairSync,
+  type JsonWebKey,
+  randomUUID,
+  sign,
+} from "node:crypto";
+import { chmod, mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+
+export type ServiceKey = {
+  origin: string;
+  clientId: string;
+  /** Ed25519, with its private part `d`. */
+  privateJwk: JsonWebKey;
+  /** Epoch ms when the server accepted this key. */
+  renewedAt: number;
+  /**
+   * The key the last renewal sent, kept until its answer arrives. If the
+   * server took it and the answer was lost, this is the key the server holds.
+   */
+  nextPrivateJwk?: JsonWebKey;
+};
+
+/** The key renews when it is older than this. The server expires it after 7 days. */
+export const RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
+/** Assertions are short-lived; the server refuses any that claim more than 60 seconds. */
+const ASSERTION_LIFETIME_SECONDS = 30;
+const POLL_INTERVAL_MS = 3000;
+/** A lock older than this belongs to a process that died while renewing. */
+const STALE_LOCK_MS = 60 * 1000;
+const LOCK_WAIT_MS = 30 * 1000;
+
+/** The key was replaced elsewhere, or the account was disabled or expired. */
+export class ServiceKeyRevokedError extends Error {
+  constructor(origin: string, command: string) {
+    super(
+      `${origin} refused this service key: it was replaced or revoked. A copy of the key may ` +
+        `have renewed first, or an admin disabled the account. Enroll again with ` +
+        `\`${command} service-key enroll ${origin} --name <name>\`, and ask an admin to check ` +
+        "the account.",
+    );
+  }
+}
+
+export class ServiceKeyError extends Error {}
+
+export type Dependencies = {
+  fetch: (url: string, init?: RequestInit) => Promise<Response>;
+  now: () => number;
+  /** How a person runs this tool, for messages that tell them to. */
+  command: string;
+  log: (line: string) => void;
+};
+
+export function generateKey(): { privateJwk: JsonWebKey; publicJwk: JsonWebKey } {
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const publicJwk = publicKey.export({ format: "jwk" });
+  return {
+    privateJwk: privateKey.export({ format: "jwk" }),
+    publicJwk: { kty: publicJwk.kty, crv: publicJwk.crv, x: publicJwk.x },
+  };
+}
+
+const base64url = (value: string | Buffer) => Buffer.from(value).toString("base64url");
+
+export function signJwt(privateJwk: JsonWebKey, claims: Record<string, unknown>): string {
+  const header = base64url(JSON.stringify({ alg: "EdDSA", typ: "JWT" }));
+  const payload = base64url(JSON.stringify(claims));
+  const key = createPrivateKey({ key: privateJwk, format: "jwk" });
+  const signature = sign(null, Buffer.from(`${header}.${payload}`), key);
+  return `${header}.${payload}.${base64url(signature)}`;
+}
+
+function assertion(
+  privateJwk: JsonWebKey,
+  claims: { iss: string; sub?: string; aud: string },
+  now: number,
+): string {
+  const issuedAt = Math.floor(now / 1000);
+  return signJwt(privateJwk, {
+    ...claims,
+    jti: randomUUID(),
+    iat: issuedAt,
+    exp: issuedAt + ASSERTION_LIFETIME_SECONDS,
+  });
+}
+
+export async function readServiceKey(path: string): Promise<ServiceKey | null> {
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch {
+    return null;
+  }
+  const parsed = JSON.parse(text) as Partial<ServiceKey>;
+  if (
+    typeof parsed.origin !== "string" ||
+    typeof parsed.clientId !== "string" ||
+    typeof parsed.renewedAt !== "number" ||
+    typeof parsed.privateJwk !== "object"
+  ) {
+    throw new ServiceKeyError(`${path} is not a service key file.`);
+  }
+  return parsed as ServiceKey;
+}
+
+async function writeServiceKey(path: string, key: ServiceKey): Promise<void> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  // Rename, so that a concurrent reader never sees half a file.
+  const temporary = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(key, null, 2)}\n`, { mode: 0o600 });
+  await chmod(temporary, 0o600);
+  await rename(temporary, path);
+}
+
+/**
+ * Runs `work` while holding `<path>.lock`, so that two processes never renew
+ * the same key at once. The second one would sign with a key the first one
+ * just replaced.
+ */
+export async function withLock<T>(path: string, work: () => Promise<T>): Promise<T> {
+  const lock = `${path}.lock`;
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  for (;;) {
+    try {
+      const handle = await open(lock, "wx", 0o600);
+      await handle.close();
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const held = await stat(lock).catch(() => null);
+      if (held && Date.now() - held.mtimeMs > STALE_LOCK_MS) {
+        await unlink(lock).catch(() => {});
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new ServiceKeyError(`Another process has held ${lock} for too long.`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 100));
+    }
+  }
+  try {
+    return await work();
+  } finally {
+    await unlink(lock).catch(() => {});
+  }
+}
+
+async function errorCode(response: Response): Promise<string | undefined> {
+  const body = (await response.json().catch(() => ({}))) as {
+    error?: string | { code?: string };
+  };
+  return typeof body.error === "string" ? body.error : body.error?.code;
+}
+
+/**
+ * Sends a new public key and waits for an admin to approve it in the browser.
+ * The key file is written only after approval, so a key that already works is
+ * kept if the enrollment never completes.
+ */
+export async function enroll(
+  options: { origin: string; name: string; path: string },
+  deps: Dependencies,
+): Promise<ServiceKey> {
+  const { privateJwk, publicJwk } = generateKey();
+  const response = await deps.fetch(`${options.origin}/api/service-accounts/enrollments`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: options.name, publicJwk }),
+  });
+  if (response.status === 404) {
+    throw new ServiceKeyError(`${options.origin} does not have service accounts turned on.`);
+  }
+  const created = (await response.json()) as {
+    id?: string;
+    userCode?: string;
+    approvalUrl?: string;
+    expiresAt?: string;
+    error?: { message?: string };
+  };
+  if (!response.ok || !created.id || !created.userCode || !created.approvalUrl) {
+    throw new ServiceKeyError(`Enrollment failed: ${created.error?.message ?? response.status}`);
+  }
+
+  const code = `${created.userCode.slice(0, 4)}-${created.userCode.slice(4)}`;
+  deps.log(`Ask an admin to open ${created.approvalUrl}`);
+  deps.log(`and check that it shows this code: ${code}`);
+  deps.log("Waiting for approval...");
+
+  const pollUrl = `${options.origin}/api/service-accounts/enrollments/${created.id}`;
+  const expiresAt = Date.parse(created.expiresAt ?? "") || deps.now() + 15 * 60 * 1000;
+  while (deps.now() < expiresAt) {
+    const proof = assertion(privateJwk, { iss: created.id, aud: pollUrl }, deps.now());
+    const poll = await deps.fetch(pollUrl, { headers: { authorization: `Bearer ${proof}` } });
+    if (poll.status === 404) break;
+    const result = (await poll.json()) as { status?: string; clientId?: string };
+    if (result.status === "approved" && result.clientId) {
+      const key = {
+        origin: options.origin,
+        clientId: result.clientId,
+        privateJwk,
+        renewedAt: deps.now(),
+      };
+      await withLock(options.path, () => writeServiceKey(options.path, key));
+      return key;
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  }
+  throw new ServiceKeyError("Nobody approved the enrollment in time. Start again.");
+}
+
+/**
+ * Replaces the key with a new one. Holds the lock throughout and reads the
+ * file again under it, because another process may have renewed already.
+ * `force` renews even a key that is still fresh.
+ */
+export async function renew(
+  path: string,
+  options: { force: boolean },
+  deps: Dependencies,
+): Promise<ServiceKey> {
+  return withLock(path, async () => {
+    const current = await readServiceKey(path);
+    if (!current) throw new ServiceKeyError(`No service key at ${path}.`);
+    if (!options.force && deps.now() - current.renewedAt < RENEW_AFTER_MS) return current;
+
+    const url = `${current.origin}/api/service-accounts/renew`;
+    const next = generateKey();
+    await writeServiceKey(path, { ...current, nextPrivateJwk: next.privateJwk });
+    const send = (signer: JsonWebKey) =>
+      deps.fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          clientId: current.clientId,
+          publicJwk: next.publicJwk,
+          assertion: assertion(
+            signer,
+            { iss: current.clientId, sub: current.clientId, aud: url },
+            deps.now(),
+          ),
+        }),
+      });
+
+    let response = await send(current.privateJwk);
+    let refused = !response.ok && (await errorCode(response)) === "INVALID_CLIENT";
+    if (refused && current.nextPrivateJwk) {
+      response = await send(current.nextPrivateJwk);
+      refused = !response.ok && (await errorCode(response)) === "INVALID_CLIENT";
+    }
+    if (refused) throw new ServiceKeyRevokedError(current.origin, deps.command);
+    if (!response.ok) {
+      throw new ServiceKeyError(`Renewing the service key failed with ${response.status}.`);
+    }
+    const renewed = {
+      origin: current.origin,
+      clientId: current.clientId,
+      privateJwk: next.privateJwk,
+      renewedAt: deps.now(),
+    };
+    await writeServiceKey(path, renewed);
+    return renewed;
+  });
+}
+
+/** Makes `privateJwk` the key in the file, if it is still the one waiting there. */
+async function promote(
+  path: string,
+  privateJwk: JsonWebKey,
+  deps: Dependencies,
+): Promise<ServiceKey | null> {
+  return withLock(path, async () => {
+    const current = await readServiceKey(path);
+    if (!current || current.nextPrivateJwk?.x !== privateJwk.x) return current;
+    const promoted = {
+      origin: current.origin,
+      clientId: current.clientId,
+      privateJwk,
+      renewedAt: deps.now(),
+    };
+    await writeServiceKey(path, promoted);
+    return promoted;
+  });
+}
+
+/**
+ * Whether a stored token can be sent instead of asking for a new one. The
+ * server refuses a token that a replaced key got, so the token has to come
+ * from the key in the file now. The key also has to be fresh, so that the
+ * next request renews a key that is due.
+ */
+export function storedTokenUsable(
+  token: { expiresAt: number; keyId?: string } | null,
+  key: ServiceKey,
+  now: number,
+  skewSeconds: number,
+): boolean {
+  return (
+    token !== null &&
+    token.keyId === key.privateJwk.x &&
+    token.expiresAt - skewSeconds > Math.floor(now / 1000) &&
+    now - key.renewedAt < RENEW_AFTER_MS
+  );
+}
+
+/** An access token for the key's account, renewing the key first when it is due. */
+export async function serviceToken(
+  path: string,
+  deps: Dependencies,
+): Promise<{ accessToken: string; expiresIn: number; key: ServiceKey }> {
+  let key = await readServiceKey(path);
+  if (!key) throw new ServiceKeyError(`No service key at ${path}.`);
+  if (deps.now() - key.renewedAt >= RENEW_AFTER_MS) key = await renew(path, { force: false }, deps);
+
+  const request = async (privateJwk: JsonWebKey) => {
+    const tokenUrl = `${origin}/api/auth/oauth2/token`;
+    const response = await deps.fetch(tokenUrl, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: clientId,
+        client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        client_assertion: assertion(
+          privateJwk,
+          { iss: clientId, sub: clientId, aud: tokenUrl },
+          deps.now(),
+        ),
+        resource: `${origin}/mcp`,
+        scope: "artifacts:read artifacts:write",
+      }),
+    });
+    const payload = (await response.json()) as Record<string, unknown>;
+    if (response.ok && typeof payload.access_token === "string") {
+      return {
+        accessToken: payload.access_token,
+        expiresIn: typeof payload.expires_in === "number" ? payload.expires_in : 3600,
+      };
+    }
+    if (payload.error === "invalid_client") return null;
+    throw new ServiceKeyError(`The token request failed: ${JSON.stringify(payload)}`);
+  };
+
+  const { origin, clientId } = key;
+  let token = await request(key.privateJwk);
+  if (!token) {
+    // The key in the file may have changed since it was read: another process
+    // renewed it, or a renewal reached the server and its answer was lost.
+    // Only a key that is still the one in the file, with nothing waiting, was
+    // revoked.
+    const latest = await readServiceKey(path);
+    if (latest && latest.privateJwk.x !== key.privateJwk.x) {
+      key = latest;
+      token = await request(key.privateJwk);
+    } else if (latest?.nextPrivateJwk) {
+      token = await request(latest.nextPrivateJwk);
+      if (token) key = (await promote(path, latest.nextPrivateJwk, deps)) ?? latest;
+    }
+  }
+  if (!token) throw new ServiceKeyRevokedError(origin, deps.command);
+  return { ...token, key };
+}

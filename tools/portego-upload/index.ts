@@ -17,6 +17,9 @@
  * rather than merely possible.
  *
  *   npx -y portego-upload auth <origin>                   one-time browser sign-in
+ *   npx -y portego-upload service-key enroll <origin> --name <name>
+ *                                                         sign an agent in with a key pair
+ *   npx -y portego-upload service-key renew               replace that key now
  *   npx -y portego-upload upload <file>                   upload from a terminal
  *   npx -y portego-upload                                 serve MCP over stdio
  */
@@ -34,7 +37,25 @@ import { z } from "zod";
 import { brand } from "./brand.ts";
 import { checkImageLimits, type ImageFile, resolveLocalImages } from "./images.ts";
 import { version } from "./package.json" with { type: "json" };
-import { parseStore, resolveOrigin, type Store, type Token, withToken } from "./store.ts";
+import {
+  type Dependencies,
+  enroll,
+  readServiceKey,
+  renew,
+  type ServiceKey,
+  ServiceKeyError,
+  ServiceKeyRevokedError,
+  serviceToken,
+  storedTokenUsable,
+} from "./service-key.ts";
+import {
+  normalizeOrigin,
+  parseStore,
+  resolveOrigin,
+  type Store,
+  type Token,
+  withToken,
+} from "./store.ts";
 import {
   ArtifactStyleError,
   finalizeArtifact,
@@ -56,9 +77,22 @@ function readStore(): Store {
   }
 }
 
+/** An agent's private key. The file holds the deployment it was enrolled with. */
+const SERVICE_KEY_PATH =
+  process.env.PORTEGO_SERVICE_KEY ??
+  join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "portego", "service-key.json");
+
 const [COMMAND, ...ARGUMENTS] = process.argv.slice(2);
-/** `auth <origin>` names the deployment and makes it the default. */
-const AUTH_ORIGIN = COMMAND === "auth" ? ARGUMENTS[0] : undefined;
+/**
+ * `auth <origin>` and `service-key enroll <origin>` name the deployment and
+ * make it the default.
+ */
+const AUTH_ORIGIN =
+  COMMAND === "auth"
+    ? ARGUMENTS[0]
+    : COMMAND === "service-key" && ARGUMENTS[0] === "enroll" && !ARGUMENTS[1]?.startsWith("--")
+      ? ARGUMENTS[1]
+      : undefined;
 
 /** How a person starts this tool, for the messages that tell them to. */
 const SELF = `npx -y ${brand.packageName}`;
@@ -310,8 +344,46 @@ function openBrowser(url: string): void {
     .unref();
 }
 
+const SERVICE_KEY_DEPENDENCIES: Dependencies = {
+  fetch: (url, init) => fetch(url, init),
+  now: () => Date.now(),
+  command: SELF,
+  log: (line) => console.error(line),
+};
+
+/** The service key, when this machine has one for the current deployment. */
+async function serviceKey(): Promise<ServiceKey | null> {
+  const key = await readServiceKey(SERVICE_KEY_PATH);
+  return key && key.origin === deployment().origin ? key : null;
+}
+
+/** The client_credentials flow, reusing the stored token while it is usable. */
+async function serviceAccessToken(key: ServiceKey): Promise<string> {
+  const stored = loadToken();
+  if (stored && storedTokenUsable(stored, key, Date.now(), REFRESH_SKEW_SECONDS)) {
+    return stored.accessToken;
+  }
+  return saveServiceToken({ makeDefault: false });
+}
+
+async function saveServiceToken(options: { makeDefault: boolean }): Promise<string> {
+  const token = await serviceToken(SERVICE_KEY_PATH, SERVICE_KEY_DEPENDENCIES);
+  await saveToken(
+    {
+      accessToken: token.accessToken,
+      expiresAt: Math.floor(Date.now() / 1000) + token.expiresIn,
+      keyId: token.key.privateJwk.x,
+    },
+    options,
+  );
+  return token.accessToken;
+}
+
 /** A valid access token, refreshed if the stored one is spent. */
 async function accessToken(): Promise<string> {
+  const key = await serviceKey();
+  if (key) return serviceAccessToken(key);
+
   const stored = loadToken();
   if (!stored) {
     throw new UploadError(
@@ -569,6 +641,16 @@ async function serve(): Promise<void> {
     },
     async () => {
       try {
+        if (await serviceKey()) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `This machine signs in to ${deployment().origin} with a service key. No browser sign-in is needed.`,
+              },
+            ],
+          };
+        }
         await authorize({ makeDefault: false });
         return {
           content: [{ type: "text" as const, text: `Signed in to ${deployment().origin}.` }],
@@ -1151,6 +1233,7 @@ const FLAGS_WITH_VALUES = new Set([
   "description",
   "folder-id",
   "markdown-file",
+  "name",
   "output",
   "style",
   "template",
@@ -1174,7 +1257,14 @@ function firstPositional(argv: string[]): string | undefined {
 }
 
 function commandError(error: unknown): string {
-  if (error instanceof UploadError || error instanceof ArtifactStyleError) return error.message;
+  if (
+    error instanceof UploadError ||
+    error instanceof ArtifactStyleError ||
+    error instanceof ServiceKeyError ||
+    error instanceof ServiceKeyRevokedError
+  ) {
+    return error.message;
+  }
   if (error instanceof Error) return error.stack ?? error.message;
   return String(error);
 }
@@ -1184,6 +1274,39 @@ async function main(): Promise<void> {
   const rest = ARGUMENTS;
 
   if (command === "auth") return authorize({ makeDefault: AUTH_ORIGIN !== undefined });
+
+  if (command === "service-key") {
+    const [action, ...options] = rest;
+    if (action === "enroll") {
+      const name = readFlag(options, "name");
+      if (!AUTH_ORIGIN || !name) {
+        throw new UploadError("Usage: service-key enroll <origin> --name <name>");
+      }
+      // The token is stored under deployment().origin, where PORTEGO_ORIGIN
+      // wins over the argument. Enrolling elsewhere would file one
+      // deployment's token under another.
+      const { origin } = deployment();
+      if (normalizeOrigin(AUTH_ORIGIN) !== origin) {
+        throw new UploadError(
+          `PORTEGO_ORIGIN names ${origin}. Unset it, or enroll with that deployment.`,
+        );
+      }
+      await enroll({ origin, name, path: SERVICE_KEY_PATH }, SERVICE_KEY_DEPENDENCIES);
+      await saveServiceToken({ makeDefault: true });
+      console.error(`Enrolled with ${origin}. Key written to ${SERVICE_KEY_PATH}`);
+      return;
+    }
+    if (action === "renew") {
+      if (!(await serviceKey())) {
+        throw new UploadError(`No service key for ${deployment().origin} at ${SERVICE_KEY_PATH}.`);
+      }
+      await renew(SERVICE_KEY_PATH, { force: true }, SERVICE_KEY_DEPENDENCIES);
+      await saveServiceToken({ makeDefault: false });
+      console.error(`Renewed the service key for ${deployment().origin}.`);
+      return;
+    }
+    throw new UploadError("Usage: service-key enroll <origin> --name <name> | service-key renew");
+  }
 
   if (command === "upload") {
     const path = firstPositional(rest);
@@ -1261,7 +1384,7 @@ async function main(): Promise<void> {
 
   if (command && command !== "serve") {
     throw new UploadError(
-      `Unknown command "${command}". Use auth, upload, style, prepare, finalize, validate, or serve.`,
+      `Unknown command "${command}". Use auth, service-key, upload, style, prepare, finalize, validate, or serve.`,
     );
   }
 

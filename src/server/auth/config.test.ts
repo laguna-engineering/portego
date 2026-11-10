@@ -92,6 +92,31 @@ describe("parseAuthConfig", () => {
   });
 });
 
+describe("service accounts", () => {
+  test("are off unless SERVICE_ACCOUNTS=true", () => {
+    expect(parseAuthConfig(env(), allowed).serviceAccounts).toBe(false);
+    const config = parseAuthConfig(env({ SERVICE_ACCOUNTS: "true" }), {
+      ...allowed,
+      PORTEGO_ADMINS: "Admin@Acme.Example, admin@acme.example",
+    });
+    expect(config.serviceAccounts).toBe(true);
+    expect(config.admins).toEqual(["admin@acme.example"]);
+  });
+
+  // Nobody could approve an agent, so the feature would be on and unusable.
+  test("refuse to start without an admin", () => {
+    expect(() => parseAuthConfig(env({ SERVICE_ACCOUNTS: "true" }), allowed)).toThrow(
+      /PORTEGO_ADMINS/,
+    );
+  });
+
+  test("refuse an admin entry that is not an address", () => {
+    expect(() => parseAuthConfig(env(), { ...allowed, PORTEGO_ADMINS: "admin" })).toThrow(
+      /PORTEGO_ADMINS contains "admin"/,
+    );
+  });
+});
+
 describe("publicProviders", () => {
   test("exposes the id and label only, never the client credentials", () => {
     const config = parseAuthConfig(env(), { AUTH_PROVIDERS: "google", ...google, ...allowed });

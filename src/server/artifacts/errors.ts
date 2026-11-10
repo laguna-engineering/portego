@@ -17,6 +17,11 @@ export type ErrorCode =
   | "INVALID_CURSOR"
   | "CONTENT_MISSING"
   | "RATE_LIMITED"
+  /**
+   * A service account's key or account was refused: the key was replaced, or
+   * the account was disabled or expired. Retrying with the same key cannot work.
+   */
+  | "INVALID_CLIENT"
   /** Nothing the caller can fix. Reported for an unexpected server failure. */
   | "INTERNAL";
 

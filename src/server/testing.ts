@@ -17,6 +17,10 @@ import { databasePath, openDatabase } from "./db.ts";
 import { createEventBus, type EventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService, type OrganizationService } from "./organization/service.ts";
+import {
+  createServiceAccountService,
+  type ServiceAccountService,
+} from "./service-accounts/service.ts";
 import { createActivityStore } from "./storage/activity.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
@@ -25,6 +29,7 @@ import { applyMigrations } from "./storage/migrations.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 import { createProfileStore } from "./storage/profiles.ts";
 import { createSearchStore } from "./storage/search.ts";
+import { createServiceAccountStore } from "./storage/service-accounts.ts";
 
 /** A different host from TEST_BASE_URL, which is what isolates a preview. */
 export const TEST_CONTENT_ORIGIN = "http://127.0.0.1:5173";
@@ -43,6 +48,8 @@ export type TestServer = {
   artifacts: ArtifactService;
   organization: OrganizationService;
   events: EventBus;
+  /** Null unless the test turned service accounts on. */
+  serviceAccounts: ServiceAccountService | null;
   dataDir: string;
   signingSecret: string;
   baseURL: string;
@@ -61,6 +68,12 @@ export type TestServerOptions = {
   providers?: ResolvedProvider[];
   /** Serve the built client from disk, which the browser tests need. */
   serveClient?: boolean;
+  serviceAccounts?: boolean;
+  admins?: string[];
+  /** Admit every authenticated identity instead of the test domain. */
+  allowAll?: boolean;
+  /** The clock service accounts read, in epoch ms. */
+  now?: () => number;
 };
 
 export async function createTestServer(options: TestServerOptions = {}): Promise<TestServer> {
@@ -70,6 +83,9 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     database,
     ...(options.baseURL ? { baseURL: options.baseURL } : {}),
     ...(options.providers ? { providers: options.providers } : {}),
+    ...(options.admins ? { admins: options.admins } : {}),
+    ...(options.serviceAccounts ? { serviceAccounts: true } : {}),
+    ...(options.allowAll ? { allowAll: true } : {}),
   });
   applyMigrations(database);
 
@@ -95,6 +111,15 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     ...(options.publicLinks === undefined ? {} : { publicLinks: options.publicLinks }),
   });
 
+  const serviceAccounts = config.serviceAccounts
+    ? createServiceAccountService({
+        store: createServiceAccountStore(database),
+        baseURL: config.baseURL,
+        mcpResource: config.mcp.resource,
+        ...(options.now ? { now: options.now } : {}),
+      })
+    : null;
+
   const app = createApp({
     serveClient: options.serveClient ?? false,
     clientDist: "dist/client",
@@ -108,6 +133,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     events,
     activity: createActivityStore({ database }),
     profiles: createProfileStore({ database }),
+    serviceAccounts,
   });
 
   return {
@@ -117,6 +143,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     artifacts,
     organization,
     events,
+    serviceAccounts,
     dataDir,
     signingSecret: config.secret,
     baseURL: config.baseURL,
@@ -156,6 +183,9 @@ export async function createLiveTestServer(
     idleTimeout?: number;
     privateArtifacts?: boolean;
     publicLinks?: boolean;
+    serviceAccounts?: boolean;
+    admins?: string[];
+    now?: () => number;
   } = {},
 ): Promise<LiveTestServer> {
   let handle: TestServer | null = null;
@@ -178,6 +208,9 @@ export async function createLiveTestServer(
       ? {}
       : { privateArtifacts: options.privateArtifacts }),
     ...(options.publicLinks === undefined ? {} : { publicLinks: options.publicLinks }),
+    ...(options.serviceAccounts ? { serviceAccounts: true } : {}),
+    ...(options.admins ? { admins: options.admins } : {}),
+    ...(options.now ? { now: options.now } : {}),
   });
   handle = server;
 

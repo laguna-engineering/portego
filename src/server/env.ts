@@ -57,6 +57,12 @@ const schema = z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+    // true lets an agent sign in with a key pair that an admin approved.
+    // Requires PORTEGO_ADMINS.
+    SERVICE_ACCOUNTS: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== "production") return;

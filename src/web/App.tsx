@@ -20,6 +20,7 @@ import { MemberProfile } from "./Member.tsx";
 import { Profile } from "./Profile.tsx";
 import { artifactPath, galleryPath, ROOT_FOLDER_ID, useRoute } from "./router.ts";
 import { SearchField } from "./Search.tsx";
+import { NotAdmin, ServiceAccountApproval, ServiceAccountList } from "./ServiceAccounts.tsx";
 import { SharedArtifact } from "./SharedArtifact.tsx";
 import { SignIn } from "./SignIn.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
@@ -124,6 +125,8 @@ export function App() {
   }
 
   const { session } = state;
+  const serviceAccounts = session.features.serviceAccounts === true;
+  const admin = session.user.admin === true;
 
   const handleSignOut = async () => {
     await signOut();
@@ -241,7 +244,30 @@ export function App() {
             onDisplayNameChange={setNames}
             onSignOut={handleSignOut}
             onOpenArtifact={(id, target) => navigate(artifactPath(id, target))}
+            {...(serviceAccounts && admin
+              ? { onOpenServiceAccounts: () => navigate("/settings/service-accounts") }
+              : {})}
           />
+        ) : null}
+
+        {route.name === "service-accounts" && serviceAccounts ? (
+          admin ? (
+            <ServiceAccountList />
+          ) : (
+            <NotAdmin />
+          )
+        ) : null}
+
+        {route.name === "service-account-approval" && serviceAccounts ? (
+          admin ? (
+            <ServiceAccountApproval
+              key={route.id}
+              id={route.id}
+              onDone={() => navigate("/settings/service-accounts")}
+            />
+          ) : (
+            <NotAdmin />
+          )
         ) : null}
 
         {route.name === "member" ? (
@@ -256,7 +282,9 @@ export function App() {
 
         {route.name === "mcp-consent" ? <McpConsent query={route.query} /> : null}
 
-        {route.name === "unknown" ? (
+        {route.name === "unknown" ||
+        (!serviceAccounts &&
+          (route.name === "service-accounts" || route.name === "service-account-approval")) ? (
           <section className="empty">
             <p>That page does not exist.</p>
             <button type="button" onClick={() => navigate("/")}>

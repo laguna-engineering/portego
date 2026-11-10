@@ -52,6 +52,9 @@ export type Route =
   /** The MCP authorization pages. They carry the signed OAuth query through. */
   | { name: "mcp-login"; query: string }
   | { name: "mcp-consent"; query: string }
+  | { name: "service-accounts" }
+  /** The page an agent's enrollment links an admin to. */
+  | { name: "service-account-approval"; id: string }
   | { name: "unknown" };
 
 /** Reads the current URL. Two views and a search term need no router library. */
@@ -75,6 +78,11 @@ export function readRoute(url: URL): Route {
   if (member?.[1]) return { name: "member", id: decodeURIComponent(member[1]) };
   if (url.pathname === "/mcp/login") return { name: "mcp-login", query: url.search };
   if (url.pathname === "/mcp/consent") return { name: "mcp-consent", query: url.search };
+  if (url.pathname === "/settings/service-accounts") return { name: "service-accounts" };
+  const approval = url.pathname.match(/^\/settings\/service-accounts\/approve\/([^/]+)\/?$/);
+  if (approval?.[1]) {
+    return { name: "service-account-approval", id: decodeURIComponent(approval[1]) };
+  }
   if (url.pathname === "/") {
     const status = url.searchParams.get("status");
     const sort = url.searchParams.get("sort");

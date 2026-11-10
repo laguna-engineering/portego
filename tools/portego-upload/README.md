@@ -38,6 +38,35 @@ ssh -L 8765:localhost:8765 <host>
 
 The tool prints the sign-in URL. Open it in the browser on the other machine.
 
+### Sign an agent in with a service key
+
+On a machine where no person signs in, such as a CI runner or a server, an
+agent can sign in with a key pair instead. The deployment must have
+`SERVICE_ACCOUNTS=true`.
+
+```sh
+npx -y portego-upload service-key enroll https://share.acme.example --name "Review runner"
+```
+
+The tool prints an approval URL and a code. An admin of the deployment opens
+the URL, checks that the page shows the same code, and approves. The tool then
+writes the private key to `~/.config/portego/service-key.json` (mode 0600), or
+to `PORTEGO_SERVICE_KEY`. From then on it signs in with that key and never
+opens a browser.
+
+The key renews itself when it is older than a day, and each renewal replaces
+it on the server, so a copy of the key stops working at the next renewal. A
+key that is not renewed for 7 days expires. An agent that can be idle for days
+should run this from a daily timer:
+
+```sh
+npx -y portego-upload service-key renew
+```
+
+When the server refuses the key, the tool says so and stops. The key was
+replaced by a copy that renewed first, or an admin disabled the account. Enroll
+again, and ask an admin to check the account.
+
 ## Use it with an agent
 
 In Claude Code, install the plugin. It contains its own copy of this server and
@@ -142,6 +171,7 @@ defines the style format.
 | `PORTEGO_ARTIFACT_STYLE` | A style directory or its `manifest.json`. |
 | `PORTEGO_CALLBACK_PORT` | The local port for the sign-in callback. By default the OS chooses a free port. |
 | `PORTEGO_CREDENTIALS` | The path of the credentials file. |
+| `PORTEGO_SERVICE_KEY` | The path of the service key file. |
 | `PORTEGO_CLIENT_ID` | The OAuth client id. The default is `<origin>/mcp-clients/claude-code.json`. |
 
 ## License

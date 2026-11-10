@@ -59,6 +59,7 @@ async function createTestApp(options?: {
     events,
     activity: createActivityStore({ database }),
     profiles: createProfileStore({ database }),
+    serviceAccounts: null,
   });
 }
 

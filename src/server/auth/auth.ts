@@ -6,6 +6,7 @@ import { APIError } from "better-auth/api";
 import { jwt } from "better-auth/plugins";
 import { type GenericOAuthConfig, genericOAuth } from "better-auth/plugins/generic-oauth";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth/types";
+import { createServiceAccountStore } from "../storage/service-accounts.ts";
 import { fetchClientMetadataResource } from "./client-metadata.ts";
 import { type AuthConfig, MCP_SCOPES, REFRESH_SCOPE } from "./config.ts";
 import { admits, type Identity } from "./policy.ts";
@@ -60,6 +61,8 @@ export function createAuth({ config, database, validateSchema = true }: CreateAu
   const oidcProviders = config.providers.flatMap((provider) =>
     provider.wiring.kind === "oidc" ? [provider.wiring.config as GenericOAuthConfig] : [],
   );
+
+  const serviceAccounts = createServiceAccountStore(database);
 
   const refuseUnlessAdmitted = (identity: Identity, stage: string) => {
     const decision = admits(config.admission, identity);
@@ -143,6 +146,15 @@ export function createAuth({ config, database, validateSchema = true }: CreateAu
               });
             }
             refuseUnlessAdmitted(user, "session creation");
+            // A service account signs in with its key only. Admission already
+            // refuses its address; this holds even if the user row changes.
+            if (serviceAccounts.isServiceAccount(user.id)) {
+              console.warn("Refused session creation: the user is a service account");
+              throw new APIError("FORBIDDEN", {
+                code: "NOT_ADMITTED",
+                message: "This account is not allowed to use this service.",
+              });
+            }
           },
         },
       },

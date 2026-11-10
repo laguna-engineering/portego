@@ -1,0 +1,302 @@
+import type { Database } from "bun:sqlite";
+import { randomBytes } from "node:crypto";
+import { MCP_SCOPES } from "../auth/config.ts";
+import { SERVICE_ACCOUNT_EMAIL_DOMAIN } from "../auth/policy.ts";
+import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
+
+export type ServiceAccountKind = "member" | "guest";
+
+export type ServiceAccount = {
+  userId: string;
+  clientId: string;
+  name: string;
+  kind: ServiceAccountKind;
+  approvedBy: string;
+  approvedByName: string;
+  /** Epoch ms, like every time below. */
+  createdAt: number;
+  /** The last time the key changed. */
+  renewedAt: number;
+  expiresAt: number;
+  disabledAt: number | null;
+};
+
+export type Enrollment = {
+  id: string;
+  userCode: string;
+  name: string;
+  /** The public JWK the agent sent, as JSON. */
+  publicJwk: string;
+  /** The account the approval re-enrolled or created. */
+  accountId: string | null;
+  createdAt: number;
+  expiresAt: number;
+  approvedAt: number | null;
+  approvedBy: string | null;
+};
+
+export type Approval = {
+  enrollmentId: string;
+  approvedBy: string;
+  now: number;
+  /** When the account expires unless it renews. */
+  expiresAt: number;
+  /** The MCP resource the OAuth client is linked to. */
+  resource: string;
+  account: { create: { kind: ServiceAccountKind } } | { reenroll: string };
+};
+
+export type ServiceAccountStore = {
+  /** Refuses with false while `maxPending` enrollments wait for approval. */
+  addEnrollment: (enrollment: Enrollment, limits: { maxPending: number }) => boolean;
+  /** An enrollment that has not expired. */
+  enrollment: (id: string, now: number) => Enrollment | null;
+  /** Null when the enrollment is gone, already approved, or names no account. */
+  approve: (approval: Approval) => ServiceAccount | null;
+  /**
+   * Replaces the key, but only while the stored key set is still
+   * `verifiedJwks`, the one the renewal assertion was checked against.
+   */
+  renew: (input: {
+    clientId: string;
+    verifiedJwks: string;
+    jwks: string;
+    now: number;
+    expiresAt: number;
+  }) => ServiceAccount | null;
+  disable: (userId: string, now: number) => ServiceAccount | null;
+  byClientId: (clientId: string) => ServiceAccount | null;
+  byUserId: (userId: string) => ServiceAccount | null;
+  list: () => ServiceAccount[];
+  /** The OAuth client's stored key set, as Better Auth reads it. */
+  clientJwks: (clientId: string) => string | null;
+  /** Records a renewal assertion. False when it was used before. */
+  spendAssertion: (id: string, expiresAt: number, now: number) => boolean;
+  isServiceAccount: (userId: string) => boolean;
+};
+
+const SELECT_ACCOUNT = `
+  select serviceAccounts.*, ${USER_NAME} as approvedByName
+  from serviceAccounts join "user" on "user".id = serviceAccounts.approvedBy ${JOIN_DISPLAY_NAME}`;
+
+function randomId(): string {
+  return randomBytes(16).toString("hex");
+}
+
+/**
+ * Better Auth owns the `user`, `oauthClient`, and `oauthClientResource` tables,
+ * but its admin endpoints need a session and cannot replace a key, so the rows
+ * are written here. They match what its registration endpoint writes for a
+ * `private_key_jwt` client; client-credentials.test.ts compares the two.
+ */
+export function insertOAuthClient(
+  database: Database,
+  input: { clientId: string; userId: string; name: string; jwks: string; resource: string },
+  now: number,
+): void {
+  const at = new Date(now).toISOString();
+  const resource = database
+    .query("select 1 from oauthResource where identifier = ? and not coalesce(disabled, 0)")
+    .get(input.resource);
+  if (!resource) {
+    throw new Error(
+      `The OAuth resource ${input.resource} is missing; the server seeds it at start`,
+    );
+  }
+  database
+    .query(
+      `insert into oauthClient (id, clientId, disabled, scopes, clientCredentialsScopes, userId,
+         createdAt, updatedAt, name, redirectUris, tokenEndpointAuthMethod, applicationType, jwks,
+         grantTypes, dpopBoundAccessTokens)
+       values (?, ?, 0, ?, ?, ?, ?, ?, ?, '[]', 'private_key_jwt', 'web', ?,
+         '["client_credentials"]', 0)`,
+    )
+    .run(
+      randomId(),
+      input.clientId,
+      JSON.stringify(MCP_SCOPES),
+      JSON.stringify(MCP_SCOPES),
+      input.userId,
+      at,
+      at,
+      input.name,
+      input.jwks,
+    );
+  database
+    .query(
+      "insert into oauthClientResource (id, clientId, resourceId, createdAt) values (?, ?, ?, ?)",
+    )
+    .run(randomId(), input.clientId, input.resource, at);
+}
+
+export function createServiceAccountStore(database: Database): ServiceAccountStore {
+  const byUserId = (userId: string) =>
+    database
+      .query(`${SELECT_ACCOUNT} where serviceAccounts.userId = ?`)
+      .get(userId) as ServiceAccount | null;
+
+  const byClientId = (clientId: string) =>
+    database
+      .query(`${SELECT_ACCOUNT} where serviceAccounts.clientId = ?`)
+      .get(clientId) as ServiceAccount | null;
+
+  const enrollment = (id: string, now: number) =>
+    database
+      .query("select * from serviceAccountEnrollments where id = ? and expiresAt > ?")
+      .get(id, now) as Enrollment | null;
+
+  return {
+    addEnrollment(row, limits) {
+      return database.transaction(() => {
+        database
+          .query("delete from serviceAccountEnrollments where expiresAt <= ?")
+          .run(row.createdAt);
+        const pending = database
+          .query("select count(*) as count from serviceAccountEnrollments where approvedAt is null")
+          .get() as { count: number };
+        if (pending.count >= limits.maxPending) return false;
+        database
+          .query(
+            `insert into serviceAccountEnrollments (id, userCode, name, publicJwk, createdAt, expiresAt)
+             values (?, ?, ?, ?, ?, ?)`,
+          )
+          .run(row.id, row.userCode, row.name, row.publicJwk, row.createdAt, row.expiresAt);
+        return true;
+      })();
+    },
+
+    enrollment,
+
+    approve(approval) {
+      const { now } = approval;
+      const userId = database.transaction((): string | null => {
+        const pending = enrollment(approval.enrollmentId, now);
+        if (!pending || pending.approvedAt !== null) return null;
+        const jwks = JSON.stringify({ keys: [JSON.parse(pending.publicJwk)] });
+
+        let accountId: string;
+        if ("create" in approval.account) {
+          accountId = randomId();
+          const clientId = randomId();
+          const at = new Date(now).toISOString();
+          // No linked provider account and an unverified `.invalid` address:
+          // sign-in has no way to reach this user.
+          database
+            .query(
+              `insert into "user" (id, name, email, emailVerified, image, createdAt, updatedAt)
+               values (?, ?, ?, 0, null, ?, ?)`,
+            )
+            .run(accountId, pending.name, `${clientId}@${SERVICE_ACCOUNT_EMAIL_DOMAIN}`, at, at);
+          database
+            .query(
+              `insert into serviceAccounts
+                 (userId, clientId, name, kind, approvedBy, createdAt, renewedAt, expiresAt)
+               values (?, ?, ?, ?, ?, ?, ?, ?)`,
+            )
+            .run(
+              accountId,
+              clientId,
+              pending.name,
+              approval.account.create.kind,
+              approval.approvedBy,
+              now,
+              now,
+              approval.expiresAt,
+            );
+          insertOAuthClient(
+            database,
+            { clientId, userId: accountId, name: pending.name, jwks, resource: approval.resource },
+            now,
+          );
+        } else {
+          const existing = byUserId(approval.account.reenroll);
+          if (!existing) return null;
+          accountId = existing.userId;
+          database
+            .query(
+              "update serviceAccounts set renewedAt = ?, expiresAt = ?, disabledAt = null where userId = ?",
+            )
+            .run(now, approval.expiresAt, accountId);
+          database
+            .query(
+              "update oauthClient set jwks = ?, disabled = 0, updatedAt = ? where clientId = ?",
+            )
+            .run(jwks, new Date(now).toISOString(), existing.clientId);
+        }
+
+        database
+          .query(
+            "update serviceAccountEnrollments set approvedAt = ?, approvedBy = ?, accountId = ? where id = ?",
+          )
+          .run(now, approval.approvedBy, accountId, pending.id);
+        return accountId;
+      })();
+      return userId === null ? null : byUserId(userId);
+    },
+
+    renew(input) {
+      return database.transaction(() => {
+        const account = byClientId(input.clientId);
+        if (!account || account.disabledAt !== null || account.expiresAt <= input.now) return null;
+        const updated = database
+          .query("update oauthClient set jwks = ?, updatedAt = ? where clientId = ? and jwks = ?")
+          .run(input.jwks, new Date(input.now).toISOString(), input.clientId, input.verifiedJwks);
+        if (updated.changes !== 1) return null;
+        database
+          .query("update serviceAccounts set renewedAt = ?, expiresAt = ? where userId = ?")
+          .run(input.now, input.expiresAt, account.userId);
+        return byUserId(account.userId);
+      })();
+    },
+
+    disable(userId, now) {
+      return database.transaction(() => {
+        const account = byUserId(userId);
+        if (!account) return null;
+        if (account.disabledAt === null) {
+          database
+            .query("update serviceAccounts set disabledAt = ? where userId = ?")
+            .run(now, userId);
+        }
+        database
+          .query("update oauthClient set disabled = 1, updatedAt = ? where clientId = ?")
+          .run(new Date(now).toISOString(), account.clientId);
+        return byUserId(userId);
+      })();
+    },
+
+    byClientId,
+    byUserId,
+
+    list() {
+      return database
+        .query(
+          `${SELECT_ACCOUNT} order by serviceAccounts.name collate nocase, serviceAccounts.userId`,
+        )
+        .all() as ServiceAccount[];
+    },
+
+    clientJwks(clientId) {
+      const row = database
+        .query("select jwks from oauthClient where clientId = ?")
+        .get(clientId) as {
+        jwks: string | null;
+      } | null;
+      return row?.jwks ?? null;
+    },
+
+    spendAssertion(id, expiresAt, now) {
+      return database.transaction(() => {
+        database.query("delete from serviceAccountAssertions where expiresAt <= ?").run(now);
+        const inserted = database
+          .query("insert or ignore into serviceAccountAssertions (id, expiresAt) values (?, ?)")
+          .run(id, expiresAt);
+        return inserted.changes === 1;
+      })();
+    },
+
+    isServiceAccount(userId) {
+      return database.query("select 1 from serviceAccounts where userId = ?").get(userId) !== null;
+    },
+  };
+}

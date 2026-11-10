@@ -19,6 +19,13 @@ export type Identity = {
 
 export type AdmissionResult = { admitted: true } | { admitted: false; reason: string };
 
+/**
+ * The domain of every service account's address. `.invalid` is reserved (RFC
+ * 2606), so no provider can prove a person owns one, and admission refuses it
+ * under every policy, so sign-in can never reach a service account's user.
+ */
+export const SERVICE_ACCOUNT_EMAIL_DOMAIN = "service.invalid";
+
 /** A hostname with at least two labels and no leading or trailing separator. */
 const DOMAIN_PATTERN = /^(?!-)[a-z0-9-]+(?<!-)(\.(?!-)[a-z0-9-]+(?<!-))+$/;
 
@@ -69,9 +76,13 @@ export function admits(policy: AdmissionPolicy, identity: Identity): AdmissionRe
     return { admitted: false, reason: "the provider did not report a verified email address" };
   }
 
+  const domain = emailDomain(email);
+  if (domain === SERVICE_ACCOUNT_EMAIL_DOMAIN) {
+    return { admitted: false, reason: "the address is reserved for service accounts" };
+  }
+
   if (policy.kind === "all-authenticated") return { admitted: true };
 
-  const domain = emailDomain(email);
   if (!domain) return { admitted: false, reason: "the email address is malformed" };
   if (!policy.domains.includes(domain)) {
     return { admitted: false, reason: "the email domain is not on the allowlist" };

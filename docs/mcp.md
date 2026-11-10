@@ -15,7 +15,9 @@ Google (or whichever provider the deployment enables) is the upstream sign-in.
   for anything else is refused.
 - Every request is verified for signature, issuer, audience, expiry, and scope
   against the keys published at `/api/auth/jwks`.
-- Authorization Code with PKCE only.
+- People authorize with Authorization Code and PKCE. With `SERVICE_ACCOUNTS=true`,
+  an agent can also use the `client_credentials` grant; see
+  [Service accounts](#service-accounts).
 - A client that listens on the machine registers a portless loopback redirect
   URI and authorizes on whatever port it bound, because the port takes no part
   in the match (RFC 8252). Better Auth 1.7.2 matched the port for the host name
@@ -114,6 +116,43 @@ The token's subject decides who the caller is. A user id in tool arguments is
 ignored. The admission policy runs again on every MCP request, so removing a
 domain from the allowlist stops the tokens issued under it, without waiting for
 them to expire.
+
+### Service accounts
+
+With `SERVICE_ACCOUNTS=true`, an agent that an admin approved
+([authentication.md](authentication.md#service-accounts)) gets its token with
+the `client_credentials` grant and `private_key_jwt` client authentication
+(RFC 7523). It signs an assertion with its Ed25519 key and sends:
+
+```
+POST /api/auth/oauth2/token
+content-type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+client_id=<client id>
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+client_assertion=<JWT, alg EdDSA: iss = sub = client id,
+                  aud = <origin>/api/auth/oauth2/token, a fresh jti, exp within a minute>
+resource=<origin>/mcp
+scope=artifacts:read artifacts:write
+```
+
+The response is a one-hour JWT access token for the audience `<origin>/mcp`,
+as for a person. Its `sub` and `azp` are the client id and it has no `sid`,
+which is how the endpoint tells it from a person's token. Without `resource`
+the token is opaque, and this endpoint refuses it. No refresh token is issued:
+the agent signs a new assertion when its token expires.
+
+The endpoint refuses such a token when the account is disabled or expired, or
+when the token was issued before the account's key last changed. A token from
+the same second as the change still passes, because `iat` counts whole
+seconds.
+
+The key renews through `POST /api/service-accounts/renew` with
+`{ clientId, publicJwk, assertion }`. The assertion is signed by the current
+key, with `aud` set to that URL, and an access token is not accepted in its
+place. `tools/portego-upload` does all of this itself; see
+[Uploading from an agent that cannot spend a ticket](#uploading-from-an-agent-that-cannot-spend-a-ticket).
 
 ### Hosts and origins
 
@@ -459,6 +498,13 @@ PORTEGO_CALLBACK_PORT=8765 npx -y portego-upload auth
 The token lands in `~/.config/portego/credentials.json` at mode 0600 and
 refreshes on its own. The file holds one token for each origin, so a token is
 never sent to a deployment that did not issue it.
+
+An agent on a machine where no person signs in uses a service key instead:
+`npx -y portego-upload service-key enroll <origin> --name <name>`. When the
+key file names the deployment in use, the tool takes the `client_credentials`
+flow above and never opens a browser. It renews the key when it is older than a
+day. It holds `<key file>.lock` during the renewal and reads the key file again
+under the lock, so several processes that share the file renew it once.
 
 `PORTEGO_ORIGIN` overrides the default, which is how one project uses another
 deployment. Set it where the project's MCP client starts the tool, then run
