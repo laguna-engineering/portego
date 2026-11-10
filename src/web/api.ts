@@ -400,13 +400,11 @@ export async function clearSharedEntry(shareToken: string, guest: Guest, key: st
   }
 }
 
-export type ServiceAccountKind = "member" | "guest";
-
 export type ServiceAccount = {
   id: string;
   clientId: string;
   name: string;
-  kind: ServiceAccountKind;
+  /** The admin who last approved a key for the account. */
   approvedBy: { id: string; name: string };
   createdAt: string;
   /** The last time the key changed. */
@@ -420,7 +418,6 @@ export type Enrollment = {
   id: string;
   name: string;
   userCode: string;
-  thumbprint: string;
   createdAt: string;
   expiresAt: string;
 };
@@ -437,10 +434,10 @@ export function fetchEnrollment(id: string): Promise<Enrollment> {
   ).then((body) => body.enrollment);
 }
 
-/** `kind` creates an account; `accountId` gives an existing one the new key. */
+/** `accountId` gives an existing account the new key; without it, a new account is created. */
 export function approveEnrollment(
   id: string,
-  decision: { kind: ServiceAccountKind } | { accountId: string },
+  decision: { accountId?: string },
 ): Promise<ServiceAccount> {
   return request<{ account: ServiceAccount }>(
     `/api/service-accounts/enrollments/${encodeURIComponent(id)}/approval`,

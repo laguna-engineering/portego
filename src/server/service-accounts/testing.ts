@@ -1,5 +1,5 @@
 /** Drives the agent's side of a service account against a live test server. */
-import { exportJWK, generateKeyPair, type JWK, SignJWT } from "jose";
+import { calculateJwkThumbprint, exportJWK, generateKeyPair, type JWK, SignJWT } from "jose";
 import type { LiveTestServer } from "../testing.ts";
 
 export type AgentKey = { privateKey: CryptoKey; publicJwk: JWK };
@@ -11,9 +11,16 @@ export async function agentKey(): Promise<AgentKey> {
 
 export function sign(
   key: CryptoKey,
-  claims: { iss: string; sub?: string; aud: string; jti?: string; lifetimeSeconds?: number },
+  claims: {
+    iss: string;
+    sub?: string;
+    aud: string;
+    jti?: string;
+    lifetimeSeconds?: number;
+    nextJkt?: string;
+  },
 ): Promise<string> {
-  const jwt = new SignJWT({})
+  const jwt = new SignJWT(claims.nextJkt === undefined ? {} : { next_jkt: claims.nextJkt })
     .setProtectedHeader({ alg: "EdDSA" })
     .setIssuer(claims.iss)
     .setAudience(claims.aud)
@@ -47,7 +54,7 @@ export async function approve(
   server: LiveTestServer,
   adminCookie: string,
   id: string,
-  body: Record<string, unknown> = { kind: "member" },
+  body: Record<string, unknown> = {},
 ): Promise<Response> {
   return fetch(`${server.origin}/api/service-accounts/enrollments/${id}/approval`, {
     method: "POST",
@@ -62,7 +69,7 @@ export type Agent = { clientId: string; userId: string; key: AgentKey };
 export async function enrolledAgent(
   server: LiveTestServer,
   adminCookie: string,
-  approval: Record<string, unknown> = { kind: "member" },
+  approval: Record<string, unknown> = {},
   key?: AgentKey,
 ): Promise<Agent> {
   const agent = key ?? (await agentKey());
@@ -103,22 +110,33 @@ export async function accessToken(server: LiveTestServer, agent: Agent): Promise
   return String(body.access_token);
 }
 
+/** Signed by the agent's current key, naming `next` as the key that replaces it. */
+export async function renewalAssertion(
+  server: LiveTestServer,
+  agent: { clientId: string; key: AgentKey },
+  next: AgentKey,
+): Promise<string> {
+  return sign(agent.key.privateKey, {
+    iss: agent.clientId,
+    sub: agent.clientId,
+    aud: `${server.origin}/api/service-accounts/renew`,
+    nextJkt: await calculateJwkThumbprint(next.publicJwk),
+  });
+}
+
 export async function renew(
   server: LiveTestServer,
   agent: { clientId: string; key: AgentKey },
   next: AgentKey,
   assertion?: string,
 ): Promise<Response> {
-  const url = `${server.origin}/api/service-accounts/renew`;
-  return fetch(url, {
+  return fetch(`${server.origin}/api/service-accounts/renew`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       clientId: agent.clientId,
       publicJwk: next.publicJwk,
-      assertion:
-        assertion ??
-        (await sign(agent.key.privateKey, { iss: agent.clientId, sub: agent.clientId, aud: url })),
+      assertion: assertion ?? (await renewalAssertion(server, agent, next)),
     }),
   });
 }

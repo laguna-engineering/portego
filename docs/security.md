@@ -279,12 +279,15 @@ With `SERVICE_ACCOUNTS=true`, an agent signs in with an Ed25519 key pair
   before its key last changed, and at once when an admin disables the account.
   It cannot renew the key: renewal accepts only an assertion signed by the
   key.
-- Every assertion is single use. Better Auth records the `jti` of each
+- A token assertion is single use. Better Auth records the `jti` of each
   assertion the token endpoint accepts in its `oauthClientAssertion` table, so
   a restart does not reopen a replay window. That table is never pruned and
   grows by one row per token request, about 24 a day for each running agent.
-  Portego records renewal assertions in `serviceAccountAssertions` and deletes
-  them once they expire.
+- A renewal assertion names the RFC 7638 thumbprint of the new key in
+  `next_jkt`, and the server refuses any other key. Someone who captures the
+  request can at most send it first, which installs the key the agent chose.
+  Once the key changes, the assertion fails on its signature, so renewal needs
+  no `jti` record.
 - The enrollment endpoint takes no authentication. An enrollment expires after
   15 minutes, at most 10 can wait at once, and a poll returns the client id
   only when it is signed by the enrolled key. Someone who only sees the

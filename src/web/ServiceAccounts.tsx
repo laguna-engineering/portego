@@ -7,7 +7,6 @@ import {
   fetchEnrollment,
   fetchServiceAccounts,
   type ServiceAccount,
-  type ServiceAccountKind,
 } from "./api.ts";
 import { useNow } from "./clock.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
@@ -95,7 +94,6 @@ export function ServiceAccountList() {
             <thead>
               <tr>
                 <th scope="col">Name</th>
-                <th scope="col">Kind</th>
                 <th scope="col">Status</th>
                 <th scope="col">Key renewed</th>
                 <th scope="col">Expires</th>
@@ -107,7 +105,6 @@ export function ServiceAccountList() {
               {accounts.map((account) => (
                 <tr key={account.id}>
                   <td>{account.name}</td>
-                  <td>{account.kind === "guest" ? "Guest" : "Member"}</td>
                   <td>{status(account, now)}</td>
                   <td>
                     <RelativeTime iso={account.renewedAt} />
@@ -148,11 +145,11 @@ export type ServiceAccountApprovalProps = {
  * someone else cannot be approved by mistake.
  */
 export function ServiceAccountApproval({ id, onDone }: ServiceAccountApprovalProps) {
+  const now = useNow();
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [accounts, setAccounts] = useState<ServiceAccount[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
   const [target, setTarget] = useState<"new" | string>("new");
-  const [kind, setKind] = useState<ServiceAccountKind>("member");
   const [approved, setApproved] = useState<ServiceAccount | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -175,7 +172,7 @@ export function ServiceAccountApproval({ id, onDone }: ServiceAccountApprovalPro
   const approve = async () => {
     setBusy(true);
     try {
-      setApproved(await approveEnrollment(id, target === "new" ? { kind } : { accountId: target }));
+      setApproved(await approveEnrollment(id, target === "new" ? {} : { accountId: target }));
       setProblem(null);
     } catch (error) {
       setProblem(message(error, "Could not approve this request."));
@@ -222,10 +219,6 @@ export function ServiceAccountApproval({ id, onDone }: ServiceAccountApprovalPro
         <dd>
           <RelativeTime iso={enrollment.createdAt} />
         </dd>
-        <dt>Key thumbprint</dt>
-        <dd>
-          <code>{enrollment.thumbprint}</code>
-        </dd>
       </dl>
 
       <fieldset>
@@ -247,34 +240,10 @@ export function ServiceAccountApproval({ id, onDone }: ServiceAccountApprovalPro
               checked={target === account.id}
               onChange={() => setTarget(account.id)}
             />
-            Give {account.name} this key
+            Give {account.name} this key ({status(account, now).toLowerCase()})
           </label>
         ))}
       </fieldset>
-
-      {target === "new" ? (
-        <fieldset>
-          <legend>Kind</legend>
-          <label className="toggle">
-            <input
-              type="radio"
-              name="kind"
-              checked={kind === "member"}
-              onChange={() => setKind("member")}
-            />
-            Member: sees what a member sees
-          </label>
-          <label className="toggle">
-            <input
-              type="radio"
-              name="kind"
-              checked={kind === "guest"}
-              onChange={() => setKind("guest")}
-            />
-            Guest: sees only its teams' folders
-          </label>
-        </fieldset>
-      ) : null}
 
       {problem ? <p role="alert">{problem}</p> : null}
       <div className="dialog-actions">

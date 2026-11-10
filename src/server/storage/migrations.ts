@@ -419,7 +419,6 @@ export const migrations: readonly Migration[] = [
         userId text not null primary key references "user" ("id"),
         clientId text not null unique,
         name text not null,
-        kind text not null check (kind in ('member', 'guest')),
         approvedBy text not null references "user" ("id"),
         createdAt integer not null,
         renewedAt integer not null,
@@ -434,16 +433,9 @@ export const migrations: readonly Migration[] = [
         accountId text references serviceAccounts (userId),
         createdAt integer not null,
         expiresAt integer not null,
-        approvedAt integer,
-        approvedBy text references "user" ("id")
+        approvedAt integer
       );
       create index serviceAccountEnrollments_expires_at on serviceAccountEnrollments (expiresAt);
-      -- Renewal assertions already used, so none can be replayed.
-      create table serviceAccountAssertions (
-        id text not null primary key,
-        expiresAt integer not null
-      );
-      create index serviceAccountAssertions_expires_at on serviceAccountAssertions (expiresAt);
     `,
   },
 ];

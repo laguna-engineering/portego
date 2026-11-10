@@ -77,10 +77,12 @@ not start with `SERVICE_ACCOUNTS=true` and no admin.
 1. The agent runs `portego-upload service-key enroll <origin> --name <name>`.
    It generates a key pair, sends the public key, and prints an approval URL
    and an eight-letter code.
-2. An admin opens the URL. The page shows the name, the code, the key's
-   thumbprint (RFC 7638), and when the request was made. The admin checks that
-   the code matches the agent's terminal, picks a new `member` or `guest`
-   account or an existing account to give the key to, and approves.
+2. An admin opens the URL. The page shows the name, the code, and when the
+   request was made. The admin checks that the code matches the agent's
+   terminal, picks a new account or an existing account to give the key to,
+   and approves. Each existing account shows its status, because names are
+   not unique and giving the key to an active account locks out the agent
+   that uses it.
 3. The agent polls with a request signed by the new key, so only the holder of
    the key learns the client id. It then writes the private key to its key
    file.
@@ -88,7 +90,7 @@ not start with `SERVICE_ACCOUNTS=true` and no admin.
 An enrollment expires after 15 minutes. At most 10 can wait for approval at
 once, because the endpoint takes no authentication.
 
-Until teams exist, a `guest` service account sees what a member sees.
+A service account sees what a member sees.
 
 ### Renewal and expiry
 

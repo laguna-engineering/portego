@@ -15,7 +15,6 @@ const ENROLLMENT = {
   id: "enrollment-1",
   name: "Review runner",
   userCode: "BCDFGHJK",
-  thumbprint: "thumbprint-value",
   createdAt: new Date().toISOString(),
   expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
 };
@@ -25,7 +24,6 @@ function account(overrides: Partial<ServiceAccount> = {}): ServiceAccount {
     id: "account-1",
     clientId: "client-1",
     name: "Nightly digest",
-    kind: "member",
     approvedBy: { id: "admin-1", name: "An Admin" },
     createdAt: new Date().toISOString(),
     renewedAt: new Date().toISOString(),
@@ -36,7 +34,7 @@ function account(overrides: Partial<ServiceAccount> = {}): ServiceAccount {
 }
 
 /** Answers the approval page's calls and records what it sent to approve. */
-function serveApproval(sent: unknown[]) {
+function serveApproval(sent: unknown[], accounts: ServiceAccount[] = [account()]) {
   stubFetch((path, init) => {
     if (path === "/api/service-accounts/enrollments/enrollment-1/approval") {
       if (init?.method === "POST") {
@@ -45,48 +43,51 @@ function serveApproval(sent: unknown[]) {
       }
       return { body: { enrollment: ENROLLMENT } };
     }
-    if (path === "/api/service-accounts") return { body: { accounts: [account()] } };
+    if (path === "/api/service-accounts") return { body: { accounts } };
     return { status: 404, body: { error: { code: "NOT_FOUND", message: "No." } } };
   });
 }
 
 describe("the approval page", () => {
   // The admin compares this with the agent's terminal, which prints it the same way.
-  test("shows the code as the terminal prints it, and the key's thumbprint", async () => {
+  test("shows the code as the terminal prints it", async () => {
     serveApproval([]);
     render(<ServiceAccountApproval id="enrollment-1" onDone={() => {}} />);
     expect(await screen.findByText("BCDF-GHJK")).toBeDefined();
-    expect(screen.getByText("thumbprint-value")).toBeDefined();
   });
 
-  test("approves a new member account by default", async () => {
+  test("approves a new account by default", async () => {
     const sent: unknown[] = [];
     serveApproval(sent);
     render(<ServiceAccountApproval id="enrollment-1" onDone={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
     expect(await screen.findByText("Approved")).toBeDefined();
-    expect(sent).toEqual([{ kind: "member" }]);
-  });
-
-  test("can approve a guest instead", async () => {
-    const sent: unknown[] = [];
-    serveApproval(sent);
-    render(<ServiceAccountApproval id="enrollment-1" onDone={() => {}} />);
-    fireEvent.click(await screen.findByLabelText(/^Guest/));
-    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    await screen.findByText("Approved");
-    expect(sent).toEqual([{ kind: "guest" }]);
+    expect(sent).toEqual([{}]);
   });
 
   test("can give the key to an existing account, which re-enrolls it", async () => {
     const sent: unknown[] = [];
     serveApproval(sent);
     render(<ServiceAccountApproval id="enrollment-1" onDone={() => {}} />);
-    fireEvent.click(await screen.findByLabelText("Give Nightly digest this key"));
-    expect(screen.queryByLabelText(/^Guest/)).toBeNull();
+    fireEvent.click(await screen.findByLabelText("Give Nightly digest this key (active)"));
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     await screen.findByText("Approved");
     expect(sent).toEqual([{ accountId: "account-1" }]);
+  });
+
+  // Names are not unique, and giving the key to an active account locks out
+  // the agent that runs it.
+  test("tells accounts with the same name apart by their status", async () => {
+    serveApproval(
+      [],
+      [
+        account(),
+        account({ id: "account-2", disabledAt: new Date(Date.now() - 60_000).toISOString() }),
+      ],
+    );
+    render(<ServiceAccountApproval id="enrollment-1" onDone={() => {}} />);
+    expect(await screen.findByLabelText("Give Nightly digest this key (active)")).toBeDefined();
+    expect(screen.getByLabelText("Give Nightly digest this key (disabled)")).toBeDefined();
   });
 
   test("says so when the request expired", async () => {

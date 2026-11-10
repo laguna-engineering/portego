@@ -63,7 +63,7 @@ async function enrolled(path: string): Promise<void> {
               origin: server.origin,
               "content-type": "application/json",
             },
-            body: JSON.stringify({ kind: "member" }),
+            body: JSON.stringify({}),
           });
         }
         return response;
@@ -278,6 +278,93 @@ describe("service keys", () => {
     const { accessToken } = await serviceToken(path, dependencies());
     expect((await listTools(accessToken)).status).toBe(200);
   });
+
+  // An answer is most often lost when the network or the server stops
+  // answering, and the next attempt then fails too. The key the server took
+  // must survive both.
+  test("recovers when a lost renewal answer is followed by a failed retry", async () => {
+    const path = join(directory, "outage", "service-key.json");
+    await enrolled(path);
+    await age(path);
+    const lose = dependencies({
+      fetch: async (url, init) => {
+        const response = await fetch(url, init);
+        if (url.endsWith("/api/service-accounts/renew")) throw new Error("connection reset");
+        return response;
+      },
+    });
+    const down = dependencies({
+      fetch: async () => {
+        throw new Error("connection refused");
+      },
+    });
+    await expect(serviceToken(path, lose)).rejects.toThrow("connection reset");
+    const taken = (await readServiceKey(path))?.nextPrivateJwk?.x;
+    await expect(serviceToken(path, down)).rejects.toThrow("connection refused");
+    expect((await readServiceKey(path))?.nextPrivateJwk?.x).toBe(taken);
+
+    const { accessToken } = await serviceToken(path, dependencies());
+    expect((await listTools(accessToken)).status).toBe(200);
+  });
+
+  // A proxy can resend a request whose answer it lost, and whoever captures the
+  // request can send it first. Either way the server holds the agent's own new
+  // key, so the agent must take it up instead of reporting the key as revoked.
+  test("takes up its new key when a copy of the renewal arrived first", async () => {
+    const path = join(directory, "duplicate", "service-key.json");
+    await enrolled(path);
+    await age(path);
+    const twice = dependencies({
+      fetch: async (url, init) => {
+        if (url.endsWith("/api/service-accounts/renew")) await fetch(url, init);
+        return fetch(url, init);
+      },
+    });
+
+    const { accessToken } = await serviceToken(path, twice);
+    expect((await listTools(accessToken)).status).toBe(200);
+    expect((await readServiceKey(path))?.nextPrivateJwk).toBeUndefined();
+  });
+
+  // Under a wrong clock the server refuses every key, the pending one too.
+  // That must not make the agent drop the key the server still holds.
+  test("keeps its key through renewals refused under a wrong clock", async () => {
+    const path = join(directory, "skewed", "service-key.json");
+    await enrolled(path);
+    await age(path);
+    const before = await readServiceKey(path);
+    const skewed = dependencies({ now: () => Date.now() + 5 * 60 * 1000 });
+    await expect(serviceToken(path, skewed)).rejects.toBeInstanceOf(ServiceKeyRevokedError);
+    await expect(serviceToken(path, skewed)).rejects.toBeInstanceOf(ServiceKeyRevokedError);
+    expect((await readServiceKey(path))?.privateJwk.x).toBe(before?.privateJwk.x);
+
+    const { accessToken } = await serviceToken(path, dependencies());
+    expect((await listTools(accessToken)).status).toBe(200);
+  });
+
+  // Signed requests name the origin as their audience, and the server compares
+  // it with its own address. A mismatch would make every poll fail unseen.
+  test("refuses to enroll under an address the server does not call itself", async () => {
+    const alias = "https://alias.acme.example";
+    const path = join(directory, "alias", "service-key.json");
+    const viaAlias = dependencies({
+      fetch: (url, init) => fetch(url.replace(alias, server.origin), init),
+    });
+    await expect(enroll({ origin: alias, name: "Agent", path }, viaAlias)).rejects.toThrow(
+      `calls itself ${server.origin}`,
+    );
+  });
+
+  // Polling on would end in "Nobody approved" 15 minutes later, and an
+  // approval in the meantime would create an account whose key was never saved.
+  test("stops at once when the server refuses the signed poll", async () => {
+    const path = join(directory, "skewed-poll", "service-key.json");
+    const skewed = dependencies({ now: () => Date.now() + 5 * 60 * 1000 });
+    await expect(enroll({ origin: server.origin, name: "Agent", path }, skewed)).rejects.toThrow(
+      "refused the signed poll",
+    );
+    await expect(readFile(path)).rejects.toThrow();
+  });
 });
 
 describe("the stored token", () => {
@@ -309,5 +396,11 @@ describe("the stored token", () => {
   // Otherwise a busy agent would never renew its key while a token was stored.
   test("is not reused when the key is due to renew", () => {
     expect(storedTokenUsable(token, key, key.renewedAt + RENEW_AFTER_MS, 60)).toBe(false);
+  });
+
+  // The server may already hold the pending key, and then refuses this token.
+  test("is not reused while a renewal is unfinished", () => {
+    const pending = { kty: "OKP", crv: "Ed25519", x: "next", d: "secret" };
+    expect(storedTokenUsable(token, { ...key, nextPrivateJwk: pending }, now, 60)).toBe(false);
   });
 });

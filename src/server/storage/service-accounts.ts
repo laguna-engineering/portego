@@ -4,13 +4,11 @@ import { MCP_SCOPES } from "../auth/config.ts";
 import { SERVICE_ACCOUNT_EMAIL_DOMAIN } from "../auth/policy.ts";
 import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
 
-export type ServiceAccountKind = "member" | "guest";
-
 export type ServiceAccount = {
   userId: string;
   clientId: string;
   name: string;
-  kind: ServiceAccountKind;
+  /** The admin who last approved a key for the account. */
   approvedBy: string;
   approvedByName: string;
   /** Epoch ms, like every time below. */
@@ -32,7 +30,6 @@ export type Enrollment = {
   createdAt: number;
   expiresAt: number;
   approvedAt: number | null;
-  approvedBy: string | null;
 };
 
 export type Approval = {
@@ -43,7 +40,8 @@ export type Approval = {
   expiresAt: number;
   /** The MCP resource the OAuth client is linked to. */
   resource: string;
-  account: { create: { kind: ServiceAccountKind } } | { reenroll: string };
+  /** The account that gets the key, or null for a new one. */
+  accountId: string | null;
 };
 
 export type ServiceAccountStore = {
@@ -70,8 +68,6 @@ export type ServiceAccountStore = {
   list: () => ServiceAccount[];
   /** The OAuth client's stored key set, as Better Auth reads it. */
   clientJwks: (clientId: string) => string | null;
-  /** Records a renewal assertion. False when it was used before. */
-  spendAssertion: (id: string, expiresAt: number, now: number) => boolean;
   isServiceAccount: (userId: string) => boolean;
 };
 
@@ -175,7 +171,7 @@ export function createServiceAccountStore(database: Database): ServiceAccountSto
         const jwks = JSON.stringify({ keys: [JSON.parse(pending.publicJwk)] });
 
         let accountId: string;
-        if ("create" in approval.account) {
+        if (approval.accountId === null) {
           accountId = randomId();
           const clientId = randomId();
           const at = new Date(now).toISOString();
@@ -190,14 +186,13 @@ export function createServiceAccountStore(database: Database): ServiceAccountSto
           database
             .query(
               `insert into serviceAccounts
-                 (userId, clientId, name, kind, approvedBy, createdAt, renewedAt, expiresAt)
-               values (?, ?, ?, ?, ?, ?, ?, ?)`,
+                 (userId, clientId, name, approvedBy, createdAt, renewedAt, expiresAt)
+               values (?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
               accountId,
               clientId,
               pending.name,
-              approval.account.create.kind,
               approval.approvedBy,
               now,
               now,
@@ -209,14 +204,15 @@ export function createServiceAccountStore(database: Database): ServiceAccountSto
             now,
           );
         } else {
-          const existing = byUserId(approval.account.reenroll);
+          const existing = byUserId(approval.accountId);
           if (!existing) return null;
           accountId = existing.userId;
           database
             .query(
-              "update serviceAccounts set renewedAt = ?, expiresAt = ?, disabledAt = null where userId = ?",
+              `update serviceAccounts set approvedBy = ?, renewedAt = ?, expiresAt = ?, disabledAt = null
+               where userId = ?`,
             )
-            .run(now, approval.expiresAt, accountId);
+            .run(approval.approvedBy, now, approval.expiresAt, accountId);
           database
             .query(
               "update oauthClient set jwks = ?, disabled = 0, updatedAt = ? where clientId = ?",
@@ -225,10 +221,8 @@ export function createServiceAccountStore(database: Database): ServiceAccountSto
         }
 
         database
-          .query(
-            "update serviceAccountEnrollments set approvedAt = ?, approvedBy = ?, accountId = ? where id = ?",
-          )
-          .run(now, approval.approvedBy, accountId, pending.id);
+          .query("update serviceAccountEnrollments set approvedAt = ?, accountId = ? where id = ?")
+          .run(now, accountId, pending.id);
         return accountId;
       })();
       return userId === null ? null : byUserId(userId);
@@ -283,16 +277,6 @@ export function createServiceAccountStore(database: Database): ServiceAccountSto
         jwks: string | null;
       } | null;
       return row?.jwks ?? null;
-    },
-
-    spendAssertion(id, expiresAt, now) {
-      return database.transaction(() => {
-        database.query("delete from serviceAccountAssertions where expiresAt <= ?").run(now);
-        const inserted = database
-          .query("insert or ignore into serviceAccountAssertions (id, expiresAt) values (?, ?)")
-          .run(id, expiresAt);
-        return inserted.changes === 1;
-      })();
     },
 
     isServiceAccount(userId) {

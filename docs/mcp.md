@@ -150,8 +150,8 @@ seconds.
 
 The key renews through `POST /api/service-accounts/renew` with
 `{ clientId, publicJwk, assertion }`. The assertion is signed by the current
-key, with `aud` set to that URL, and an access token is not accepted in its
-place. `tools/portego-upload` does all of this itself; see
+key, with `aud` set to that URL and `next_jkt` set to the RFC 7638 thumbprint
+of `publicJwk`, and an access token is not accepted in its place. `tools/portego-upload` does all of this itself; see
 [Uploading from an agent that cannot spend a ticket](#uploading-from-an-agent-that-cannot-spend-a-ticket).
 
 ### Hosts and origins

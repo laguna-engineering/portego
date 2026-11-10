@@ -491,9 +491,9 @@ an admin's session and answer `FORBIDDEN` to anyone else.
 | `POST` | `/api/service-accounts/enrollments` | `{ name, publicJwk }`. Starts an enrollment; returns its `id`, `userCode`, `approvalUrl`, and `expiresAt` |
 | `GET` | `/api/service-accounts/enrollments/:id` | Polls it, with `Authorization: Bearer <JWT signed by the enrolled key>` (`iss` = the id, `aud` = this URL). `{ status: "pending" }` or `{ status: "approved", clientId }` |
 | `POST` | `/api/service-accounts/renew` | `{ clientId, publicJwk, assertion }`. Replaces the key; see [mcp.md](mcp.md#service-accounts) |
-| `GET` | `/api/service-accounts` | Every account, with its kind, last renewal, expiry, and whether it is disabled |
-| `GET` | `/api/service-accounts/enrollments/:id/approval` | The enrollment's name, code, key thumbprint, and times |
-| `POST` | `/api/service-accounts/enrollments/:id/approval` | `{ kind: "member" \| "guest" }` creates an account; `{ accountId }` gives an existing one the key |
+| `GET` | `/api/service-accounts` | Every account, with the admin who last approved its key, its last renewal, expiry, and whether it is disabled |
+| `GET` | `/api/service-accounts/enrollments/:id/approval` | The enrollment's name, code, and times |
+| `POST` | `/api/service-accounts/enrollments/:id/approval` | `{}` creates an account; `{ accountId }` gives an existing one the key |
 | `POST` | `/api/service-accounts/:id/disable` | Disables the account. Its key and tokens stop working at once |
 
 ## Errors

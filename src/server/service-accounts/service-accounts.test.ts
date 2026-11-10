@@ -18,6 +18,7 @@ import {
   LIST_TOOLS,
   poll,
   renew,
+  renewalAssertion,
   requestToken,
   sign,
 } from "./testing.ts";
@@ -29,8 +30,16 @@ const ADMIN = {
   name: "An Admin",
 };
 
+const SECOND_ADMIN = {
+  sub: "google-second-admin",
+  email: "second-admin@acme.example",
+  email_verified: true,
+  name: "Another Admin",
+};
+
 let server: LiveTestServer;
 let adminCookie: string;
+let secondAdminCookie: string;
 let memberCookie: string;
 /** Added to the service account clock, to move past an expiry. */
 let offset = 0;
@@ -38,10 +47,11 @@ let offset = 0;
 beforeAll(async () => {
   server = await createLiveTestServer({
     serviceAccounts: true,
-    admins: [ADMIN.email],
+    admins: [ADMIN.email, SECOND_ADMIN.email],
     now: () => Date.now() + offset,
   });
   adminCookie = await server.signIn(ADMIN);
+  secondAdminCookie = await server.signIn(SECOND_ADMIN);
   memberCookie = await server.signIn(WORKSPACE_USER);
 });
 
@@ -133,7 +143,7 @@ describe("approval", () => {
     expect(await (await poll(server, id, key.privateKey)).json()).toEqual({ status: "pending" });
   });
 
-  test("shows the admin the code and the key's thumbprint", async () => {
+  test("shows the admin the code the agent's terminal prints", async () => {
     const key = await agentKey();
     const created = (await (await enroll(server, key)).json()) as {
       id: string;
@@ -147,10 +157,9 @@ describe("approval", () => {
       await fetch(`${server.origin}/api/service-accounts/enrollments/${created.id}/approval`, {
         headers: { cookie: adminCookie },
       })
-    ).json()) as { enrollment: { userCode: string; thumbprint: string; name: string } };
+    ).json()) as { enrollment: { userCode: string; name: string } };
     expect(review.enrollment.userCode).toBe(created.userCode);
     expect(review.enrollment.userCode).toMatch(/^[B-DF-HJ-NP-TV-XZ]{8}$/);
-    expect(review.enrollment.thumbprint).toBeString();
     expect(review.enrollment.name).toBe("Review runner");
   });
 
@@ -223,18 +232,28 @@ describe("renewal", () => {
     expect((await requestToken(server, agent.clientId, agent.key.privateKey)).status).toBe(200);
   });
 
-  test("refuses a replayed renewal assertion", async () => {
+  // Whoever captures a renewal request in transit must not be able to put
+  // their own key in its place.
+  test("an assertion installs only the key it names, and only once", async () => {
     const agent = await enrolledAgent(server, adminCookie);
-    const url = `${server.origin}/api/service-accounts/renew`;
-    const assertion = await sign(agent.key.privateKey, {
+    const next = await agentKey();
+    const assertion = await renewalAssertion(server, agent, next);
+
+    expect((await renew(server, agent, await agentKey(), assertion)).status).toBe(400);
+    expect((await renew(server, agent, next, assertion)).status).toBe(200);
+    // The key that signed it is gone, so a replay fails on the signature.
+    expect((await renew(server, agent, next, assertion)).status).toBe(401);
+  });
+
+  test("refuses an assertion that names no key", async () => {
+    const agent = await enrolledAgent(server, adminCookie);
+    const unbound = await sign(agent.key.privateKey, {
       iss: agent.clientId,
       sub: agent.clientId,
-      aud: url,
+      aud: `${server.origin}/api/service-accounts/renew`,
     });
-    // A renewal that succeeds replaces the key, so its replay fails on the
-    // signature alone. One refused for keeping the key still spends the jti.
-    expect((await renew(server, agent, agent.key, assertion)).status).toBe(400);
-    expect((await renew(server, agent, await agentKey(), assertion)).status).toBe(401);
+    expect((await renew(server, agent, await agentKey(), unbound)).status).toBe(400);
+    expect((await requestToken(server, agent.clientId, agent.key.privateKey)).status).toBe(200);
   });
 
   // Two renewals signed by the same old key: only one may install its key.
@@ -317,6 +336,19 @@ describe("revocation", () => {
     expect((await callMcp(server, await accessToken(server, again), LIST_TOOLS)).status).toBe(200);
     expect((await requestToken(server, agent.clientId, agent.key.privateKey)).status).toBe(401);
   });
+
+  // Admins read the list to see who approved each account's current key.
+  test("re-enrollment records the admin who approved the new key", async () => {
+    const agent = await enrolledAgent(server, adminCookie);
+    await enrolledAgent(server, secondAdminCookie, { accountId: agent.userId });
+
+    const { accounts } = (await (
+      await fetch(`${server.origin}/api/service-accounts`, { headers: { cookie: adminCookie } })
+    ).json()) as { accounts: { id: string; approvedBy: { name: string } }[] };
+    expect(accounts.find((account) => account.id === agent.userId)?.approvedBy.name).toBe(
+      SECOND_ADMIN.name,
+    );
+  });
 });
 
 describe("keeping agents and people apart", () => {
@@ -380,7 +412,7 @@ describe("keeping agents and people apart", () => {
           id: string;
         }
       ).id;
-      const account = service.approve(enrollment.id, { kind: "member" }, adminId);
+      const account = service.approve(enrollment.id, {}, adminId);
       const userRow = () =>
         open.database.query(`select * from "user" where id = ?`).get(account.userId);
       const before = userRow();

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
 import {
   calculateJwkThumbprint,
   createLocalJWKSet,
@@ -9,11 +9,7 @@ import {
   jwtVerify,
 } from "jose";
 import { ServiceError } from "../artifacts/errors.ts";
-import type {
-  ServiceAccount,
-  ServiceAccountKind,
-  ServiceAccountStore,
-} from "../storage/service-accounts.ts";
+import type { ServiceAccount, ServiceAccountStore } from "../storage/service-accounts.ts";
 
 export const ENROLLMENT_LIFETIME_MS = 15 * 60 * 1000;
 export const MAX_PENDING_ENROLLMENTS = 10;
@@ -32,8 +28,6 @@ export type EnrollmentReview = {
   id: string;
   name: string;
   userCode: string;
-  /** RFC 7638 thumbprint of the key, so the admin can compare it with the terminal. */
-  thumbprint: string;
   createdAt: number;
   expiresAt: number;
 };
@@ -50,12 +44,13 @@ export type ServiceAccountService = {
     id: string,
     proof: string | null,
   ) => Promise<{ status: "pending" } | { status: "approved"; clientId: string }>;
-  review: (id: string) => Promise<EnrollmentReview>;
-  approve: (
-    id: string,
-    input: { kind?: unknown; accountId?: unknown },
-    adminId: string,
-  ) => ServiceAccount;
+  review: (id: string) => EnrollmentReview;
+  /** Creates an account, or gives the key to the account `accountId` names. */
+  approve: (id: string, input: { accountId?: unknown }, adminId: string) => ServiceAccount;
+  /**
+   * `assertion` is signed by the current key and names the new key's RFC 7638
+   * thumbprint in `next_jkt`.
+   */
   renew: (input: {
     clientId: unknown;
     publicJwk: unknown;
@@ -65,9 +60,6 @@ export type ServiceAccountService = {
   list: () => ServiceAccount[];
   /** The user a client_credentials access token acts as, or null to refuse it. */
   principal: (claims: JWTPayload) => string | null;
-  isServiceAccount: (userId: string) => boolean;
-  enrollmentUrl: (id: string) => string;
-  renewUrl: string;
 };
 
 export function parsePublicJwk(value: unknown): PublicJwk {
@@ -145,9 +137,6 @@ export function createServiceAccountService(options: {
   };
 
   return {
-    enrollmentUrl,
-    renewUrl,
-
     async enroll(input) {
       const name = typeof input.name === "string" ? input.name.trim() : "";
       if (name === "" || name.length > MAX_NAME_LENGTH) {
@@ -164,7 +153,6 @@ export function createServiceAccountService(options: {
         createdAt,
         expiresAt: createdAt + ENROLLMENT_LIFETIME_MS,
         approvedAt: null,
-        approvedBy: null,
       };
       if (!store.addEnrollment(enrollment, { maxPending: MAX_PENDING_ENROLLMENTS })) {
         throw new ServiceError(
@@ -195,7 +183,7 @@ export function createServiceAccountService(options: {
       return { status: "approved", clientId: account.clientId };
     },
 
-    async review(id) {
+    review(id) {
       const enrollment = pendingEnrollment(id);
       if (enrollment.approvedAt !== null) {
         throw new ServiceError("NOT_FOUND", "This enrollment was already approved.");
@@ -204,22 +192,17 @@ export function createServiceAccountService(options: {
         id: enrollment.id,
         name: enrollment.name,
         userCode: enrollment.userCode,
-        thumbprint: await calculateJwkThumbprint(JSON.parse(enrollment.publicJwk) as JWK),
         createdAt: enrollment.createdAt,
         expiresAt: enrollment.expiresAt,
       };
     },
 
     approve(id, input, adminId) {
-      let account: { create: { kind: ServiceAccountKind } } | { reenroll: string };
-      if (typeof input.accountId === "string") {
-        account = { reenroll: input.accountId };
-      } else if (input.kind === "member" || input.kind === "guest") {
-        account = { create: { kind: input.kind } };
-      } else {
+      const accountId = input.accountId ?? null;
+      if (accountId !== null && typeof accountId !== "string") {
         throw new ServiceError(
           "INVALID_INPUT",
-          'Send kind ("member" or "guest") for a new account, or accountId to re-enroll one.',
+          "Send accountId to give the key to an existing account, or nothing for a new one.",
         );
       }
       const at = now();
@@ -229,7 +212,7 @@ export function createServiceAccountService(options: {
         now: at,
         expiresAt: at + ACCOUNT_LIFETIME_MS,
         resource: options.mcpResource,
-        account,
+        accountId,
       });
       if (!approved) {
         throw new ServiceError(
@@ -258,13 +241,18 @@ export function createServiceAccountService(options: {
         subject: clientId,
         audience: renewUrl,
       });
-      if (!payload || typeof payload.jti !== "string" || payload.jti === "") throw invalidClient();
-      const assertionId = createHash("sha256").update(`${clientId}\n${payload.jti}`).digest("hex");
-      if (!store.spendAssertion(assertionId, (payload.exp ?? 0) * 1000, now()))
-        throw invalidClient();
-
+      if (!payload) throw invalidClient();
+      // The signature covers the new key's thumbprint, so a captured assertion
+      // can install no other key. That is why replays need no jti record.
+      const nextThumbprint = await calculateJwkThumbprint(publicJwk);
+      if (payload.next_jkt !== nextThumbprint) {
+        throw new ServiceError(
+          "INVALID_INPUT",
+          "The assertion's next_jkt must be the RFC 7638 thumbprint of publicJwk.",
+        );
+      }
       const current = await Promise.all(keys.keys.map((key) => calculateJwkThumbprint(key)));
-      if (current.includes(await calculateJwkThumbprint(publicJwk))) {
+      if (current.includes(nextThumbprint)) {
         throw new ServiceError("INVALID_INPUT", "Renewal needs a new key.");
       }
 
@@ -301,7 +289,5 @@ export function createServiceAccountService(options: {
       }
       return account.userId;
     },
-
-    isServiceAccount: (userId) => store.isServiceAccount(userId),
   };
 }
