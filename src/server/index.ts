@@ -9,6 +9,7 @@ import { parseEnv } from "./env.ts";
 import { createEventBus } from "./events/bus.ts";
 import { createMarkdownStore } from "./markdown/store.ts";
 import { createOrganizationService } from "./organization/service.ts";
+import { createServiceAccountService } from "./service-accounts/service.ts";
 import { createActivityStore } from "./storage/activity.ts";
 import { createArtifactStore } from "./storage/artifacts.ts";
 import { createCommentStore } from "./storage/comments.ts";
@@ -16,6 +17,7 @@ import { createEntryStore } from "./storage/entries.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 import { createProfileStore } from "./storage/profiles.ts";
 import { createSearchStore } from "./storage/search.ts";
+import { createServiceAccountStore } from "./storage/service-accounts.ts";
 import { createVardaOutbox } from "./storage/varda-outbox.ts";
 
 const env = parseEnv(Bun.env);
@@ -47,6 +49,14 @@ const artifacts = createArtifactService({
   ...(varda ? { varda } : {}),
 });
 
+const serviceAccounts = authConfig.serviceAccounts
+  ? createServiceAccountService({
+      store: createServiceAccountStore(database),
+      baseURL: authConfig.baseURL,
+      mcpResource: authConfig.mcp.resource,
+    })
+  : null;
+
 const app = createApp({
   serveClient: env.NODE_ENV === "production",
   clientDist: env.CLIENT_DIST,
@@ -60,6 +70,7 @@ const app = createApp({
   events,
   activity: createActivityStore({ database }),
   profiles: createProfileStore({ database }),
+  serviceAccounts,
   ...(varda
     ? {
         varda: {

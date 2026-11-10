@@ -261,8 +261,47 @@ version.
   panel shows it with "(guest)", and an artifact's page receives it as
   "<name> (guest)", so a guest cannot pass for a member there.
 
+## Service account keys
+
+With `SERVICE_ACCOUNTS=true`, an agent signs in with an Ed25519 key pair
+([authentication.md](authentication.md#service-accounts)).
+
+- The private key never crosses the network. Enrollment and renewal send the
+  public key, and every other request carries a short-lived JWT signed by the
+  private key. Portego stores public keys only.
+- A stolen key works until the real agent next renews, which is at most 24
+  hours while the agent runs. The renewal replaces the key on the server, and
+  the copy is refused from then on. If the thief renews first, the real agent
+  is refused instead and reports that its key was replaced. That is the signal
+  for an admin to disable the account and enroll the agent again.
+- A stolen access token works for at most an hour. It stops at the next
+  renewal, because the endpoint refuses a service account's token issued
+  before its key last changed, and at once when an admin disables the account.
+  It cannot renew the key: renewal accepts only an assertion signed by the
+  key.
+- A token assertion is single use. Better Auth records the `jti` of each
+  assertion the token endpoint accepts in its `oauthClientAssertion` table, so
+  a restart does not reopen a replay window. That table is never pruned and
+  grows by one row per token request, about 24 a day for each running agent.
+- A renewal assertion names the RFC 7638 thumbprint of the new key in
+  `next_jkt`, and the server refuses any other key. Someone who captures the
+  request can at most send it first, which installs the key the agent chose.
+  Once the key changes, the assertion fails on its signature, so renewal needs
+  no `jti` record.
+- The enrollment endpoint takes no authentication. An enrollment expires after
+  15 minutes, at most 10 can wait at once, and a poll returns the client id
+  only when it is signed by the enrolled key. Someone who only sees the
+  approval URL learns nothing they can use.
+- An approval link sent by someone else is the remaining risk: an attacker can
+  enroll a key and ask an admin to approve it. The approval page shows the
+  code the enrolling terminal printed, and the admin has to compare the two.
+
 ## Known limitations
 
+- Anyone who can reach the server can hold all 10 enrollment slots, 10
+  requests every 15 minutes, which blocks real enrollments while it lasts. A
+  deployment that sees this can rate-limit
+  `POST /api/service-accounts/enrollments` at its reverse proxy.
 - A preview URL is a capability. Anyone holding it can read that one artifact
   and its images for five minutes. It should be treated like any other
   short-lived link.

@@ -1,5 +1,5 @@
 import type { Env, EnvSource } from "../env.ts";
-import { type AdmissionPolicy, parseAllowedDomains } from "./policy.ts";
+import { type AdmissionPolicy, emailDomain, parseAllowedDomains } from "./policy.ts";
 import { type PublicProvider, type ResolvedProvider, resolveProviders } from "./providers/index.ts";
 
 /** Scopes an MCP client can hold. Reads and writes are separate on purpose. */
@@ -33,6 +33,9 @@ export type AuthConfig = {
   providers: ResolvedProvider[];
   admission: AdmissionPolicy;
   mcp: McpConfig;
+  /** Lowercased addresses of the people who manage access. */
+  admins: readonly string[];
+  serviceAccounts: boolean;
 };
 
 const COOKIE_PREFIX = "portego";
@@ -77,6 +80,10 @@ export function parseAuthConfig(env: Env, source: EnvSource): AuthConfig {
   errors.push(...resolved.errors);
 
   const admission = readAdmissionPolicy(source, errors);
+  const admins = readAdmins(source, errors);
+  if (env.SERVICE_ACCOUNTS && admins.length === 0) {
+    errors.push("SERVICE_ACCOUNTS=true needs PORTEGO_ADMINS, or nobody could approve an agent");
+  }
 
   const dynamicRegistration = readBoolean(source.MCP_ALLOW_DYNAMIC_CLIENT_REGISTRATION);
   if (!dynamicRegistration.ok) {
@@ -104,7 +111,22 @@ export function parseAuthConfig(env: Env, source: EnvSource): AuthConfig {
       consentPage: "/mcp/consent",
       allowDynamicClientRegistration: dynamicRegistration.ok ? dynamicRegistration.value : false,
     },
+    admins,
+    serviceAccounts: env.SERVICE_ACCOUNTS,
   };
+}
+
+function readAdmins(source: EnvSource, errors: string[]): string[] {
+  const admins: string[] = [];
+  for (const entry of readList(source.PORTEGO_ADMINS)) {
+    const domain = emailDomain(entry);
+    if (!domain || !parseAllowedDomains(domain).ok) {
+      errors.push(`PORTEGO_ADMINS contains "${entry}", which is not an email address`);
+    } else if (!admins.includes(entry)) {
+      admins.push(entry);
+    }
+  }
+  return admins;
 }
 
 function readAdmissionPolicy(source: EnvSource, errors: string[]): AdmissionPolicy {

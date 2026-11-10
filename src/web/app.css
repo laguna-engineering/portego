@@ -2542,6 +2542,12 @@ button.link {
   font-size: 0.75rem;
 }
 
+.profile-signout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
 @media (max-width: 36rem) {
   .profile-account {
     grid-template-columns: auto minmax(0, 1fr);
@@ -2549,6 +2555,7 @@ button.link {
 
   .profile-signout {
     grid-column: 1 / -1;
+    align-items: flex-start;
     padding-top: 1rem;
     border-top: 1px solid var(--line);
   }
@@ -2925,4 +2932,74 @@ button.link {
 .profile-name .profile-note {
   margin: 0.5rem 0 0;
   font-size: 0.75rem;
+}
+
+/* Service accounts ------------------------------------------------------- */
+
+.service-accounts {
+  display: grid;
+  gap: 1rem;
+}
+
+.service-accounts h1 {
+  margin: 0;
+}
+
+/* Scrolls sideways on a narrow screen instead of widening the page. */
+.service-account-table {
+  overflow-x: auto;
+}
+
+.service-account-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.service-account-table th,
+.service-account-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.service-account-table th {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+.service-account-approval fieldset {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  text-align: start;
+}
+
+.enrollment-facts .user-code {
+  font-family: var(--mono);
+  font-size: 1.5rem;
+  letter-spacing: 0.15em;
+}
+
+.enrollment-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.25rem 0.75rem;
+  margin: 0;
+  font-size: 0.85rem;
+  text-align: start;
+}
+
+.enrollment-facts dt {
+  color: var(--ink-muted);
+}
+
+.enrollment-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }

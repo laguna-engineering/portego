@@ -36,6 +36,7 @@
     "better-auth": "1.7.12",
     "diff": "9.0.0",
     "hono": "4.13.11",
+    "jose": "6.2.3",
     "marked": "18.0.13",
     "parse5": "8.0.1",
     "react": "19.2.8",
@@ -55,7 +56,6 @@
     "@types/react-dom": "19.2.7",
     "@vitejs/plugin-react": "6.1.1",
     "concurrently": "10.0.5",
-    "jose": "6.2.3",
     "playwright": "1.62.1",
     "typescript": "7.0.2",
     "vite": "8.2.4"

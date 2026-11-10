@@ -424,6 +424,34 @@ export const migrations: readonly Migration[] = [
       );
     `,
   },
+  {
+    // Agents that sign in with a key pair. Each account has a user row and an
+    // OAuth client, which hold its name and its one public key.
+    id: "023-service-accounts",
+    sql: `
+      create table serviceAccounts (
+        userId text not null primary key references "user" ("id"),
+        clientId text not null unique,
+        name text not null,
+        approvedBy text not null references "user" ("id"),
+        createdAt integer not null,
+        renewedAt integer not null,
+        expiresAt integer not null,
+        disabledAt integer
+      );
+      create table serviceAccountEnrollments (
+        id text not null primary key,
+        userCode text not null,
+        name text not null,
+        publicJwk text not null,
+        accountId text references serviceAccounts (userId),
+        createdAt integer not null,
+        expiresAt integer not null,
+        approvedAt integer
+      );
+      create index serviceAccountEnrollments_expires_at on serviceAccountEnrollments (expiresAt);
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

@@ -58,6 +58,16 @@ describe("admits", () => {
       false,
     );
   });
+
+  // A service account's user has an address in this domain. A provider that
+  // reported one as verified must not sign anybody in as that account.
+  test("refuses the service account domain under every policy", () => {
+    const identity = { email: "agent@Service.Invalid.", emailVerified: true };
+    expect(admits({ kind: "all-authenticated" }, identity).admitted).toBe(false);
+    expect(admits({ kind: "email-domains", domains: ["service.invalid"] }, identity).admitted).toBe(
+      false,
+    );
+  });
 });
 
 describe("parseAllowedDomains", () => {

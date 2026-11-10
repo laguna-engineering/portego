@@ -289,3 +289,57 @@ describe("failures", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeDefined();
   });
 });
+
+describe("service accounts", () => {
+  /** Signed in, with the feature and the admin flag as given. */
+  function session(options: { serviceAccounts: boolean; admin: boolean }) {
+    return (path: string) => {
+      if (path === "/api/me") {
+        return {
+          body: {
+            ...SIGNED_IN,
+            user: { ...SIGNED_IN.user, admin: options.admin },
+            features: { ...SIGNED_IN.features, serviceAccounts: options.serviceAccounts },
+          },
+        };
+      }
+      if (path === "/api/service-accounts") return { body: { accounts: [] } };
+      return signedIn(path);
+    };
+  }
+
+  test("an admin reaches the accounts from the profile", async () => {
+    window.history.replaceState(null, "", "/profile");
+    stubFetch(session({ serviceAccounts: true, admin: true }));
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Service accounts" }));
+    expect(await screen.findByRole("heading", { name: "Service accounts" })).toBeDefined();
+    expect(window.location.pathname).toBe("/settings/service-accounts");
+  });
+
+  test("someone who is not an admin is told so on an approval link", async () => {
+    window.history.replaceState(null, "", "/settings/service-accounts/approve/enrollment-1");
+    stubFetch(session({ serviceAccounts: true, admin: false }));
+    render(<App />);
+
+    expect(await screen.findByText(/Only an administrator/)).toBeDefined();
+  });
+
+  test("the pages do not exist when the deployment has service accounts off", async () => {
+    window.history.replaceState(null, "", "/settings/service-accounts");
+    stubFetch(session({ serviceAccounts: false, admin: true }));
+    render(<App />);
+
+    expect(await screen.findByText("That page does not exist.")).toBeDefined();
+  });
+
+  test("the profile offers no link when the deployment has service accounts off", async () => {
+    window.history.replaceState(null, "", "/profile");
+    stubFetch(session({ serviceAccounts: false, admin: true }));
+    render(<App />);
+
+    await screen.findByRole("heading", { name: "Profile" });
+    expect(screen.queryByRole("button", { name: "Service accounts" })).toBeNull();
+  });
+});

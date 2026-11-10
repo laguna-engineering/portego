@@ -23,6 +23,8 @@ code.
 | `GOOGLE_HOSTED_DOMAIN` | Google Workspace domain, enforced against the `hd` claim. |
 | `APP_URL` | Public origin. Callback URLs are built from it. |
 | `SESSION_SECRET` | Signing key. Required in production. |
+| `PORTEGO_ADMINS` | Addresses of the admins, comma separated. Required by `SERVICE_ACCOUNTS`. |
+| `SERVICE_ACCOUNTS` | `true` lets agents sign in with a key pair. See [Service accounts](#service-accounts). |
 
 Startup fails, with every problem listed at once, when an enabled provider has
 no credentials, when a provider id is unknown, or when the admission policy
@@ -45,7 +47,9 @@ An identity is admitted when all of these hold:
 - the provider returned an email address,
 - the provider reported that address as verified,
 - the domain of that address is on the allowlist, compared after lowercasing
-  and after removing a trailing dot.
+  and after removing a trailing dot,
+- the domain is not `service.invalid`, which only service accounts use. This
+  holds under `AUTH_ALLOW_ALL_AUTHENTICATED` too.
 
 Comparison is exact on the whole domain. `evil-acme.example`,
 `acme.example.evil`, and `mail.acme.example` are all different domains and
@@ -55,6 +59,67 @@ more than one `@` is refused instead of guessed at.
 The policy runs when an account is created and again every time a session is
 issued. Removing a domain from the allowlist therefore locks out accounts that
 were admitted under the previous configuration.
+
+## Service accounts
+
+`SERVICE_ACCOUNTS=true` lets an agent sign in without a browser. The agent
+holds an Ed25519 key pair, and the server stores only the public key. People
+still sign in with Google or OpenID Connect only. With the setting unset, the
+routes under `/api/service-accounts` do not exist and the MCP endpoint refuses
+every token that is not a person's.
+
+Only admins approve and disable service accounts. An admin is a signed-in
+person whose verified address is listed in `PORTEGO_ADMINS`. The server does
+not start with `SERVICE_ACCOUNTS=true` and no admin.
+
+### Enrollment
+
+1. The agent runs `portego-upload service-key enroll <origin> --name <name>`.
+   It generates a key pair, sends the public key, and prints an approval URL
+   and an eight-letter code.
+2. An admin opens the URL. The page shows the name, the code, and when the
+   request was made. The admin checks that the code matches the agent's
+   terminal, picks a new account or an existing account to give the key to,
+   and approves. Each existing account shows its status, because names are
+   not unique and giving the key to an active account locks out the agent
+   that uses it.
+3. The agent polls with a request signed by the new key, so only the holder of
+   the key learns the client id. It then writes the private key to its key
+   file.
+
+An enrollment expires after 15 minutes. At most 10 can wait for approval at
+once, because the endpoint takes no authentication.
+
+A service account sees what a member sees.
+
+### Renewal and expiry
+
+The agent replaces its key every day. A renewal is signed by the current key
+and replaces every other key on the account, so a copy of the key stops
+working at the next renewal by the real agent. An account whose key was not
+renewed for 7 days expires, and needs a new enrollment approved by an admin.
+Disabling an account in the admin page takes effect at the next request,
+including for access tokens already issued.
+
+### What a service account is
+
+Each account is a user row whose address is `<client id>@service.invalid`,
+unverified, with no linked provider account. `.invalid` is reserved (RFC 2606),
+so no provider can prove a person owns such an address, and admission refuses
+the domain under every policy. A service account never gets a browser session,
+even if its user row is changed: session creation refuses any user that has a
+service account row.
+
+Its admission is the service account row, not the email policy: the MCP
+endpoint accepts its token while the account is neither disabled nor expired.
+This is the one place where admission does not go through
+`src/server/auth/policy.ts`.
+
+The OAuth client of each account is written by Portego, not by Better Auth's
+admin endpoints, because those need a session and cannot replace a key.
+`src/server/auth/client-credentials.test.ts` compares the row with one that
+Better Auth's own registration endpoint writes, so an upgrade that changes the
+row's shape fails there.
 
 ## Google
 
@@ -221,5 +286,5 @@ without a public identity service.
   identity provider.
 - Session revocation is not immediate for the cookie's lifetime unless the
   session row is deleted; there is no separate revocation list.
-- Admission is deployment-wide. There are no roles, teams, or per-artifact
-  permissions.
+- Admission is deployment-wide. Admins approve and disable service accounts,
+  and that is the only role. There are no teams or per-artifact permissions.

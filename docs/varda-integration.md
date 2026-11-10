@@ -24,7 +24,9 @@ routes do not exist and no event is written.
 | `VARDA_GITHUB_WEBHOOK_SECRET` | The webhook secret of the GitHub App, at least 32 characters. Without it, the GitHub endpoint does not exist. Set without `VARDA_ACCOUNT`, the server refuses to start. |
 
 To find the user id, sign in as Varda's account and open `/api/me`: it is
-`user.id`.
+`user.id`. When Varda's account is a service account (see
+[authentication.md](authentication.md#service-accounts)), it cannot sign in;
+its user id is the `id` that `GET /api/service-accounts` lists for it.
 
 ## Which entry changes become events
 
@@ -94,7 +96,7 @@ scope. A session cookie is not enough.
 | --- | --- |
 | 200 | A `text/event-stream`, below. |
 | 401 | No valid bearer token. |
-| 403 | The token's user is not Varda's account, or is no longer admitted. |
+| 403 | The token's user is not Varda's account, or is no longer admitted. A service account is refused once it is disabled or expired, or when the token was issued before its key last changed. |
 | 404 | The integration is off. |
 
 ```

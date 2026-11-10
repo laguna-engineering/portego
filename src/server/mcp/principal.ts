@@ -1,5 +1,6 @@
 import type { Auth } from "../auth/auth.ts";
 import { type AdmissionPolicy, admits } from "../auth/policy.ts";
+import type { ServiceAccountService } from "../service-accounts/service.ts";
 import type { ResolvePrincipal } from "./routes.ts";
 
 /**
@@ -10,10 +11,21 @@ import type { ResolvePrincipal } from "./routes.ts";
 export function createPrincipalResolver(options: {
   auth: Auth;
   admission: AdmissionPolicy;
+  /** Null when service accounts are off. */
+  serviceAccounts: ServiceAccountService | null;
 }): ResolvePrincipal {
   return async (claims) => {
     const subject = typeof claims.sub === "string" ? claims.sub : null;
     if (!subject) return null;
+
+    // A client_credentials token names the client as its subject and carries
+    // no session. A person's token always has a session, and its subject is a
+    // user id. Admission for these tokens is the service account row, not the
+    // email policy in policy.ts.
+    if (options.serviceAccounts && claims.sid === undefined && subject === claims.azp) {
+      const userId = options.serviceAccounts.principal(claims);
+      return userId === null ? null : { userId };
+    }
 
     const context = await options.auth.$context;
     const user = await context.internalAdapter.findUserById(subject);

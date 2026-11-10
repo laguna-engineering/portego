@@ -50,7 +50,8 @@ export function vardaRoutes(
   let closeStream: (() => void) | null = null;
 
   // Only a bearer token counts: a request with a session cookie and no token
-  // gets 401. The admission policy runs again on the token's user.
+  // gets 401. `resolvePrincipal` checks the token's user again: a person
+  // against the admission policy, a service account against its account row.
   const asVarda = (
     c: Context<AppEnv>,
     handler: (request: Request, claims: JWTPayload) => Promise<Response>,

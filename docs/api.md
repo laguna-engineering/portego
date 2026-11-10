@@ -22,7 +22,9 @@ has the link, without a session; see [Public links](#public-links).
 check an upload before sending it, `features.privateArtifacts`, which is
 false when the deployment turned private artifacts off,
 `features.publicLinks`, which is true when the deployment turned public links
-on, and the deployment's `appName`, which names the root of the folder tree.
+on, `features.serviceAccounts`, which is true when the deployment turned
+service accounts on, and the deployment's `appName`, which names the root of
+the folder tree. `user.admin` is true for a person listed in `PORTEGO_ADMINS`.
 
 ## Endpoints
 
@@ -493,6 +495,23 @@ The bytes are untrusted HTML, so this origin never offers them as a document
 to render. The isolated content host does that, over a short-lived preview URL
 that #6 adds.
 
+## Service accounts
+
+These routes exist only with `SERVICE_ACCOUNTS=true`
+([authentication.md](authentication.md#service-accounts)). The first three take
+no session: each is checked by a signature from the agent's key. The rest need
+an admin's session and answer `FORBIDDEN` to anyone else.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/service-accounts/enrollments` | `{ name, publicJwk }`. Starts an enrollment; returns its `id`, `userCode`, `approvalUrl`, and `expiresAt` |
+| `GET` | `/api/service-accounts/enrollments/:id` | Polls it, with `Authorization: Bearer <JWT signed by the enrolled key>` (`iss` = the id, `aud` = this URL). `{ status: "pending" }` or `{ status: "approved", clientId }` |
+| `POST` | `/api/service-accounts/renew` | `{ clientId, publicJwk, assertion }`. Replaces the key; see [mcp.md](mcp.md#service-accounts) |
+| `GET` | `/api/service-accounts` | Every account, with the admin who last approved its key, its last renewal, expiry, and whether it is disabled |
+| `GET` | `/api/service-accounts/enrollments/:id/approval` | The enrollment's name, code, and times |
+| `POST` | `/api/service-accounts/enrollments/:id/approval` | `{}` creates an account; `{ accountId }` gives an existing one the key |
+| `POST` | `/api/service-accounts/:id/disable` | Disables the account. Its key and tokens stop working at once |
+
 ## Errors
 
 Every failure has the same shape:
@@ -513,7 +532,8 @@ Every failure has the same shape:
 | `UNSUPPORTED_CONTENT` | 400 | Not valid UTF-8, not an HTML document, or an image that is not PNG, JPEG, GIF, WebP, or AVIF. |
 | `FILE_TOO_LARGE` | 413 | Over `ARTIFACT_MAX_BYTES`, an image over 10 MiB, or images over `ARTIFACT_IMAGES_MAX_BYTES`. |
 | `INVALID_CURSOR` | 400 | The pagination cursor is not one we issued. |
-| `RATE_LIMITED` | 429 | Too many entry changes in the last minute. |
+| `RATE_LIMITED` | 429 | Too many entry changes in the last minute, or too many enrollments waiting. |
+| `INVALID_CLIENT` | 401 | A service account's key was replaced, or the account is disabled or expired. Retrying with the same key cannot work. |
 | `CONTENT_MISSING` | 500 | The metadata exists but its bytes do not. |
 | `INTERNAL` | 500 | An unexpected failure. Nothing the caller can fix. |
 

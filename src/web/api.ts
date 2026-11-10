@@ -12,6 +12,8 @@ export type User = {
   image: string | null;
   /** The URL of the avatar the user uploaded, or null if they have none. */
   avatar: string | null;
+  /** Named in PORTEGO_ADMINS. */
+  admin?: boolean;
 };
 
 export type Provider = { id: string; label: string };
@@ -138,7 +140,7 @@ export type Session = {
   user: User;
   limits: { maxUploadBytes: number };
   /** Optional features the deployment turned on. */
-  features: { privateArtifacts: boolean; publicLinks: boolean };
+  features: { privateArtifacts: boolean; publicLinks: boolean; serviceAccounts?: boolean };
   appName: string;
 };
 
@@ -396,6 +398,62 @@ export async function clearSharedEntry(shareToken: string, guest: Guest, key: st
       res.status,
     );
   }
+}
+
+export type ServiceAccount = {
+  id: string;
+  clientId: string;
+  name: string;
+  /** The admin who last approved a key for the account. */
+  approvedBy: { id: string; name: string };
+  createdAt: string;
+  /** The last time the key changed. */
+  renewedAt: string;
+  expiresAt: string;
+  disabledAt: string | null;
+};
+
+/** A key an agent sent, waiting for an admin. */
+export type Enrollment = {
+  id: string;
+  name: string;
+  userCode: string;
+  createdAt: string;
+  expiresAt: string;
+};
+
+export function fetchServiceAccounts(): Promise<ServiceAccount[]> {
+  return request<{ accounts: ServiceAccount[] }>("/api/service-accounts").then(
+    (body) => body.accounts,
+  );
+}
+
+export function fetchEnrollment(id: string): Promise<Enrollment> {
+  return request<{ enrollment: Enrollment }>(
+    `/api/service-accounts/enrollments/${encodeURIComponent(id)}/approval`,
+  ).then((body) => body.enrollment);
+}
+
+/** `accountId` gives an existing account the new key; without it, a new account is created. */
+export function approveEnrollment(
+  id: string,
+  decision: { accountId?: string },
+): Promise<ServiceAccount> {
+  return request<{ account: ServiceAccount }>(
+    `/api/service-accounts/enrollments/${encodeURIComponent(id)}/approval`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(decision),
+    },
+  ).then((body) => body.account);
+}
+
+export function disableServiceAccount(id: string): Promise<ServiceAccount> {
+  return request<{ account: ServiceAccount }>(
+    `/api/service-accounts/${encodeURIComponent(id)}/disable`,
+    { method: "POST" },
+  ).then((body) => body.account);
 }
 
 /** Without `parentId` the folder is created at the top level. */

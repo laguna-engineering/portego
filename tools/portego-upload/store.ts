@@ -8,6 +8,8 @@ export type Token = {
   refreshToken?: string;
   /** Unix seconds. */
   expiresAt: number;
+  /** The public key (`x`) of the service key that got this token, if one did. */
+  keyId?: string;
 };
 
 export type Store = {

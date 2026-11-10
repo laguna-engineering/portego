@@ -326,6 +326,7 @@ export function Profile({
   onDisplayNameChange,
   onSignOut,
   onOpenArtifact,
+  onOpenServiceAccounts,
 }: {
   userId: string;
   email: string;
@@ -336,6 +337,8 @@ export function Profile({
   onDisplayNameChange: (names: DisplayName) => void;
   onSignOut: () => void;
   onOpenArtifact: (id: string, target: ArtifactTarget) => void;
+  /** Set for an admin when the deployment has service accounts. */
+  onOpenServiceAccounts?: () => void;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -425,6 +428,11 @@ export function Profile({
           />
         </div>
         <div className="profile-signout">
+          {onOpenServiceAccounts ? (
+            <button type="button" onClick={onOpenServiceAccounts}>
+              Service accounts
+            </button>
+          ) : null}
           <button type="button" onClick={onSignOut}>
             Sign out
           </button>

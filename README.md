@@ -186,6 +186,8 @@ name, logos, and colors.
 | `OIDC_SCOPES`    | `openid profile email` | Scopes the OIDC provider is asked for. |
 | `OIDC_LABEL`     | `Single sign-on` | What the sign-in page calls the OIDC provider. |
 | `MCP_ALLOW_DYNAMIC_CLIENT_REGISTRATION` | `false` | Let any caller register an OAuth client. |
+| `PORTEGO_ADMINS` | none           | Addresses of the admins, comma separated. Required when `SERVICE_ACCOUNTS=true`. |
+| `SERVICE_ACCOUNTS` | `false`      | `true` lets an agent sign in with a key pair that an admin approved. See [docs/authentication.md](docs/authentication.md#service-accounts). |
 
 ## Layout
 
@@ -196,6 +198,7 @@ src/server/artifacts/ Artifact service, HTTP routes, upload validation
 src/server/markdown/ HTML to Markdown conversion and its cache
 src/server/mcp/    MCP tools, endpoint, and token principal mapping
 src/server/preview/ Preview tokens, isolated content responses
+src/server/service-accounts/ Agent enrollment, key renewal, and their routes
 src/server/storage/ Artifact metadata, file storage, migrations
 src/web/            React client, views, and Vite entry point
 plugins/            Claude Code plugin skills and metadata

@@ -27,6 +27,9 @@ logs/
 .vite/
 coverage/
 
+# Plans written for a piece of work. They stay on the machine that wrote them.
+docs/plans/
+
 # Browser test output
 test-results/
 playwright-report/
