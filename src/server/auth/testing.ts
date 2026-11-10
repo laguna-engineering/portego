@@ -47,6 +47,7 @@ export type TestAuthOptions = {
   providers?: ResolvedProvider[];
   admins?: string[];
   serviceAccounts?: boolean;
+  teams?: boolean;
 };
 
 /** An auth instance backed by a throwaway in-memory database. */
@@ -97,6 +98,7 @@ export async function createTestAuth(
     },
     admins: options.admins ?? [],
     serviceAccounts: options.serviceAccounts ?? false,
+    teams: options.teams ?? false,
   };
 
   const database = options.database ?? new Database(":memory:");

@@ -36,6 +36,7 @@ export type AuthConfig = {
   /** Lowercased addresses of the people who manage access. */
   admins: readonly string[];
   serviceAccounts: boolean;
+  teams: boolean;
 };
 
 const COOKIE_PREFIX = "portego";
@@ -84,6 +85,9 @@ export function parseAuthConfig(env: Env, source: EnvSource): AuthConfig {
   if (env.SERVICE_ACCOUNTS && admins.length === 0) {
     errors.push("SERVICE_ACCOUNTS=true needs PORTEGO_ADMINS, or nobody could approve an agent");
   }
+  if (env.TEAMS && admins.length === 0) {
+    errors.push("TEAMS=true needs PORTEGO_ADMINS, or nobody could manage teams");
+  }
 
   const dynamicRegistration = readBoolean(source.MCP_ALLOW_DYNAMIC_CLIENT_REGISTRATION);
   if (!dynamicRegistration.ok) {
@@ -113,6 +117,7 @@ export function parseAuthConfig(env: Env, source: EnvSource): AuthConfig {
     },
     admins,
     serviceAccounts: env.SERVICE_ACCOUNTS,
+    teams: env.TEAMS,
   };
 }
 

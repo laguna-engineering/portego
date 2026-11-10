@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { EVERY_FOLDER, type FolderScope } from "../access/reader.ts";
 import {
   readContent,
   readImage,
@@ -8,6 +9,7 @@ import {
   writeImage,
 } from "./content.ts";
 import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
+import { READABLE, readableBy } from "./readable.ts";
 import { matchingArtifactIds } from "./search.ts";
 import { follow } from "./subscriptions.ts";
 
@@ -43,6 +45,7 @@ export type Artifact = {
   visibility: ArtifactVisibility;
   /** The secret in the artifact's public link. Null when it has none. A private artifact has none. */
   shareToken: string | null;
+  folderId: string | null;
   /** How many versions exist. The current one is the highest numbered. */
   versionCount: number;
   currentVersionId: string;
@@ -101,6 +104,8 @@ export type CreateArtifactInput = {
   entrySchema?: string | null;
   images?: VersionImageInput[];
   visibility?: ArtifactVisibility;
+  /** Already checked by the caller. */
+  folderId?: string | null;
   /** Taken from the session by the caller. Never from the request body. */
   createdBy: string;
   /** Made in the web app, not by an agent or a ticket. */
@@ -171,6 +176,8 @@ export type ListOptions = {
   includeArchived?: boolean;
   /** Other people's private artifacts are left out. Null leaves out every private one. */
   viewerId: string | null;
+  /** Artifacts in other folders are left out. Every folder when absent. */
+  folderScope?: FolderScope;
 };
 
 export type ListResult = { items: Artifact[]; nextCursor: string | null };
@@ -213,6 +220,7 @@ type Row = {
   archivedBy: string | null;
   visibility: ArtifactVisibility;
   shareToken: string | null;
+  folderId: string | null;
   versionCount: number;
   currentVersionId: string;
 };
@@ -240,9 +248,6 @@ const SELECT_ARTIFACT = `
     (select id from artifactVersions where artifactVersions.artifactId = artifacts.id
       order by number desc limit 1) as currentVersionId
   from artifacts join "user" on "user".id = artifacts.createdBy ${JOIN_DISPLAY_NAME}`;
-
-/** Takes the viewer's id, or null for nobody, as its one parameter. */
-export const VISIBLE = "(artifacts.visibility = 'shared' or artifacts.createdBy = ?)";
 
 const SELECT_VERSION = `
   select artifactVersions.*, ${USER_NAME} as createdByName, "user".email as createdByEmail
@@ -323,7 +328,7 @@ export type ArtifactStore = {
    * archived and that `viewerId` can see, so a re-upload of a document lands
    * on it as a new version.
    */
-  findByTitle: (title: string, viewerId: string) => Artifact | null;
+  findByTitle: (title: string, viewerId: string, folderScope?: FolderScope) => Artifact | null;
   /** Records the new status and who set it. Null when the artifact is gone. */
   setStatus: (
     id: string,
@@ -352,7 +357,7 @@ export type ArtifactStore = {
   list: (options: ListOptions) => ListResult;
   get: (id: string) => Artifact | null;
   /** Who may read the artifact, from its row alone. Null when it does not exist. */
-  access: (id: string) => Pick<Artifact, "visibility" | "createdBy"> | null;
+  access: (id: string) => Pick<Artifact, "visibility" | "createdBy" | "folderId"> | null;
   /** Null when no such artifact exists. Throws when its bytes are gone. */
   readContent: (id: string) => Promise<{ artifact: Artifact; content: Uint8Array } | null>;
   /** Null when no such version exists. Throws when its bytes are gone. */
@@ -492,8 +497,8 @@ export function createArtifactStore(options: {
 
     access(id) {
       return database
-        .query("select visibility, createdBy from artifacts where id = ?")
-        .get(id) as Pick<Artifact, "visibility" | "createdBy"> | null;
+        .query("select visibility, createdBy, folderId from artifacts where id = ?")
+        .get(id) as Pick<Artifact, "visibility" | "createdBy" | "folderId"> | null;
     },
 
     async create(input) {
@@ -512,8 +517,8 @@ export function createArtifactStore(options: {
             .query(
               `insert into artifacts
                  (id, title, description, originalFilename, storageKey, sha256, byteSize,
-                  createdBy, createdAt, updatedAt, visibility)
-               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  createdBy, createdAt, updatedAt, visibility, folderId)
+               values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
               id,
@@ -527,6 +532,7 @@ export function createArtifactStore(options: {
               now,
               now,
               input.visibility ?? "shared",
+              input.folderId ?? null,
             );
           insertVersion().run(
             id,
@@ -642,14 +648,14 @@ export function createArtifactStore(options: {
       return rows.map(toVersion);
     },
 
-    findByTitle(title, viewerId) {
+    findByTitle(title, viewerId, folderScope = EVERY_FOLDER) {
       const row = database
         .query(
           `${SELECT_ARTIFACT} where artifacts.title = ? and artifacts.archivedAt is null
-             and ${VISIBLE}
+             and ${READABLE}
            order by artifacts.updatedAt desc, artifacts.id desc limit 1`,
         )
-        .get(title, viewerId) as Row | null;
+        .get(title, ...readableBy(viewerId, folderScope)) as Row | null;
       return row ? toArtifact(row) : null;
     },
 
@@ -748,8 +754,11 @@ export function createArtifactStore(options: {
       const cursor = listOptions.cursor ? decodeCursor(listOptions.cursor, sort) : null;
       const search = listOptions.query?.trim();
 
-      const conditions: string[] = [VISIBLE];
-      const parameters: (string | number | null)[] = [listOptions.viewerId];
+      const conditions: string[] = [READABLE];
+      const parameters: (string | number | null)[] = readableBy(
+        listOptions.viewerId,
+        listOptions.folderScope ?? EVERY_FOLDER,
+      );
       if (cursor) {
         const beyond = order.direction === "desc" ? "<" : ">";
         conditions.push(

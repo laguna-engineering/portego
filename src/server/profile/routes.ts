@@ -1,5 +1,6 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { type AccessService, OPEN_ACCESS } from "../access/service.ts";
 import { ServiceError } from "../artifacts/errors.ts";
 import { detectImageType } from "../artifacts/images.ts";
 import { readJson } from "../artifacts/routes.ts";
@@ -110,18 +111,24 @@ export function profileRoutes(store: ProfileStore, options: { now?: () => number
 }
 
 /** Any member's profile, as another signed-in member sees it. */
-export function userRoutes(store: ProfileStore) {
+export function userRoutes(store: ProfileStore, options: { access?: AccessService } = {}) {
+  const access = options.access ?? OPEN_ACCESS;
   const routes = new Hono<AppEnv>();
   routes.use("*", requireUser);
 
-  const person = (id: string) => {
+  // A guest knows only the people whose work they can read.
+  const person = (c: Context<AppEnv>) => {
+    const userId = currentUser(c).id;
+    const viewer = access.reader({ userId });
+    const id = c.req.param("id") ?? "";
     const found = store.person(id);
-    if (!found) throw new ServiceError("NOT_FOUND", "There is no such member.");
-    return found;
+    const hidden = viewer.guest && id !== userId && !store.workedOnReadable(id, userId, viewer);
+    if (!found || hidden) throw new ServiceError("NOT_FOUND", "There is no such member.");
+    return { ...found, viewer };
   };
 
   routes.get("/:id", (c) => {
-    const { id, name, joinedAt } = person(c.req.param("id"));
+    const { id, name, joinedAt, viewer } = person(c);
     const updatedAt = store.avatarUpdatedAt(id);
     return c.json({
       user: {
@@ -131,17 +138,17 @@ export function userRoutes(store: ProfileStore) {
         avatar:
           updatedAt === null ? null : `/api/users/${encodeURIComponent(id)}/avatar?v=${updatedAt}`,
       },
-      artifactCount: store.artifactCount(id, currentUser(c).id),
+      artifactCount: store.artifactCount(id, currentUser(c).id, viewer),
     });
   });
 
   routes.get("/:id/avatar", (c) => {
-    const { id } = person(c.req.param("id"));
+    const { id } = person(c);
     return serveAvatar(store, id, "This member has no avatar.");
   });
 
   routes.get("/:id/activity", (c) => {
-    const { id } = person(c.req.param("id"));
+    const { id, viewer } = person(c);
     const kindParam = c.req.query("kind");
     const kind = HISTORY_KINDS.includes(kindParam as HistoryKind)
       ? (kindParam as HistoryKind)
@@ -150,6 +157,7 @@ export function userRoutes(store: ProfileStore) {
     const { entries, total } = store.history({
       userId: id,
       viewerId: currentUser(c).id,
+      folderScope: viewer,
       kind,
       offset: page * HISTORY_PAGE_SIZE,
       limit: HISTORY_PAGE_SIZE,

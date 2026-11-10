@@ -46,7 +46,8 @@ const metadataShape = {
   originalFilename: z.string(),
   sha256: z.string(),
   byteSize: z.number().int(),
-  creator: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+  // A guest gets no one's email address.
+  creator: z.object({ id: z.string(), name: z.string(), email: z.string().nullable() }),
   createdAt: z.string(),
   updatedAt: z.string(),
   status: z.enum(["open", "solved"]),
@@ -67,7 +68,8 @@ const versionShape = {
   originalFilename: z.string(),
   sha256: z.string(),
   byteSize: z.number().int(),
-  creator: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+  // A guest gets no one's email address.
+  creator: z.object({ id: z.string(), name: z.string(), email: z.string().nullable() }),
   createdAt: z.string(),
 };
 
@@ -243,7 +245,7 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
     },
     async ({ cursor, sort, limit, query, status, folderId, tagIds, tagMatch, includeArchived }) => {
       try {
-        context.organization.validateListFilters({ folderId, tagIds });
+        context.organization.validateListFilters({ folderId, tagIds }, context.userId);
         const page = context.service.list(viewer, {
           cursor: cursor ?? null,
           sort: sort ?? null,
@@ -312,7 +314,7 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
     },
     async ({ query, folderId, artifactId, includeArchived }) => {
       try {
-        context.organization.validateListFilters({ folderId });
+        context.organization.validateListFilters({ folderId }, context.userId);
         const results = context.service.search(viewer, {
           query,
           folderId: folderId ?? null,
@@ -680,7 +682,7 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
             id: z.string(),
             body: z.string(),
             createdAt: z.string(),
-            author: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+            author: z.object({ id: z.string(), name: z.string(), email: z.string().nullable() }),
             anchor: z
               .object({ quote: z.string(), prefix: z.string(), suffix: z.string() })
               .nullable(),
@@ -970,7 +972,7 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
     async ({ id }) => {
       requireWriteScope(context, "not manage folders");
       try {
-        context.organization.deleteFolder(id);
+        context.organization.deleteFolder(id, context.userId);
         return asJson({ deleted: true });
       } catch (error) {
         return refuse(error);
@@ -1047,7 +1049,7 @@ export function registerArtifactTools(server: McpServer, context: ToolContext): 
     async ({ id }) => {
       requireWriteScope(context, "not manage tags");
       try {
-        context.organization.deleteTag(id);
+        context.organization.deleteTag(id, context.userId);
         return asJson({ deleted: true });
       } catch (error) {
         return refuse(error);

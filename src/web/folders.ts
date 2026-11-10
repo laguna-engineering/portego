@@ -24,8 +24,10 @@ export function sameName(a: string, b: string): boolean {
   return a.localeCompare(b, undefined, { sensitivity: "accent" }) === 0;
 }
 
+type FolderName = Pick<Folder, "id" | "name" | "parentId">;
+
 /** A folder's name after its ancestors', e.g. "Lampo › Launch". */
-export function folderPath(folder: Folder, folders: Folder[]): string {
+export function folderPath(folder: FolderName, folders: FolderName[]): string {
   const byId = new Map(folders.map((other) => [other.id, other]));
   const names = [folder.name];
   let parent = folder.parentId ? byId.get(folder.parentId) : undefined;

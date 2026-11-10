@@ -1,5 +1,14 @@
 import type { Database } from "bun:sqlite";
-import { ROOT_FOLDER_ID, VISIBLE } from "./artifacts.ts";
+import type { Reader } from "../access/reader.ts";
+import { ROOT_FOLDER_ID } from "./artifacts.ts";
+import {
+  foldersReadableBy,
+  READABLE,
+  readableBy,
+  readableFolder,
+  TAG_SEEN,
+  tagSeenBy,
+} from "./readable.ts";
 
 /** The most words a query uses. The rest are ignored. */
 const MAX_QUERY_WORDS = 8;
@@ -58,7 +67,7 @@ const ORDER: Record<SearchKind, string> = {
 };
 
 export type SearchScope = {
-  viewerId: string | null;
+  reader: Reader;
   /** Artifacts filed directly in this folder, or in none for `ROOT_FOLDER_ID`. */
   folderId?: string | null;
   artifactId?: string | null;
@@ -66,8 +75,8 @@ export type SearchScope = {
 };
 
 function scopeConditions(scope: SearchScope) {
-  const conditions = [VISIBLE];
-  const parameters: (string | null)[] = [scope.viewerId];
+  const conditions = [READABLE];
+  const parameters: (string | number | null)[] = readableBy(scope.reader.userId, scope.reader);
   if (scope.folderId === ROOT_FOLDER_ID) {
     conditions.push("artifacts.folderId is null");
   } else if (scope.folderId) {
@@ -165,7 +174,8 @@ export type SearchStore = {
 export function createSearchStore(options: { database: Database }): SearchStore {
   const { database } = options;
 
-  // A tag or folder with no artifact in scope still matches, with a count of 0.
+  // A tag or folder with no artifact in scope still matches, with a count of 0,
+  // when the reader can see it at all.
   const names =
     (table: "tags" | "folders") => (query: string, scope: SearchScope, limit: number) => {
       const words = queryWords(query);
@@ -178,15 +188,24 @@ export function createSearchStore(options: { database: Database }): SearchStore 
                on artifacts.id = artifactTags.artifactId and ${inScope})
              on artifactTags.tagId = tags.id`
           : `left join artifacts on artifacts.folderId = folders.id and ${inScope}`;
+      const seen =
+        table === "tags"
+          ? { sql: TAG_SEEN, parameters: tagSeenBy(scope.reader) }
+          : { sql: readableFolder("folders.id"), parameters: foldersReadableBy(scope.reader) };
       // Words hold only letters and digits, so none is a LIKE wildcard.
       return database
         .query(
           `select ${table}.id, ${table}.name, count(artifacts.id) as count
          from ${table} ${filed}
-         where ${words.map(() => `${table}.name like ?`).join(" and ")}
+         where ${seen.sql} and ${words.map(() => `${table}.name like ?`).join(" and ")}
          group by ${table}.id order by count desc, ${table}.name collate nocase limit ?`,
         )
-        .all(...parameters, ...words.map((word) => `%${word}%`), limit) as NameHit[];
+        .all(
+          ...parameters,
+          ...seen.parameters,
+          ...words.map((word) => `%${word}%`),
+          limit,
+        ) as NameHit[];
     };
 
   return {

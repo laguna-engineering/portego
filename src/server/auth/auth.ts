@@ -7,6 +7,7 @@ import { jwt } from "better-auth/plugins";
 import { type GenericOAuthConfig, genericOAuth } from "better-auth/plugins/generic-oauth";
 import type { BetterAuthOptions, BetterAuthPlugin } from "better-auth/types";
 import { createServiceAccountStore } from "../storage/service-accounts.ts";
+import { createTeamStore } from "../storage/teams.ts";
 import { fetchClientMetadataResource } from "./client-metadata.ts";
 import { type AuthConfig, MCP_SCOPES, REFRESH_SCOPE } from "./config.ts";
 import { admits, type Identity } from "./policy.ts";
@@ -63,9 +64,11 @@ export function createAuth({ config, database, validateSchema = true }: CreateAu
   );
 
   const serviceAccounts = createServiceAccountStore(database);
+  const teams = config.teams ? createTeamStore(database) : null;
 
-  const refuseUnlessAdmitted = (identity: Identity, stage: string) => {
-    const decision = admits(config.admission, identity);
+  const refuseUnlessAdmitted = (identity: Identity & { id?: string }, stage: string) => {
+    const invited = teams?.invited(identity, Date.now()) ?? false;
+    const decision = admits(config.admission, identity, invited);
     if (decision.admitted) return;
     // The reason names the policy, not the person. It goes to the server log;
     // the browser gets a generic refusal.
@@ -155,6 +158,10 @@ export function createAuth({ config, database, validateSchema = true }: CreateAu
                 message: "This account is not allowed to use this service.",
               });
             }
+            // A new or existing user's first session after an invitation. The
+            // invitation makes them a guest unless the email policy alone
+            // admits them, and adds them to its teams.
+            teams?.acceptInvitations(user, admits(config.admission, user).admitted, Date.now());
           },
         },
       },
