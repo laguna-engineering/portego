@@ -6,7 +6,9 @@ import {
   type Enrollment,
   fetchEnrollment,
   fetchServiceAccounts,
+  fetchTeams,
   type ServiceAccount,
+  type Team,
 } from "./api.ts";
 import { useNow } from "./clock.ts";
 import { RelativeTime } from "./RelativeTime.tsx";
@@ -26,15 +28,16 @@ function status(account: ServiceAccount, now: Date): string {
   return "Active";
 }
 
-export function NotAdmin() {
+export function NotAdmin({ what = "service accounts" }: { what?: string }) {
   return (
     <section className="empty">
-      <p>Only an administrator can manage service accounts.</p>
+      <p>Only an administrator can manage {what}.</p>
     </section>
   );
 }
 
-export function ServiceAccountList() {
+/** `teams`: the deployment has teams, so an account is a member or a guest. */
+export function ServiceAccountList({ teams = false }: { teams?: boolean }) {
   const now = useNow();
   const [accounts, setAccounts] = useState<ServiceAccount[] | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -94,6 +97,7 @@ export function ServiceAccountList() {
             <thead>
               <tr>
                 <th scope="col">Name</th>
+                {teams ? <th scope="col">Kind</th> : null}
                 <th scope="col">Status</th>
                 <th scope="col">Key renewed</th>
                 <th scope="col">Expires</th>
@@ -105,6 +109,7 @@ export function ServiceAccountList() {
               {accounts.map((account) => (
                 <tr key={account.id}>
                   <td>{account.name}</td>
+                  {teams ? <td>{account.guest ? "Guest" : "Member"}</td> : null}
                   <td>{status(account, now)}</td>
                   <td>
                     <RelativeTime iso={account.renewedAt} />
@@ -136,6 +141,8 @@ export function ServiceAccountList() {
 
 export type ServiceAccountApprovalProps = {
   id: string;
+  /** The deployment has teams, so a new account can be a guest in some of them. */
+  teams?: boolean;
   onDone: () => void;
 };
 
@@ -144,22 +151,30 @@ export type ServiceAccountApprovalProps = {
  * the one the agent's terminal shows before approving, so a link sent by
  * someone else cannot be approved by mistake.
  */
-export function ServiceAccountApproval({ id, onDone }: ServiceAccountApprovalProps) {
+export function ServiceAccountApproval({ id, teams = false, onDone }: ServiceAccountApprovalProps) {
   const now = useNow();
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [accounts, setAccounts] = useState<ServiceAccount[]>([]);
+  const [teamList, setTeamList] = useState<Team[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
   const [target, setTarget] = useState<"new" | string>("new");
+  const [guest, setGuest] = useState(false);
+  const [guestTeams, setGuestTeams] = useState<string[]>([]);
   const [approved, setApproved] = useState<ServiceAccount | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchEnrollment(id), fetchServiceAccounts()])
-      .then(([loaded, existing]) => {
+    Promise.all([
+      fetchEnrollment(id),
+      fetchServiceAccounts(),
+      teams ? fetchTeams().then((overview) => overview.teams) : Promise.resolve([]),
+    ])
+      .then(([loaded, existing, loadedTeams]) => {
         if (cancelled) return;
         setEnrollment(loaded);
         setAccounts(existing);
+        setTeamList(loadedTeams);
       })
       .catch((error) => {
         if (!cancelled) setProblem(message(error, "Could not load this request."));
@@ -167,12 +182,18 @@ export function ServiceAccountApproval({ id, onDone }: ServiceAccountApprovalPro
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, teams]);
 
   const approve = async () => {
     setBusy(true);
     try {
-      setApproved(await approveEnrollment(id, target === "new" ? {} : { accountId: target }));
+      const decision =
+        target !== "new"
+          ? { accountId: target }
+          : guest
+            ? { guest: true as const, teamIds: guestTeams }
+            : {};
+      setApproved(await approveEnrollment(id, decision));
       setProblem(null);
     } catch (error) {
       setProblem(message(error, "Could not approve this request."));
@@ -245,9 +266,51 @@ export function ServiceAccountApproval({ id, onDone }: ServiceAccountApprovalPro
         ))}
       </fieldset>
 
+      {teams && target === "new" ? (
+        <fieldset>
+          <legend>Kind</legend>
+          <label className="toggle">
+            <input type="radio" name="kind" checked={!guest} onChange={() => setGuest(false)} />
+            Member: reads every folder without a team, and its teams' folders
+          </label>
+          <label className="toggle">
+            <input type="radio" name="kind" checked={guest} onChange={() => setGuest(true)} />
+            Guest: reads only its teams' folders
+          </label>
+        </fieldset>
+      ) : null}
+
+      {teams && target === "new" && guest ? (
+        <fieldset>
+          <legend>Teams</legend>
+          {teamList.length === 0 ? <p className="hint">Create a team first.</p> : null}
+          {teamList.map((team) => (
+            <label key={team.id} className="toggle">
+              <input
+                type="checkbox"
+                checked={guestTeams.includes(team.id)}
+                onChange={(event) =>
+                  setGuestTeams((current) =>
+                    event.target.checked
+                      ? [...current, team.id]
+                      : current.filter((teamId) => teamId !== team.id),
+                  )
+                }
+              />
+              {team.name}
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
+
       {problem ? <p role="alert">{problem}</p> : null}
       <div className="dialog-actions">
-        <button type="button" className="primary" disabled={busy} onClick={() => void approve()}>
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || (teams && target === "new" && guest && guestTeams.length === 0)}
+          onClick={() => void approve()}
+        >
           {busy ? "Working..." : "Approve"}
         </button>
       </div>

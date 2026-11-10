@@ -23,6 +23,7 @@ import { SearchField } from "./Search.tsx";
 import { NotAdmin, ServiceAccountApproval, ServiceAccountList } from "./ServiceAccounts.tsx";
 import { SharedArtifact } from "./SharedArtifact.tsx";
 import { SignIn } from "./SignIn.tsx";
+import { InvitationList, TeamList } from "./Teams.tsx";
 import { UploadDialog } from "./UploadDialog.tsx";
 
 type State =
@@ -126,7 +127,9 @@ export function App() {
 
   const { session } = state;
   const serviceAccounts = session.features.serviceAccounts === true;
+  const teams = session.features.teams === true;
   const admin = session.user.admin === true;
+  const guest = session.user.guest === true;
 
   const handleSignOut = async () => {
     await signOut();
@@ -194,7 +197,7 @@ export function App() {
         avatar={session.user.avatar}
         currentUserId={session.user.id}
         privateArtifacts={session.features.privateArtifacts}
-        publicLinks={session.features.publicLinks}
+        publicLinks={session.features.publicLinks && !guest}
         onHome={() => navigate("/")}
         onOpenFolder={(folderId) => navigate(galleryPath({ folderId }))}
         onOpenGallery={(filters) => navigate(galleryPath(filters))}
@@ -219,6 +222,7 @@ export function App() {
               folderId={route.folderId}
               tagIds={route.tagIds}
               onFilter={(filters) => navigate(galleryPath({ ...route, ...filters }))}
+              guest={guest}
             />
             <Gallery
               filters={route}
@@ -247,12 +251,18 @@ export function App() {
             {...(serviceAccounts && admin
               ? { onOpenServiceAccounts: () => navigate("/settings/service-accounts") }
               : {})}
+            {...(teams && admin
+              ? {
+                  onOpenTeams: () => navigate("/settings/teams"),
+                  onOpenInvitations: () => navigate("/settings/invitations"),
+                }
+              : {})}
           />
         ) : null}
 
         {route.name === "service-accounts" && serviceAccounts ? (
           admin ? (
-            <ServiceAccountList />
+            <ServiceAccountList teams={teams} />
           ) : (
             <NotAdmin />
           )
@@ -263,10 +273,21 @@ export function App() {
             <ServiceAccountApproval
               key={route.id}
               id={route.id}
+              teams={teams}
               onDone={() => navigate("/settings/service-accounts")}
             />
           ) : (
             <NotAdmin />
+          )
+        ) : null}
+
+        {route.name === "teams" && teams ? admin ? <TeamList /> : <NotAdmin what="teams" /> : null}
+
+        {route.name === "invitations" && teams ? (
+          admin ? (
+            <InvitationList />
+          ) : (
+            <NotAdmin what="invitations" />
           )
         ) : null}
 
@@ -284,7 +305,8 @@ export function App() {
 
         {route.name === "unknown" ||
         (!serviceAccounts &&
-          (route.name === "service-accounts" || route.name === "service-account-approval")) ? (
+          (route.name === "service-accounts" || route.name === "service-account-approval")) ||
+        (!teams && (route.name === "teams" || route.name === "invitations")) ? (
           <section className="empty">
             <p>That page does not exist.</p>
             <button type="button" onClick={() => navigate("/")}>
@@ -298,6 +320,7 @@ export function App() {
         <UploadDialog
           maxUploadBytes={session.limits.maxUploadBytes}
           privateArtifacts={session.features.privateArtifacts}
+          guest={guest}
           initialFolderId={
             route.name === "gallery" && route.folderId !== ROOT_FOLDER_ID ? route.folderId : null
           }

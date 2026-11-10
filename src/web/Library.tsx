@@ -30,6 +30,8 @@ export type LibraryProps = {
   folderId: string | null;
   tagIds: string[];
   onFilter: (filters: { folderId?: string | null; tagIds?: string[] }) => void;
+  /** A guest creates folders only inside a team's folder. */
+  guest?: boolean;
 };
 
 /** Tags shown before "More…". Selected tags are always shown. */
@@ -184,7 +186,7 @@ type Load =
   | { status: "ready"; folders: Folder[]; rootArtifactCount: number; tags: Tag[] }
   | { status: "error"; message: string };
 
-export function Library({ appName, folderId, tagIds, onFilter }: LibraryProps) {
+export function Library({ appName, folderId, tagIds, onFilter, guest = false }: LibraryProps) {
   const panelId = useId();
   const [open, setOpen] = useState(readOpen);
   const [load, setLoad] = useState<Load>({ status: "loading" });
@@ -516,13 +518,15 @@ export function Library({ appName, folderId, tagIds, onFilter }: LibraryProps) {
                 </p>
               ) : null}
 
-              <NewFolder
-                parent={load.folders.find((folder) => folder.id === folderId) ?? null}
-                onCreated={(folder) => {
-                  if (folder.parentId) expand([folder.parentId], true);
-                  void refresh(true);
-                }}
-              />
+              {guest && !load.folders.some((folder) => folder.id === folderId) ? null : (
+                <NewFolder
+                  parent={load.folders.find((folder) => folder.id === folderId) ?? null}
+                  onCreated={(folder) => {
+                    if (folder.parentId) expand([folder.parentId], true);
+                    void refresh(true);
+                  }}
+                />
+              )}
 
               {tags.length > 0 ? (
                 <>

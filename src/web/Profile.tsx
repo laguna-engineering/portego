@@ -327,6 +327,8 @@ export function Profile({
   onSignOut,
   onOpenArtifact,
   onOpenServiceAccounts,
+  onOpenTeams,
+  onOpenInvitations,
 }: {
   userId: string;
   email: string;
@@ -339,6 +341,9 @@ export function Profile({
   onOpenArtifact: (id: string, target: ArtifactTarget) => void;
   /** Set for an admin when the deployment has service accounts. */
   onOpenServiceAccounts?: () => void;
+  /** Both set for an admin when the deployment has teams. */
+  onOpenTeams?: () => void;
+  onOpenInvitations?: () => void;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -431,6 +436,16 @@ export function Profile({
           {onOpenServiceAccounts ? (
             <button type="button" onClick={onOpenServiceAccounts}>
               Service accounts
+            </button>
+          ) : null}
+          {onOpenTeams ? (
+            <button type="button" onClick={onOpenTeams}>
+              Teams
+            </button>
+          ) : null}
+          {onOpenInvitations ? (
+            <button type="button" onClick={onOpenInvitations}>
+              Invitations
             </button>
           ) : null}
           <button type="button" onClick={onSignOut}>
