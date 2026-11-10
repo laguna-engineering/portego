@@ -115,7 +115,8 @@ them without a reload. See [api.md](api.md) for the stream itself.
 
 The announcement carries an id and nothing else. The client refetches through
 the ordinary endpoints, so what a person is shown still comes from a route that
-checked their session.
+checked their session. Announcements about a private artifact go to its
+creator only, because even an id and a time tell others it exists.
 
 Two places treat the reader's own work as more important than being current.
 An artifact page ignores an announcement while the reader's own change is in

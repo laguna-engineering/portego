@@ -149,6 +149,14 @@ state through the ordinary endpoints above, so every answer stays subject to
 the checks that route already makes, and the stream itself never holds a body
 one recipient may read and another may not.
 
+An event about an artifact (`artifact.created`, `artifact.changed`,
+`comment.changed`, `entry.changed`) reaches only the streams of people who can
+read that artifact, checked when the event is sent. An id and the time of a
+change still tell someone that a private artifact exists and when it changed,
+so another person's private artifact sends them nothing. An artifact made
+private stops reaching others with that change: their open page learns it at
+its next read. `folder.changed` and `tag.changed` reach every stream.
+
 The comment line every 20 seconds is what keeps an idle connection alive
 through a proxy, and it is how the server learns that a client has gone. See
 [deployment.md](deployment.md) for what the proxy needs.

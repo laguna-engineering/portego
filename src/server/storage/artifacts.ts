@@ -351,6 +351,8 @@ export type ArtifactStore = {
   countPrivate: () => number;
   list: (options: ListOptions) => ListResult;
   get: (id: string) => Artifact | null;
+  /** Who may read the artifact, from its row alone. Null when it does not exist. */
+  access: (id: string) => Pick<Artifact, "visibility" | "createdBy"> | null;
   /** Null when no such artifact exists. Throws when its bytes are gone. */
   readContent: (id: string) => Promise<{ artifact: Artifact; content: Uint8Array } | null>;
   /** Null when no such version exists. Throws when its bytes are gone. */
@@ -487,6 +489,12 @@ export function createArtifactStore(options: {
   return {
     get,
     getVersion,
+
+    access(id) {
+      return database
+        .query("select visibility, createdBy from artifacts where id = ?")
+        .get(id) as Pick<Artifact, "visibility" | "createdBy"> | null;
+    },
 
     async create(input) {
       const id = Bun.randomUUIDv7();

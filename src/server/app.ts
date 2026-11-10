@@ -156,7 +156,13 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
 
   // The change stream. It is registered before the artifact routes only for
   // readability; Hono matches on the path.
-  app.route("/api/events", eventRoutes({ bus: options.events }));
+  app.route(
+    "/api/events",
+    eventRoutes({
+      bus: options.events,
+      canRead: (artifactId, userId) => options.artifacts.canRead(artifactId, { userId }),
+    }),
+  );
   app.route("/api/activity", activityRoutes(options.activity, { events: options.events }));
   app.route("/api", organizationRoutes(options.organization));
 

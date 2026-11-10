@@ -22,13 +22,39 @@ export const MAX_STREAMS = 200;
 
 export type EventRouteOptions = {
   bus: EventBus;
+  /** Whether the user may read the artifact. Events about it reach only those who may. */
+  canRead: (artifactId: string, userId: string) => boolean;
   heartbeatMs?: number;
   maxPerUser?: number;
   maxTotal?: number;
 };
 
+/** The artifact an event is about, if it is about one. */
+function artifactOf(event: ChangeEvent): string | null {
+  switch (event.type) {
+    case "artifact.created":
+    case "artifact.changed":
+      return event.id;
+    case "comment.changed":
+    case "entry.changed":
+      return event.artifactId;
+    default:
+      return null;
+  }
+}
+
 export function eventRoutes(options: EventRouteOptions): Hono<AppEnv> {
   const { bus } = options;
+
+  // Ids and the time of a change are all an event carries, but they still
+  // tell a reader that someone else's private artifact exists and when it
+  // changed. Visibility is read at send time, never cached per connection, so
+  // an artifact made private stops reaching others with its next event.
+  const reaches = (event: ChangeEvent, userId: string): boolean => {
+    if ("userId" in event) return event.userId === userId;
+    const artifactId = artifactOf(event);
+    return artifactId === null || options.canRead(artifactId, userId);
+  };
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
   const maxPerUser = options.maxPerUser ?? MAX_STREAMS_PER_USER;
   const maxTotal = options.maxTotal ?? MAX_STREAMS;
@@ -101,7 +127,7 @@ export function eventRoutes(options: EventRouteOptions): Hono<AppEnv> {
         write(`retry: ${RETRY_MS}\n\n`);
         heartbeat = setInterval(() => write(": keep-alive\n\n"), heartbeatMs);
         unsubscribe = bus.subscribe((event: ChangeEvent) => {
-          if ("userId" in event && event.userId !== user.id) return;
+          if (!reaches(event, user.id)) return;
           write(`data: ${JSON.stringify(event)}\n\n`);
         });
 
