@@ -113,10 +113,12 @@ A status change, an archive, an upload, a comment, an entry, and organization ch
 announce themselves on `GET /api/events`, so a page that is already open shows
 them without a reload. See [api.md](api.md) for the stream itself.
 
-The announcement carries an id and nothing else. The client refetches through
+The announcement carries an id and no content. The client refetches through
 the ordinary endpoints, so what a person is shown still comes from a route that
 checked their session. Announcements about a private artifact go to its
-creator only, because even an id and a time tell others it exists.
+creator only, because even an id and a time tell others it exists. The
+announcement that makes a shared artifact private still goes to everyone, so a
+page that has it open hides it.
 
 Two places treat the reader's own work as more important than being current.
 An artifact page ignores an announcement while the reader's own change is in

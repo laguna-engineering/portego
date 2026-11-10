@@ -144,7 +144,7 @@ Seven event types are sent: `artifact.created`, `artifact.changed`,
 only to that user's streams: they marked their activity read, so their bell in
 another tab or device can reload.
 
-An event names what changed and carries nothing else. A client reads the new
+An event names what changed and carries no content. A client reads the new
 state through the ordinary endpoints above, so every answer stays subject to
 the checks that route already makes, and the stream itself never holds a body
 one recipient may read and another may not.
@@ -153,9 +153,11 @@ An event about an artifact (`artifact.created`, `artifact.changed`,
 `comment.changed`, `entry.changed`) reaches only the streams of people who can
 read that artifact, checked when the event is sent. An id and the time of a
 change still tell someone that a private artifact exists and when it changed,
-so another person's private artifact sends them nothing. An artifact made
-private stops reaching others with that change: their open page learns it at
-its next read. `folder.changed` and `tag.changed` reach every stream.
+so another person's private artifact sends them nothing. The one exception is
+the `artifact.changed` that makes a shared artifact private. It carries
+`"madePrivate": true` and reaches every stream, because everyone could read the
+artifact until then, and a page that has it open hides it when it hears the
+change. `folder.changed` and `tag.changed` reach every stream.
 
 The comment line every 20 seconds is what keeps an idle connection alive
 through a proxy, and it is how the server learns that a client has gone. See

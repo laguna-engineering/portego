@@ -175,11 +175,11 @@ describe("the change stream in the application", () => {
 });
 
 /**
- * An event carries only ids, but those still tell a reader that someone else's
- * private artifact exists and when it changed. Each test makes the owner's
- * change, then publishes an event every stream receives. Events arrive in the
- * order they were published, so a stream that reached that marker without the
- * private artifact's id was never sent it.
+ * An event carries only ids, but an id still tells a reader that someone
+ * else's private artifact exists. Each test makes the owner's change, then
+ * publishes a marker every stream receives. Events arrive in the order they
+ * were published, so a stream that reached the marker without the artifact's
+ * id was never sent it.
  */
 describe("the change stream and private artifacts", () => {
   const OTHER = { ...WORKSPACE_USER, sub: "google-subject-2", email: "other@acme.example" };
@@ -187,7 +187,6 @@ describe("the change stream and private artifacts", () => {
   let ownerCookie: string;
   let otherCookie: string;
   let ownerId: string;
-  let marker = 0;
 
   beforeEach(async () => {
     server = await createTestServer();
@@ -207,11 +206,11 @@ describe("the change stream and private artifacts", () => {
     return server.app.request("/api/events", { headers: { cookie } });
   }
 
-  async function privateArtifact(): Promise<string> {
+  async function upload(visibility: "shared" | "private"): Promise<string> {
     const { artifact } = await server.artifacts.upload({
       bytes: new TextEncoder().encode("<!doctype html><title>Mine</title><p>secret plans</p>"),
       title: "Mine",
-      visibility: "private",
+      visibility,
       createdBy: ownerId,
     });
     return artifact.id;
@@ -222,21 +221,20 @@ describe("the change stream and private artifacts", () => {
     const owner = await stream(ownerCookie);
     const other = await stream(otherCookie);
     const artifactId = await change();
-    marker += 1;
-    server.events.publish({ type: "tag.changed", id: `marker-${marker}` });
+    server.events.publish({ type: "tag.changed", id: "marker" });
 
-    const ownerSaw = await readUntil(owner, new RegExp(`marker-${marker}`));
+    const ownerSaw = await readUntil(owner, /marker/);
     expect(ownerSaw).toContain(artifactId);
-    const otherSaw = await readUntil(other, new RegExp(`marker-${marker}`));
+    const otherSaw = await readUntil(other, /marker/);
     expect(otherSaw).not.toContain(artifactId);
   }
 
   test("creating it", async () => {
-    await expectOwnerOnly(privateArtifact);
+    await expectOwnerOnly(() => upload("private"));
   });
 
   test("adding a version", async () => {
-    const id = await privateArtifact();
+    const id = await upload("private");
     await expectOwnerOnly(async () => {
       await server.artifacts.upload({
         bytes: new TextEncoder().encode("<!doctype html><title>Mine</title><p>v2</p>"),
@@ -248,7 +246,7 @@ describe("the change stream and private artifacts", () => {
   });
 
   test("commenting on it", async () => {
-    const id = await privateArtifact();
+    const id = await upload("private");
     await expectOwnerOnly(async () => {
       server.artifacts.addComment(id, { authorId: ownerId, body: "a note" });
       return id;
@@ -256,7 +254,7 @@ describe("the change stream and private artifacts", () => {
   });
 
   test("setting an entry on it", async () => {
-    const id = await privateArtifact();
+    const id = await upload("private");
     await expectOwnerOnly(async () => {
       server.artifacts.setEntry(id, { authorId: ownerId, key: "vote", value: 1 });
       return id;
@@ -265,7 +263,7 @@ describe("the change stream and private artifacts", () => {
 
   // Deleting a folder moves what it held to the parent and announces each move.
   test("deleting the folder that holds it", async () => {
-    const id = await privateArtifact();
+    const id = await upload("private");
     const folder = server.organization.createFolder({ name: "Drafts", actorId: ownerId });
     server.organization.setArtifactOrganization(id, { folderId: folder.id, actorId: ownerId });
     await expectOwnerOnly(async () => {
@@ -274,10 +272,39 @@ describe("the change stream and private artifacts", () => {
     });
   });
 
-  test("reaching everyone once it is shared again", async () => {
-    const id = await privateArtifact();
+  test("making it private when it already is", async () => {
+    const id = await upload("private");
+    await expectOwnerOnly(async () => {
+      server.artifacts.setVisibility(id, "private", ownerId);
+      return id;
+    });
+  });
+
+  test("reaching everyone once it is shared", async () => {
+    const id = await upload("private");
     const other = await stream(otherCookie);
     server.artifacts.setVisibility(id, "shared", ownerId);
+    expect(await readUntil(other, /artifact\.changed/)).toContain(id);
+  });
+
+  // Everyone could read it until this change, and a page that has it open
+  // hides it on hearing the change.
+  test("reaching everyone when it is made private", async () => {
+    const id = await upload("shared");
+    const other = await stream(otherCookie);
+    server.artifacts.setVisibility(id, "private", ownerId);
+    expect(await readUntil(other, /artifact\.changed/)).toContain(id);
+  });
+
+  test("reaching everyone when a new version makes it private", async () => {
+    const id = await upload("shared");
+    const other = await stream(otherCookie);
+    await server.artifacts.upload({
+      bytes: new TextEncoder().encode("<!doctype html><title>Mine</title><p>v2</p>"),
+      artifactId: id,
+      visibility: "private",
+      createdBy: ownerId,
+    });
     expect(await readUntil(other, /artifact\.changed/)).toContain(id);
   });
 });

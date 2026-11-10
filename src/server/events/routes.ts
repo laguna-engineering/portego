@@ -22,7 +22,10 @@ export const MAX_STREAMS = 200;
 
 export type EventRouteOptions = {
   bus: EventBus;
-  /** Whether the user may read the artifact. Events about it reach only those who may. */
+  /**
+   * Whether the user may read the artifact. Events about it reach only those
+   * who may, apart from `madePrivate`.
+   */
   canRead: (artifactId: string, userId: string) => boolean;
   heartbeatMs?: number;
   maxPerUser?: number;
@@ -38,7 +41,9 @@ function artifactOf(event: ChangeEvent): string | null {
     case "comment.changed":
     case "entry.changed":
       return event.artifactId;
-    default:
+    case "folder.changed":
+    case "tag.changed":
+    case "activity.read":
       return null;
   }
 }
@@ -46,12 +51,11 @@ function artifactOf(event: ChangeEvent): string | null {
 export function eventRoutes(options: EventRouteOptions): Hono<AppEnv> {
   const { bus } = options;
 
-  // Ids and the time of a change are all an event carries, but they still
-  // tell a reader that someone else's private artifact exists and when it
-  // changed. Visibility is read at send time, never cached per connection, so
-  // an artifact made private stops reaching others with its next event.
+  // Visibility is read when an event is sent, never cached per connection, so
+  // a change of visibility applies from the next event on.
   const reaches = (event: ChangeEvent, userId: string): boolean => {
     if ("userId" in event) return event.userId === userId;
+    if (event.type === "artifact.changed" && event.madePrivate) return true;
     const artifactId = artifactOf(event);
     return artifactId === null || options.canRead(artifactId, userId);
   };
