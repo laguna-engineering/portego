@@ -57,6 +57,12 @@ const schema = z
       .enum(["true", "false"])
       .default("false")
       .transform((value) => value === "true"),
+    // The user id of Varda's account. Set, it turns the Varda integration on.
+    // docs/varda-integration.md describes it.
+    VARDA_ACCOUNT: z.string().min(1).optional(),
+    // The webhook secret of the GitHub App that sends pull request events to
+    // the Varda integration. Unset, that endpoint does not exist.
+    VARDA_GITHUB_WEBHOOK_SECRET: z.string().min(32).optional(),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== "production") return;
@@ -95,6 +101,13 @@ const schema = z
         code: "custom",
         path: ["CONTENT_URL"],
         message: "must be a different host from APP_URL, or previews are not isolated",
+      });
+    }
+    if (env.VARDA_GITHUB_WEBHOOK_SECRET && !env.VARDA_ACCOUNT) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["VARDA_GITHUB_WEBHOOK_SECRET"],
+        message: "needs VARDA_ACCOUNT, which turns the Varda integration on",
       });
     }
   });

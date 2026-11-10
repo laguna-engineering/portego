@@ -106,6 +106,20 @@ describe("parseEnv", () => {
     expect(new URL(env.CONTENT_URL).hostname).not.toBe(new URL(env.APP_URL).hostname);
   });
 
+  test("refuses a GitHub webhook secret without VARDA_ACCOUNT, which turns the integration on", () => {
+    expect(() => parseEnv({ VARDA_GITHUB_WEBHOOK_SECRET: SECRET })).toThrow(
+      /VARDA_GITHUB_WEBHOOK_SECRET: needs VARDA_ACCOUNT/,
+    );
+    const env = parseEnv({ VARDA_ACCOUNT: "user-1", VARDA_GITHUB_WEBHOOK_SECRET: SECRET });
+    expect(env.VARDA_ACCOUNT).toBe("user-1");
+  });
+
+  test("rejects a webhook secret too short to be a useful signing key", () => {
+    expect(() =>
+      parseEnv({ VARDA_ACCOUNT: "user-1", VARDA_GITHUB_WEBHOOK_SECRET: "short" }),
+    ).toThrow(/VARDA_GITHUB_WEBHOOK_SECRET/);
+  });
+
   test("accepts a complete production configuration", () => {
     const env = parseEnv({
       NODE_ENV: "production",

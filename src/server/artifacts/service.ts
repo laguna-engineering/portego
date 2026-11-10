@@ -28,6 +28,7 @@ import type {
   SearchStore,
 } from "../storage/search.ts";
 import { queryWords } from "../storage/search.ts";
+import type { VardaOutbox, VardaRow } from "../storage/varda-outbox.ts";
 import {
   checkEntry,
   ENTRY_KEY_MAX_LENGTH,
@@ -38,6 +39,7 @@ import {
   isEntryKey,
   notifiesKey,
   parseEntrySchema,
+  vardaKey,
 } from "./entry-schema.ts";
 import { ServiceError } from "./errors.ts";
 import { highlight, snippet, type TextSegment } from "./highlight.ts";
@@ -440,6 +442,11 @@ export function createArtifactService(options: {
   publicLinks?: boolean;
   /** Where a committed change is announced. Absent in tests that ignore it. */
   events?: EventBus;
+  /**
+   * The Varda integration, on when set: changes to the keys Varda follows are
+   * written to its outbox. `account` is the user id of Varda's account.
+   */
+  varda?: { account: string; outbox: VardaOutbox };
   /** Adds shared folder and tag metadata, and files an upload that asks for it. */
   organization?: Pick<
     OrganizationService,
@@ -473,6 +480,10 @@ export function createArtifactService(options: {
   };
   // Published after the write returns, so a failed write announces nothing.
   const publish = options.events?.publish ?? (() => {});
+  const varda = options.varda;
+  const announce = (row: VardaRow | null) => {
+    if (row) varda?.outbox.announce(row);
+  };
   const entryWrites = createWriteLimiter(ENTRY_WRITES_PER_MINUTE, 60_000);
   const guestStarts = createWriteLimiter(GUESTS_PER_MINUTE, 60_000);
   const guestWrites = createWriteLimiter(GUEST_ENTRY_WRITES_PER_MINUTE, 60_000);
@@ -588,28 +599,54 @@ export function createArtifactService(options: {
       );
     }
     limitWrites(id, input.authorId);
-    // A page may write the same value again on every click; that does not notify again.
+    // A page may write the same value again on every click; that does not
+    // notify again or reach Varda.
+    const changed = existing === null || JSON.stringify(existing.value) !== value;
     // A guest's entries stay out of the activity feed, which lists members.
     const notify =
-      input.guestName === undefined &&
-      schema !== null &&
-      notifiesKey(schema, input.key) &&
-      (existing === null || JSON.stringify(existing.value) !== value);
-    const entry = entryStore.set({
-      artifactId: id,
-      authorId: input.authorId,
-      key: input.key,
-      value,
-      notify,
-      inApp: input.inApp ?? false,
-      ...(input.guestName === undefined ? {} : { guestName: input.guestName }),
-    });
+      input.guestName === undefined && schema !== null && notifiesKey(schema, input.key) && changed;
+    const { entry, row } = entryStore.set(
+      {
+        artifactId: id,
+        authorId: input.authorId,
+        key: input.key,
+        value,
+        notify,
+        inApp: input.inApp ?? false,
+        ...(input.guestName === undefined ? {} : { guestName: input.guestName }),
+      },
+      changed ? vardaRow(artifact, input.key, "set") : undefined,
+    );
     publish({
       type: "entry.changed",
       artifactId: id,
       ...(notify && { activity: true as const }),
     });
+    announce(row);
     return entry;
+  };
+
+  /**
+   * The outbox row for a change to a key, when the integration is on, the
+   * current version's schema marks the key for Varda, and Varda's account can
+   * read the artifact.
+   */
+  const vardaRow = (
+    artifact: Artifact,
+    key: string,
+    change: "set" | "clear",
+  ): string | undefined => {
+    if (!varda) return undefined;
+    const schema = entrySchema(artifact.currentVersionId);
+    if (schema === null || !vardaKey(schema, key)) return undefined;
+    if (artifact.visibility === "private" && artifact.createdBy !== varda.account) return undefined;
+    return JSON.stringify({
+      type: "entry",
+      artifactId: artifact.id,
+      key,
+      change,
+      at: new Date().toISOString(),
+    });
   };
 
   const listEntries = (artifact: Artifact) => {
@@ -839,7 +876,7 @@ export function createArtifactService(options: {
           `The rendered HTML is larger than the ${maxUploadBytes} byte limit.`,
         );
       }
-      const entrySchema = isMarkdown ? null : readEntrySchema(text);
+      const entrySchema = isMarkdown ? null : readEntrySchema(text, varda !== undefined);
       const originalFilename = safeFilename(
         isMarkdown
           ? `${input.filename?.replace(/\.[^.]*$/, "") || "artifact"}.html`
@@ -1029,9 +1066,14 @@ export function createArtifactService(options: {
     clearGuestEntry(shareToken, guest, key) {
       const { artifact, authorId } = guestWrite(shareToken, guest, key);
       limitWrites(artifact.id, authorId);
-      if (entryStore.remove(artifact.id, authorId, key)) {
-        publish({ type: "entry.changed", artifactId: artifact.id });
-      }
+      const { removed, row } = entryStore.remove(
+        artifact.id,
+        authorId,
+        key,
+        vardaRow(artifact, key, "clear"),
+      );
+      if (removed) publish({ type: "entry.changed", artifactId: artifact.id });
+      announce(row);
     },
 
     // Every admitted user who can see an artifact may move its status, archive
@@ -1134,11 +1176,16 @@ export function createArtifactService(options: {
     },
 
     clearEntry(id, input) {
-      writableKey(id, input.authorId, input.key);
+      const artifact = writableKey(id, input.authorId, input.key);
       limitWrites(id, input.authorId);
-      if (entryStore.remove(id, input.authorId, input.key)) {
-        publish({ type: "entry.changed", artifactId: id });
-      }
+      const { removed, row } = entryStore.remove(
+        id,
+        input.authorId,
+        input.key,
+        vardaRow(artifact, input.key, "clear"),
+      );
+      if (removed) publish({ type: "entry.changed", artifactId: id });
+      announce(row);
     },
 
     async markdown(id, viewer, versionId) {
@@ -1253,11 +1300,21 @@ function readDescription(given: string | null | undefined): string | null {
   return description;
 }
 
-/** The checked schema text a page declares, or null. A broken schema refuses the upload. */
-function readEntrySchema(html: string): string | null {
+/**
+ * The checked schema text a page declares, or null. A broken schema refuses the
+ * upload, and so does a key marked for Varda when the integration is off.
+ */
+function readEntrySchema(html: string, varda: boolean): string | null {
   try {
     const text = extractEntrySchema(html);
-    if (text !== null) parseEntrySchema(text);
+    if (text === null) return null;
+    const marked = parseEntrySchema(text).rules.find((rule) => rule.varda);
+    if (marked && !varda) {
+      throw new ServiceError(
+        "INVALID_INPUT",
+        `The portego-entries schema: ${marked.template}: "varda" needs the Varda integration, which this deployment does not have.`,
+      );
+    }
     return text;
   } catch (cause) {
     if (cause instanceof EntrySchemaError) {

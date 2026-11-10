@@ -25,6 +25,7 @@ import { applyMigrations } from "./storage/migrations.ts";
 import { createOrganizationStore } from "./storage/organization.ts";
 import { createProfileStore } from "./storage/profiles.ts";
 import { createSearchStore } from "./storage/search.ts";
+import { createVardaOutbox, type VardaOutbox } from "./storage/varda-outbox.ts";
 
 /** A different host from TEST_BASE_URL, which is what isolates a preview. */
 export const TEST_CONTENT_ORIGIN = "http://127.0.0.1:5173";
@@ -36,6 +37,14 @@ export const WORKSPACE_USER: TestClaims = {
   name: "A Person",
 };
 
+/** Varda's account in a test server with the Varda integration on. */
+export const VARDA_USER: TestClaims = {
+  sub: "google-subject-varda",
+  email: "varda@acme.example",
+  email_verified: true,
+  name: "Varda",
+};
+
 export type TestServer = {
   app: Hono<AppEnv>;
   auth: Auth;
@@ -43,6 +52,9 @@ export type TestServer = {
   artifacts: ArtifactService;
   organization: OrganizationService;
   events: EventBus;
+  vardaOutbox: VardaOutbox;
+  /** The user id of VARDA_USER, when the Varda integration is on. */
+  vardaAccount?: string;
   dataDir: string;
   signingSecret: string;
   baseURL: string;
@@ -61,6 +73,8 @@ export type TestServerOptions = {
   providers?: ResolvedProvider[];
   /** Serve the built client from disk, which the browser tests need. */
   serveClient?: boolean;
+  /** Turns the Varda integration on, with VARDA_USER as Varda's account. */
+  varda?: { webhookSecret?: string; now?: () => number };
 };
 
 export async function createTestServer(options: TestServerOptions = {}): Promise<TestServer> {
@@ -72,6 +86,18 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     ...(options.providers ? { providers: options.providers } : {}),
   });
   applyMigrations(database);
+  // User ids are made at sign-in, so Varda's account signs in before the
+  // service that needs its id exists.
+  let vardaAccount: string | undefined;
+  if (options.varda) {
+    await signIn(auth, VARDA_USER);
+    const user = database
+      .query('select id from "user" where email = ?')
+      .get(VARDA_USER.email ?? "") as { id: string } | null;
+    if (!user) throw new Error("Varda's test account did not sign in");
+    vardaAccount = user.id;
+  }
+  const vardaOutbox = createVardaOutbox({ database });
 
   const events = createEventBus();
   const artifactStore = createArtifactStore({ database, dataDir });
@@ -84,10 +110,13 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     store: artifactStore,
     markdownStore: createMarkdownStore({ database }),
     commentStore: createCommentStore({ database }),
-    entryStore: createEntryStore({ database }),
+    entryStore: createEntryStore({ database, outbox: vardaOutbox }),
     searchStore: createSearchStore({ database }),
     organization,
     events,
+    ...(vardaAccount === undefined
+      ? {}
+      : { varda: { account: vardaAccount, outbox: vardaOutbox } }),
     ...(options.maxUploadBytes ? { maxUploadBytes: options.maxUploadBytes } : {}),
     ...(options.privateArtifacts === undefined
       ? {}
@@ -108,6 +137,16 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     events,
     activity: createActivityStore({ database }),
     profiles: createProfileStore({ database }),
+    ...(vardaAccount === undefined
+      ? {}
+      : {
+          varda: {
+            account: vardaAccount,
+            outbox: vardaOutbox,
+            ...(options.varda?.webhookSecret ? { webhookSecret: options.varda.webhookSecret } : {}),
+            ...(options.varda?.now ? { now: options.varda.now } : {}),
+          },
+        }),
   });
 
   return {
@@ -117,6 +156,8 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     artifacts,
     organization,
     events,
+    vardaOutbox,
+    ...(vardaAccount === undefined ? {} : { vardaAccount }),
     dataDir,
     signingSecret: config.secret,
     baseURL: config.baseURL,
@@ -156,6 +197,7 @@ export async function createLiveTestServer(
     idleTimeout?: number;
     privateArtifacts?: boolean;
     publicLinks?: boolean;
+    varda?: TestServerOptions["varda"];
   } = {},
 ): Promise<LiveTestServer> {
   let handle: TestServer | null = null;
@@ -178,6 +220,7 @@ export async function createLiveTestServer(
       ? {}
       : { privateArtifacts: options.privateArtifacts }),
     ...(options.publicLinks === undefined ? {} : { publicLinks: options.publicLinks }),
+    ...(options.varda ? { varda: options.varda } : {}),
   });
   handle = server;
 
