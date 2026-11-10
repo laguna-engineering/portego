@@ -20,6 +20,7 @@ import {
   sourceUrl,
 } from "./api.ts";
 import { COMMENTS_PANEL_ID, CommentsPanel } from "./CommentsPanel.tsx";
+import { useFaviconDot } from "./favicon.ts";
 import { formatBytes } from "./format.ts";
 import {
   ArchiveIcon,
@@ -536,6 +537,8 @@ export function ArtifactFull({
       document.title = previous;
     };
   }, [artifact]);
+
+  useFaviconDot(newVersion);
 
   async function change(action: () => Promise<Artifact>) {
     setChanging(true);
