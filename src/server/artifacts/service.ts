@@ -561,6 +561,11 @@ export function createArtifactService(options: {
       throw new ServiceError("FORBIDDEN", "A guest cannot make or remove public links.");
     }
   };
+  const refuseGuestVisibility = (reader: Reader) => {
+    if (reader.guest) {
+      throw new ServiceError("FORBIDDEN", "A guest cannot change who can see an artifact.");
+    }
+  };
 
   // Every reason a link does not open is the same NOT_FOUND.
   const sharedArtifactOf = (artifact: Artifact | null): Artifact => {
@@ -897,6 +902,7 @@ export function createArtifactService(options: {
       // id is refused rather than turned into a new artifact.
       let target: Artifact | null = null;
       const uploader = access.reader({ userId: input.createdBy });
+      if (visibility !== undefined) refuseGuestVisibility(uploader);
       if (input.artifactId) {
         target = visible(input.artifactId, { userId: input.createdBy });
         if (visibility !== undefined) requireCreator(target, input.createdBy);
@@ -1022,6 +1028,7 @@ export function createArtifactService(options: {
     setVisibility(id, visibility, actorId) {
       const checked = readVisibility(visibility);
       const { artifact: before, reader } = open(id, { userId: actorId });
+      refuseGuestVisibility(reader);
       requireCreator(before, actorId);
       const artifact = store.setVisibility(id, checked);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");

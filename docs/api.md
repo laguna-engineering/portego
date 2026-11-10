@@ -296,10 +296,10 @@ be its own parent or descendant. Deleting one reparents its children and moves
 its direct artifacts to its parent, or unfiles them when it was a root.
 
 With `TEAMS=true`, `GET /api/folders` lists only the folders the caller can
-read; one whose parent they cannot read has `parentId: null`. A move that
-changes the teams on a folder's path is for admins only, and deleting a
-folder that has teams is refused while it holds anything; both answer
-`FORBIDDEN`. A guest sees only the tags on artifacts they can read.
+read; one whose parent they cannot read has `parentId: null`. Moving a folder
+that has teams, or a move that changes the teams on a folder's path, is for
+admins only, and deleting a folder that has teams is refused while it holds
+anything; both answer `FORBIDDEN`. A guest sees only the tags on artifacts they can read.
 [organization.md](organization.md#changing-restricted-folders) has every
 rule.
 

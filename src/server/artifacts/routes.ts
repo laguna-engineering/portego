@@ -469,9 +469,13 @@ export function sharedRoutes(
       viewer: { shareToken: token },
     });
     c.header("Cache-Control", "private, no-store");
+    const user = c.get("user");
     return c.json({
-      // A member can open the artifact itself. Anyone else gets no id.
-      ...(c.get("user") ? { artifactId: artifact.id } : {}),
+      // A member who can read the artifact can open it itself. Anyone else
+      // gets no id.
+      ...(user && service.canRead(artifact.id, { userId: user.id })
+        ? { artifactId: artifact.id }
+        : {}),
       artifact: {
         title: artifact.title,
         description: artifact.description,

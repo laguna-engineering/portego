@@ -218,11 +218,7 @@ export function createOrganizationService(options: {
         input.parentId === undefined ? undefined : parentId(input.parentId);
       let revokeLinks = false;
       if (normalizedParentId !== undefined) {
-        if (normalizedParentId === null) {
-          refuseGuest(reader, "A guest cannot move a folder to the top level.");
-        } else {
-          requireFolder(normalizedParentId, reader);
-        }
+        if (normalizedParentId !== null) requireFolder(normalizedParentId, reader);
         if (wouldCycle(folder.id, normalizedParentId)) {
           throw new ServiceError(
             "INVALID_INPUT",
@@ -232,16 +228,15 @@ export function createOrganizationService(options: {
         const tree = access.tree();
         const before = restrictionsAt(tree, folder.parentId);
         const after = restrictionsAt(tree, normalizedParentId);
-        if (!sameKeys(before, after)) {
-          if (!input.admin) {
-            throw new ServiceError(
-              "FORBIDDEN",
-              "Only an administrator can move a folder into or out of a team's folder.",
-            );
-          }
-          // Its public links were made for a wider audience than the new one.
-          revokeLinks = [...after].some((key) => !before.has(key));
+        const changesTeams = !sameKeys(before, after);
+        if ((changesTeams || hasTeams(id)) && !input.admin) {
+          throw new ServiceError(
+            "FORBIDDEN",
+            "Only an administrator can move a folder that has teams, or move one into or out of a team's folder.",
+          );
         }
+        // Its public links were made for a wider audience than the new one.
+        revokeLinks = changesTeams && [...after].some((key) => !before.has(key));
       }
       try {
         // A move can change who reads the folder. The stream checks each

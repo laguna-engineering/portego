@@ -196,7 +196,7 @@ export function App() {
         email={session.user.email}
         avatar={session.user.avatar}
         currentUserId={session.user.id}
-        privateArtifacts={session.features.privateArtifacts}
+        privateArtifacts={session.features.privateArtifacts && !guest}
         publicLinks={session.features.publicLinks && !guest}
         onHome={() => navigate("/")}
         onOpenFolder={(folderId) => navigate(galleryPath({ folderId }))}
@@ -319,7 +319,7 @@ export function App() {
       {uploading ? (
         <UploadDialog
           maxUploadBytes={session.limits.maxUploadBytes}
-          privateArtifacts={session.features.privateArtifacts}
+          privateArtifacts={session.features.privateArtifacts && !guest}
           guest={guest}
           initialFolderId={
             route.name === "gallery" && route.folderId !== ROOT_FOLDER_ID ? route.folderId : null

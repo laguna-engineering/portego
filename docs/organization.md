@@ -91,15 +91,15 @@ A guest:
   uploader, and the author of a comment or an entry.
 - sees another person's profile only when that person uploaded to, commented
   on, or set an entry on an artifact the guest can read.
-- cannot make or revoke a public link.
+- cannot make or revoke a public link, and cannot make an artifact private or
+  shared again.
 
 ### Changing restricted folders
 
 - Creating, renaming, or moving a folder needs read access to the folder and
   to its new parent.
-- A move that changes the teams on the folder's path is for admins only. A
-  folder's own teams move with it, so a team member can move a restricted
-  folder from one open place to another.
+- Moving a folder that has teams, or a move that changes the teams on a
+  folder's path, is for admins only.
 - Deleting a folder that has teams is refused while it holds artifacts or
   folders. Otherwise they would move to its parent, which more people can read.
 - Filing an artifact in a folder needs read access to that folder. A team

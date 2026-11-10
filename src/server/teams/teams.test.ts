@@ -450,7 +450,7 @@ describe("with teams on", () => {
     );
   });
 
-  test("only an admin can move a folder into or out of a team's folder", async () => {
+  test("only an admin can move a folder that has teams, or move one into or out of a team's folder", async () => {
     const a = await createFolder(cookies.member, "A", contracts);
     const b = await createFolder(cookies.member, "B", contracts);
     const outOf = await call(cookies.member, `/api/folders/${b}`, {
@@ -464,10 +464,16 @@ describe("with teams on", () => {
     });
     expect(into.status).toBe(404);
 
-    // Moves that keep the same teams on the path need no admin. A folder's
-    // own teams move with it.
+    // A move that keeps the same teams on the path needs no admin.
     await json(cookies.member, `/api/folders/${b}`, { method: "PATCH", body: { parentId: a } });
-    await json(cookies.member, `/api/folders/${contracts}`, {
+
+    const restricted = await call(cookies.member, `/api/folders/${contracts}`, {
+      method: "PATCH",
+      body: { parentId: open },
+    });
+    expect(restricted.status).toBe(403);
+    await addMember(legal, await userId(cookies.admin));
+    await json(cookies.admin, `/api/folders/${contracts}`, {
       method: "PATCH",
       body: { parentId: open },
     });
@@ -524,10 +530,55 @@ describe("with teams on", () => {
       const res = await call(cookies.guest, `/api/folders/${contracts}`, { method, body });
       expect(res.status, `${method} ${JSON.stringify(body)}`).toBe(403);
     }
+    // Empty, so only being a guest stops the delete.
+    const empty = await createFolder(cookies.admin, "Empty");
+    await restrict(legal, empty);
+    expect((await call(cookies.guest, `/api/folders/${empty}`, { method: "DELETE" })).status).toBe(
+      403,
+    );
+
     expect(
       (await call(cookies.guest, "/api/tags", { method: "POST", body: { name: "x" } })).status,
     ).toBe(403);
-    expect(await folderNames(cookies.member)).toEqual(["Contracts", "Mine", "Open"]);
+    const { tag } = await json<{ tag: { id: string } }>(
+      cookies.member,
+      "/api/tags",
+      { method: "POST", body: { name: "nda" } },
+      201,
+    );
+    await json(cookies.member, `/api/artifacts/${contract}/organization`, {
+      method: "PATCH",
+      body: { tagIds: [tag.id] },
+    });
+    const rename = await call(cookies.guest, `/api/tags/${tag.id}`, {
+      method: "PATCH",
+      body: { name: "Renamed" },
+    });
+    expect(rename.status).toBe(403);
+    expect((await call(cookies.guest, `/api/tags/${tag.id}`, { method: "DELETE" })).status).toBe(
+      403,
+    );
+    expect(await folderNames(cookies.member)).toEqual(["Contracts", "Empty", "Mine", "Open"]);
+  });
+
+  test("a guest cannot change who can see an artifact", async () => {
+    const mine = await upload(cookies.guest, { title: "Mine", folderId: contracts });
+    const hide = await call(cookies.guest, `/api/artifacts/${mine}/visibility`, {
+      method: "PATCH",
+      body: { visibility: "private" },
+    });
+    expect(hide.status).toBe(403);
+    const hidden = await uploadForm(cookies.guest, {
+      title: "Hidden",
+      folderId: contracts,
+      visibility: "private",
+    });
+    expect(hidden.status).toBe(403);
+    expect(await titles(cookies.member)).toEqual(["Contract draft", "Lunch menu", "Mine"]);
+    await json(cookies.member, `/api/artifacts/${contract}/visibility`, {
+      method: "PATCH",
+      body: { visibility: "private" },
+    });
   });
 
   test("filing an artifact needs read access to the folder, and a guest cannot unfile one", async () => {
@@ -542,6 +593,23 @@ describe("with teams on", () => {
     });
     expect(unfile.status).toBe(403);
     expect(await titles(cookies.guest)).toEqual(["Contract draft"]);
+
+    // A tag used only outside the guest's folders does not exist for them.
+    const { tag } = await json<{ tag: { id: string } }>(
+      cookies.member,
+      "/api/tags",
+      { method: "POST", body: { name: "food" } },
+      201,
+    );
+    await json(cookies.member, `/api/artifacts/${menu}/organization`, {
+      method: "PATCH",
+      body: { tagIds: [tag.id] },
+    });
+    const tagged = await call(cookies.guest, `/api/artifacts/${contract}/organization`, {
+      method: "PATCH",
+      body: { tagIds: [tag.id] },
+    });
+    expect(tagged.status).toBe(404);
   });
 
   test("a guest must upload into a folder they can read", async () => {
@@ -569,6 +637,11 @@ describe("with teams on", () => {
     const token = url.split("/").pop() ?? "";
     // A public link works in every folder.
     expect((await call("", `/api/shared/${token}`)).status).toBe(200);
+    // Only a member who can read the artifact gets its id, to open it in the app.
+    const opened = async (cookie: string) =>
+      (await json<{ artifactId?: string }>(cookie, `/api/shared/${token}`)).artifactId;
+    expect(await opened(cookies.member)).toBe(contract);
+    expect(await opened(cookies.outsider)).toBeUndefined();
     const revoke = await call(cookies.guest, `/api/artifacts/${contract}/link`, {
       method: "DELETE",
     });

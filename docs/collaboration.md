@@ -39,7 +39,7 @@ Share. Its creator chooses who can see the artifact: only them, everyone
 signed in, or anyone with the link. Any member who can see a shared artifact
 can also add, copy, or revoke its link, as in other document tools; only the
 creator can make it private. A guest invited with `TEAMS=true` cannot add or
-revoke a link. When someone else adds or revokes the link, the
+revoke a link, or make their own artifact private. When someone else adds or revokes the link, the
 creator is notified. A public link opens the artifact without signing in. Someone who opens the
 link and adds an entry gives a name first. Members see that entry under the
 name, marked as a guest. Guest entries do not appear in the activity feed.

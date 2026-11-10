@@ -122,8 +122,8 @@ account is a guest, and every tool reads only what that account can read
 ([organization.md](organization.md#teams)). An artifact in a folder the
 caller cannot read is `NOT_FOUND`, and a guest gets `null` for every `email`
 field. No tool manages teams, folder restrictions, or invitations, and
-`update_folder` never makes a move that changes the teams on a folder's path:
-that takes an admin in the web client.
+`update_folder` never moves a folder that has teams or changes the teams on a
+folder's path: that takes an admin in the web client.
 
 ### Service accounts
 
