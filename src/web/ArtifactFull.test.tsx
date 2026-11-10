@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ArtifactFull, type ArtifactFullProps } from "./ArtifactFull.tsx";
@@ -1515,6 +1515,43 @@ describe("change notices", () => {
     const newest = screen.getByRole("button", { name: "Version 2, current" });
     expect(newest.getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByText(newVersionPill)).toBeNull();
+  });
+
+  test("the tab's icon carries a dot while the refresh pill shows", async () => {
+    // A reader in another tab sees the new version only through the icon.
+    const plain = "/branding/favicon-32.png";
+    const dotted = "data:image/png;base64,dotted";
+    const icon = document.createElement("link");
+    icon.rel = "icon";
+    icon.setAttribute("href", plain);
+    document.head.append(icon);
+    const noop = () => {};
+    const getContext = spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: noop,
+      beginPath: noop,
+      arc: noop,
+      fill: noop,
+    } as never);
+    const toDataURL = spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(dotted);
+    try {
+      const lists = { versions: [version({ creator: someoneElse })], comments: [] };
+      stubLists(lists);
+      await renderWithVersions();
+      await act(async () => {});
+      expect(icon.getAttribute("href")).toBe(plain);
+
+      lists.versions = [version({ id: "v2", number: 2, creator: someoneElse }), ...lists.versions];
+      await announce({ type: "artifact.changed", id: "artifact-1" });
+      await screen.findByText(newVersionPill);
+      await waitFor(() => expect(icon.getAttribute("href")).toBe(dotted));
+
+      await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+      expect(icon.getAttribute("href")).toBe(plain);
+    } finally {
+      getContext.mockRestore();
+      toDataURL.mockRestore();
+      icon.remove();
+    }
   });
 
   test("refreshing marks the new version seen, so the bell stops counting it", async () => {
