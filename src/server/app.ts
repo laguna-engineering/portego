@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
+import { readsFolder } from "./access/reader.ts";
+import { type AccessService, OPEN_ACCESS } from "./access/service.ts";
 import { activityRoutes } from "./activity/routes.ts";
 import {
   artifactRoutes,
@@ -36,6 +38,8 @@ import type { ServiceAccountService } from "./service-accounts/service.ts";
 import { pageMeta, withSocialTags } from "./social.ts";
 import type { ActivityStore } from "./storage/activity.ts";
 import type { ProfileStore } from "./storage/profiles.ts";
+import { invitationRoutes, teamRoutes } from "./teams/routes.ts";
+import type { TeamService } from "./teams/service.ts";
 import { type VardaOptions, vardaRoutes } from "./varda/routes.ts";
 
 export type AppOptions = {
@@ -58,6 +62,13 @@ export type AppOptions = {
   profiles: ProfileStore;
   /** Null when SERVICE_ACCOUNTS is off. Its routes then do not exist. */
   serviceAccounts: ServiceAccountService | null;
+  /**
+   * Who reads which folders. Pass the same one the artifact and organization
+   * services were built with. Every folder is open to everyone when absent.
+   */
+  access?: AccessService;
+  /** Absent or null when TEAMS is off. Its routes then do not exist. */
+  teams?: TeamService | null;
   /** The Varda integration. Without it, its routes do not exist. */
   varda?: VardaOptions;
 };
@@ -68,6 +79,8 @@ export function frameSourcePolicy(contentOrigin: string): string {
 }
 
 export function createApp(options: AppOptions): Hono<AppEnv> {
+  const access = options.access ?? OPEN_ACCESS;
+  const teams = options.teams ?? null;
   const app = new Hono<AppEnv>();
   const appOrigin = new URL(options.authConfig.baseURL).origin;
   const contentHost = new URL(options.contentOrigin).host;
@@ -107,6 +120,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
     auth: options.auth,
     admission: options.authConfig.admission,
     serviceAccounts: options.serviceAccounts,
+    teams: options.teams ?? null,
   });
   const mcp = createMcpHandler({
     auth: options.auth,
@@ -149,23 +163,31 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
         image: image ?? null,
         avatar: avatarUrl(options.profiles, id),
         admin: isAdmin(options.authConfig.admins, user),
+        ...(teams && { guest: teams.isGuest(id) }),
       },
       limits: { maxUploadBytes: options.artifacts.maxUploadBytes },
       features: {
         privateArtifacts: options.artifacts.privateArtifacts,
         publicLinks: options.artifacts.publicLinks,
         serviceAccounts: options.serviceAccounts !== null,
+        ...(teams && { teams: true }),
       },
       appName: options.authConfig.appName,
     });
   });
   app.route("/api/me", profileRoutes(options.profiles));
-  app.route("/api/users", userRoutes(options.profiles));
+  app.route("/api/users", userRoutes(options.profiles, { access }));
   if (options.serviceAccounts) {
     app.route(
       "/api/service-accounts",
-      serviceAccountRoutes(options.serviceAccounts, options.authConfig.admins),
+      serviceAccountRoutes(options.serviceAccounts, options.authConfig.admins, {
+        teams: teams !== null,
+      }),
     );
+  }
+  if (teams) {
+    app.route("/api/teams", teamRoutes(teams, options.authConfig.admins));
+    app.route("/api/invitations", invitationRoutes(teams, options.authConfig.admins));
   }
 
   // Upload by ticket rather than by session. It is registered outside the
@@ -179,7 +201,14 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
     "/api/events",
     eventRoutes({
       bus: options.events,
-      canRead: (artifactId, userId) => options.artifacts.canRead(artifactId, { userId }),
+      canRead: (subject, userId) =>
+        "folderId" in subject
+          ? readsFolder(access.reader({ userId }), subject.folderId)
+          : options.artifacts.canRead(
+              subject.artifactId,
+              { userId },
+              { asShared: subject.asShared === true },
+            ),
     }),
   );
   if (options.varda) {
@@ -193,8 +222,11 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
       }),
     );
   }
-  app.route("/api/activity", activityRoutes(options.activity, { events: options.events }));
-  app.route("/api", organizationRoutes(options.organization));
+  app.route("/api/activity", activityRoutes(options.activity, { events: options.events, access }));
+  app.route(
+    "/api",
+    organizationRoutes(options.organization, { admins: options.authConfig.admins }),
+  );
 
   const issuePreview = createPreviewIssuer({
     secret: options.signingSecret,

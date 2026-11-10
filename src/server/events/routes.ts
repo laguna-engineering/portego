@@ -20,28 +20,35 @@ const RETRY_MS = 3_000;
 export const MAX_STREAMS_PER_USER = 8;
 export const MAX_STREAMS = 200;
 
+/**
+ * What an event is about. `asShared` asks who could read the artifact before
+ * it was made private.
+ */
+export type EventSubject = { artifactId: string; asShared?: boolean } | { folderId: string };
+
 export type EventRouteOptions = {
   bus: EventBus;
-  /**
-   * Whether the user may read the artifact. Events about it reach only those
-   * who may, apart from `madePrivate`.
-   */
-  canRead: (artifactId: string, userId: string) => boolean;
+  /** Whether the user may read the subject. Events about it reach only those who may. */
+  canRead: (subject: EventSubject, userId: string) => boolean;
   heartbeatMs?: number;
   maxPerUser?: number;
   maxTotal?: number;
 };
 
-/** The artifact an event is about, if it is about one. */
-function artifactOf(event: ChangeEvent): string | null {
+/** What an event is about, if it is about something only some may read. */
+function subjectOf(event: ChangeEvent): EventSubject | null {
   switch (event.type) {
     case "artifact.created":
+      return { artifactId: event.id };
+    // The page of everyone who could read it until this change hides it on
+    // hearing the change.
     case "artifact.changed":
-      return event.id;
+      return { artifactId: event.id, ...(event.madePrivate && { asShared: true }) };
     case "comment.changed":
     case "entry.changed":
-      return event.artifactId;
+      return { artifactId: event.artifactId };
     case "folder.changed":
+      return { folderId: event.id };
     case "tag.changed":
     case "activity.read":
       return null;
@@ -55,9 +62,8 @@ export function eventRoutes(options: EventRouteOptions): Hono<AppEnv> {
   // a change of visibility applies from the next event on.
   const reaches = (event: ChangeEvent, userId: string): boolean => {
     if ("userId" in event) return event.userId === userId;
-    if (event.type === "artifact.changed" && event.madePrivate) return true;
-    const artifactId = artifactOf(event);
-    return artifactId === null || options.canRead(artifactId, userId);
+    const subject = subjectOf(event);
+    return subject === null || options.canRead(subject, userId);
   };
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
   const maxPerUser = options.maxPerUser ?? MAX_STREAMS_PER_USER;

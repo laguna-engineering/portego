@@ -12,7 +12,7 @@ function bearer(header: string | undefined): string | null {
 
 const iso = (ms: number) => new Date(ms).toISOString();
 
-function toJson(account: ServiceAccount) {
+function toJson(account: ServiceAccount, teams: boolean) {
   return {
     id: account.userId,
     clientId: account.clientId,
@@ -22,6 +22,7 @@ function toJson(account: ServiceAccount) {
     renewedAt: iso(account.renewedAt),
     expiresAt: iso(account.expiresAt),
     disabledAt: account.disabledAt === null ? null : iso(account.disabledAt),
+    ...(teams && { guest: account.guest }),
   };
 }
 
@@ -33,9 +34,11 @@ function toJson(account: ServiceAccount) {
 export function serviceAccountRoutes(
   service: ServiceAccountService,
   admins: readonly string[],
+  options: { teams?: boolean } = {},
 ): Hono<AppEnv> {
   const routes = new Hono<AppEnv>();
   const admin = requireAdmin(admins);
+  const json = (account: ServiceAccount) => toJson(account, options.teams ?? false);
 
   routes.post("/enrollments", async (c) => {
     const body = await readJson(c);
@@ -60,7 +63,7 @@ export function serviceAccountRoutes(
     return c.json({ renewedAt: iso(renewed.renewedAt), expiresAt: iso(renewed.expiresAt) });
   });
 
-  routes.get("/", admin, (c) => c.json({ accounts: service.list().map(toJson) }));
+  routes.get("/", admin, (c) => c.json({ accounts: service.list().map(json) }));
 
   routes.get("/enrollments/:id/approval", admin, (c) => {
     const enrollment = service.review(c.req.param("id"));
@@ -77,14 +80,14 @@ export function serviceAccountRoutes(
     const body = await readJson(c);
     const account = service.approve(
       c.req.param("id"),
-      { accountId: body.accountId },
+      { accountId: body.accountId, guest: body.guest, teamIds: body.teamIds },
       currentUser(c).id,
     );
-    return c.json({ account: toJson(account) });
+    return c.json({ account: json(account) });
   });
 
   routes.post("/:id/disable", admin, (c) =>
-    c.json({ account: toJson(service.disable(c.req.param("id"))) }),
+    c.json({ account: json(service.disable(c.req.param("id"))) }),
   );
 
   return routes;

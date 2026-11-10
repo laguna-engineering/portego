@@ -108,7 +108,7 @@ export function artifactRoutes(
     if (tagMatch !== "all" && tagMatch !== "any") {
       throw new ServiceError("INVALID_INPUT", "tagMatch must be all or any.");
     }
-    organization.validateListFilters({ folderId, tagIds });
+    organization.validateListFilters({ folderId, tagIds }, currentUser(c).id);
 
     const page = service.list(viewer(c), {
       query: c.req.query("q") ?? null,
@@ -127,7 +127,7 @@ export function artifactRoutes(
 
   routes.get("/search", (c) => {
     const folderId = c.req.query("folderId") ?? null;
-    organization.validateListFilters({ folderId, tagIds: [] });
+    organization.validateListFilters({ folderId, tagIds: [] }, currentUser(c).id);
     const results = service.search(viewer(c), {
       query: c.req.query("q") ?? "",
       folderId,

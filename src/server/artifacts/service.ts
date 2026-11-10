@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { type Reader, readsArtifact, readsFolder, type Viewer } from "../access/reader.ts";
+import { type AccessService, OPEN_ACCESS } from "../access/service.ts";
 import type { EventBus } from "../events/bus.ts";
 import { CONVERTER_VERSION, htmlToMarkdown } from "../markdown/convert.ts";
 import { markdownToHtml } from "../markdown/render.ts";
@@ -67,8 +69,8 @@ export type ArtifactSummary = Omit<
   "storageKey" | "createdBy" | "createdByName" | "createdByEmail" | "shareToken"
 > &
   ArtifactOrganization & {
-    /** Who uploaded it. A name, because a card shows a person and not an id. */
-    creator: { id: string; name: string; email: string };
+    /** Who uploaded it. A name, because a card shows a person and not an id. Null email for a guest. */
+    creator: { id: string; name: string; email: string | null };
     /** Whether anyone with its public link can open it. The link itself is read from its own route. */
     publicLink: boolean;
   };
@@ -77,11 +79,11 @@ export type VersionSummary = Omit<
   ArtifactVersion,
   "artifactId" | "storageKey" | "createdBy" | "createdByName" | "createdByEmail"
 > & {
-  creator: { id: string; name: string; email: string };
+  /** Null email for a guest. */
+  creator: { id: string; name: string; email: string | null };
 };
 
-/** Who a read is for. Null is someone with no session, who sees shared artifacts only. */
-export type Viewer = { userId: string | null };
+export type { Viewer };
 
 const VISIBILITIES: readonly ArtifactVisibility[] = ["shared", "private"];
 
@@ -250,8 +252,12 @@ export type ArtifactService = {
     input?: ListInput,
   ) => { items: ArtifactSummary[]; nextCursor: string | null };
   get: (id: string, viewer: Viewer) => ArtifactSummary;
-  /** Whether `viewer` may read the artifact. False when it does not exist. */
-  canRead: (id: string, viewer: Viewer) => boolean;
+  /**
+   * Whether `viewer` may read the artifact. False when it does not exist.
+   * `asShared` answers as if the artifact were shared, which is who could read
+   * it before it was made private.
+   */
+  canRead: (id: string, viewer: Viewer, options?: { asShared?: boolean }) => boolean;
   search: (viewer: Viewer, input: SearchInput) => SearchResults;
   /**
    * Indexes the text of current versions that have none, or whose text older
@@ -373,6 +379,7 @@ function toSummary(
   artifact: Artifact,
   publicLinks: boolean,
   organization?: ArtifactOrganization,
+  reader?: Reader,
 ): ArtifactSummary {
   const {
     storageKey: _hidden,
@@ -384,14 +391,14 @@ function toSummary(
   } = artifact;
   return {
     ...summary,
-    creator: { id: createdBy, name: createdByName, email: createdByEmail },
+    creator: { id: createdBy, name: createdByName, email: reader?.guest ? null : createdByEmail },
     publicLink: publicLinks && shareToken !== null && artifact.archivedAt === null,
     folder: organization?.folder ?? null,
     tags: organization?.tags ?? [],
   };
 }
 
-function toVersionSummary(version: ArtifactVersion): VersionSummary {
+function toVersionSummary(version: ArtifactVersion, reader?: Reader): VersionSummary {
   const {
     artifactId: _artifact,
     storageKey: _hidden,
@@ -400,17 +407,21 @@ function toVersionSummary(version: ArtifactVersion): VersionSummary {
     createdByEmail,
     ...summary
   } = version;
-  return { ...summary, creator: { id: createdBy, name: createdByName, email: createdByEmail } };
+  return {
+    ...summary,
+    creator: { id: createdBy, name: createdByName, email: reader?.guest ? null : createdByEmail },
+  };
 }
 
 function toResult(
   result: ListResult,
   publicLinks: boolean,
   assignments: Map<string, ArtifactOrganization>,
+  reader: Reader,
 ) {
   return {
     items: result.items.map((artifact) =>
-      toSummary(artifact, publicLinks, assignments.get(artifact.id)),
+      toSummary(artifact, publicLinks, assignments.get(artifact.id), reader),
     ),
     nextCursor: result.nextCursor,
   };
@@ -452,12 +463,16 @@ export function createArtifactService(options: {
     OrganizationService,
     "assignments" | "checkAssignment" | "setArtifactOrganization"
   >;
+  /** Every folder is open to everyone when absent. */
+  access?: AccessService;
 }): ArtifactService {
   const { store, markdownStore, commentStore, entryStore, searchStore, organization } = options;
+  const access = options.access ?? OPEN_ACCESS;
   const assignments = organization?.assignments ?? (() => new Map<string, ArtifactOrganization>());
   const publicLinks = options.publicLinks ?? false;
-  const summary = (artifact: Artifact) =>
-    toSummary(artifact, publicLinks, assignments([artifact.id]).get(artifact.id));
+  /** Without a reader, as a public link shows it. */
+  const summary = (artifact: Artifact, reader?: Reader) =>
+    toSummary(artifact, publicLinks, assignments([artifact.id]).get(artifact.id), reader);
   const maxUploadBytes = options.maxUploadBytes ?? DEFAULT_MAX_UPLOAD_BYTES;
   const maxImages = options.maxImages ?? DEFAULT_MAX_IMAGES;
   const maxImageBytesTotal = options.maxImageBytesTotal ?? DEFAULT_MAX_IMAGE_BYTES_TOTAL;
@@ -517,21 +532,27 @@ export function createArtifactService(options: {
     });
   };
 
-  const readable = (
-    artifact: Pick<Artifact, "visibility" | "createdBy">,
-    viewer: Viewer,
-  ): boolean => artifact.visibility !== "private" || artifact.createdBy === viewer.userId;
-
   const madePrivate = (before: Artifact, after: ArtifactVisibility | undefined) =>
     before.visibility === "shared" && after === "private" ? { madePrivate: true as const } : {};
 
-  const visible = (id: string, viewer: Viewer): Artifact => {
+  // An artifact in a folder the viewer cannot read does not exist for them.
+  // PRIVATE stays for another member's private artifact, as before teams.
+  const open = (id: string, viewer: Viewer): { artifact: Artifact; reader: Reader } => {
+    const reader = access.reader(viewer);
     const artifact = store.get(id);
-    if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
-    if (!readable(artifact, viewer)) {
+    if (!artifact || !readsFolder(reader, artifact.folderId)) {
+      throw new ServiceError("NOT_FOUND", "No such artifact.");
+    }
+    if (!readsArtifact(reader, artifact)) {
       throw new ServiceError("PRIVATE", "This artifact is private.");
     }
-    return artifact;
+    return { artifact, reader };
+  };
+  const visible = (id: string, viewer: Viewer): Artifact => open(id, viewer).artifact;
+  const refuseGuestLinks = (reader: Reader) => {
+    if (reader.guest) {
+      throw new ServiceError("FORBIDDEN", "A guest cannot make or remove public links.");
+    }
   };
 
   // Every reason a link does not open is the same NOT_FOUND.
@@ -639,7 +660,7 @@ export function createArtifactService(options: {
     if (!varda) return undefined;
     const schema = entrySchema(artifact.currentVersionId);
     if (schema === null || !vardaKey(schema, key)) return undefined;
-    if (artifact.visibility === "private" && artifact.createdBy !== varda.account) return undefined;
+    if (!readsArtifact(access.reader({ userId: varda.account }), artifact)) return undefined;
     return JSON.stringify({
       type: "entry",
       artifactId: artifact.id,
@@ -696,12 +717,14 @@ export function createArtifactService(options: {
     publicLinks,
 
     list(viewer, input = {}) {
+      const reader = access.reader(viewer);
       try {
-        const result = store.list({ ...input, viewerId: viewer.userId });
+        const result = store.list({ ...input, viewerId: reader.userId, folderScope: reader });
         return toResult(
           result,
           publicLinks,
           assignments(result.items.map((artifact) => artifact.id)),
+          reader,
         );
       } catch (cause) {
         if (cause instanceof InvalidCursorError) {
@@ -712,18 +735,24 @@ export function createArtifactService(options: {
     },
 
     get(id, viewer) {
-      return summary(visible(id, viewer));
+      const { artifact, reader } = open(id, viewer);
+      return summary(artifact, reader);
     },
 
-    canRead(id, viewer) {
+    canRead(id, viewer, options = {}) {
       const artifact = store.access(id);
-      return artifact !== null && readable(artifact, viewer);
+      if (artifact === null) return false;
+      return readsArtifact(
+        access.reader(viewer),
+        options.asShared ? { ...artifact, visibility: "shared" } : artifact,
+      );
     },
 
     search(viewer, input) {
       const words = queryWords(input.query);
+      const reader = access.reader(viewer);
       const scope: SearchScope = {
-        viewerId: viewer.userId,
+        reader,
         folderId: input.folderId ?? null,
         artifactId: input.artifactId ?? null,
         includeArchived: input.includeArchived ?? false,
@@ -745,7 +774,7 @@ export function createArtifactService(options: {
       const summaries = new Map<string, ArtifactSummary>();
       for (const id of ids) {
         const artifact = store.get(id);
-        if (artifact) summaries.set(id, toSummary(artifact, publicLinks, filed.get(id)));
+        if (artifact) summaries.set(id, toSummary(artifact, publicLinks, filed.get(id), reader));
       }
       const withArtifact = (hits: SearchHit[]) =>
         hits.flatMap((hit) => {
@@ -860,9 +889,15 @@ export function createArtifactService(options: {
       // An explicit target is checked before anything is written, so a wrong
       // id is refused rather than turned into a new artifact.
       let target: Artifact | null = null;
+      const uploader = access.reader({ userId: input.createdBy });
       if (input.artifactId) {
         target = visible(input.artifactId, { userId: input.createdBy });
         if (visibility !== undefined) requireCreator(target, input.createdBy);
+      } else if (!uploader.unfiled && (input.folderId === undefined || input.folderId === null)) {
+        throw new ServiceError(
+          "INVALID_INPUT",
+          "Choose a folder: a guest can only upload into a team's folder.",
+        );
       }
 
       const title = readTitle(input.title, text, isMarkdown, target?.title);
@@ -886,7 +921,7 @@ export function createArtifactService(options: {
       // A shared title alone never selects the artifact to version: that
       // takes an explicit artifactId, and a duplicate takes an explicit flag.
       if (!target && !input.allowDuplicateTitle) {
-        const existing = store.findByTitle(title, input.createdBy);
+        const existing = store.findByTitle(title, input.createdBy, uploader);
         if (existing) {
           throw new ServiceError(
             "TITLE_EXISTS",
@@ -915,18 +950,16 @@ export function createArtifactService(options: {
         ...(input.tagIds === undefined ? {} : { tagIds: input.tagIds }),
       };
       const files = Object.keys(filing).length > 0;
+      let folderId: string | null | undefined;
       if (files) {
         if (!organization) {
           throw new ServiceError("INVALID_INPUT", "This server cannot file uploads.");
         }
-        organization.checkAssignment(filing);
+        ({ folderId } = organization.checkAssignment(filing, input.createdBy));
       }
-      const file = (artifactId: string) => {
-        if (files) {
-          organization?.setArtifactOrganization(artifactId, {
-            ...filing,
-            actorId: input.createdBy,
-          });
+      const file = (artifactId: string, what: { folderId?: unknown; tagIds?: unknown }) => {
+        if (Object.keys(what).length > 0) {
+          organization?.setArtifactOrganization(artifactId, { ...what, actorId: input.createdBy });
         }
       };
 
@@ -945,13 +978,13 @@ export function createArtifactService(options: {
           inApp: input.inApp,
         });
         if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
-        file(artifact.id);
+        file(artifact.id, filing);
         const current =
           visibility === undefined
             ? artifact
             : (store.setVisibility(artifact.id, visibility) ?? artifact);
         publish({ type: "artifact.changed", id: artifact.id, ...madePrivate(target, visibility) });
-        return { artifact: summary(current), newArtifact: false };
+        return { artifact: summary(current, uploader), newArtifact: false };
       }
 
       const artifact = await store.create({
@@ -964,27 +997,29 @@ export function createArtifactService(options: {
         entrySchema,
         images,
         visibility,
+        // Filed in the same insert, so it is never readable outside its folder.
+        ...(folderId === undefined ? {} : { folderId }),
         createdBy: input.createdBy,
         inApp: input.inApp,
       });
-      file(artifact.id);
+      file(artifact.id, input.tagIds === undefined ? {} : { tagIds: input.tagIds });
       publish({ type: "artifact.created", id: artifact.id });
-      return { artifact: summary(artifact), newArtifact: true };
+      return { artifact: summary(artifact, uploader), newArtifact: true };
     },
 
     versions(id, viewer) {
-      visible(id, viewer);
-      return store.versions(id).map(toVersionSummary);
+      const { reader } = open(id, viewer);
+      return store.versions(id).map((version) => toVersionSummary(version, reader));
     },
 
     setVisibility(id, visibility, actorId) {
       const checked = readVisibility(visibility);
-      const before = visible(id, { userId: actorId });
+      const { artifact: before, reader } = open(id, { userId: actorId });
       requireCreator(before, actorId);
       const artifact = store.setVisibility(id, checked);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id, ...madePrivate(before, checked) });
-      return summary(artifact);
+      return summary(artifact, reader);
     },
 
     shareToken(id, actorId) {
@@ -998,7 +1033,10 @@ export function createArtifactService(options: {
       if (!publicLinks) {
         throw new ServiceError("FORBIDDEN", "This deployment does not allow public links.");
       }
-      let artifact = visible(id, { userId: actorId });
+      const opened = open(id, { userId: actorId });
+      const { reader } = opened;
+      refuseGuestLinks(reader);
+      let { artifact } = opened;
       if (artifact.visibility === "private") {
         artifact = store.setVisibility(id, "shared") ?? artifact;
       }
@@ -1007,15 +1045,16 @@ export function createArtifactService(options: {
         artifact = store.setShareToken(id, token, actorId, options) ?? artifact;
       }
       publish({ type: "artifact.changed", id });
-      return { artifact: summary(artifact), token };
+      return { artifact: summary(artifact, reader), token };
     },
 
     revokeShareLink(id, actorId, options = {}) {
-      visible(id, { userId: actorId });
+      const { reader } = open(id, { userId: actorId });
+      refuseGuestLinks(reader);
       const artifact = store.setShareToken(id, null, actorId, options);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
-      return summary(artifact);
+      return summary(artifact, reader);
     },
 
     sharedArtifact(token) {
@@ -1080,24 +1119,27 @@ export function createArtifactService(options: {
     // it, restore it, and comment on it. There are no roles here, so the record
     // of who did what is what matters, and every change carries the actor.
     setStatus(id, status, actorId, options) {
-      visible(id, { userId: actorId });
+      const { reader } = open(id, { userId: actorId });
       const artifact = store.setStatus(id, status, actorId, options);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
-      return summary(artifact);
+      return summary(artifact, reader);
     },
 
     setArchived(id, archived, actorId, options) {
-      visible(id, { userId: actorId });
+      const { reader } = open(id, { userId: actorId });
       const artifact = store.setArchived(id, archived, actorId, options);
       if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
       publish({ type: "artifact.changed", id });
-      return summary(artifact);
+      return summary(artifact, reader);
     },
 
     comments(id, viewer) {
-      visible(id, viewer);
-      return commentStore.list(id);
+      const { reader } = open(id, viewer);
+      const comments = commentStore.list(id);
+      return reader.guest
+        ? comments.map((comment) => ({ ...comment, author: { ...comment.author, email: null } }))
+        : comments;
     },
 
     addComment(id, input) {
@@ -1162,10 +1204,13 @@ export function createArtifactService(options: {
     },
 
     entries(id, viewer) {
-      const artifact = visible(id, viewer);
+      const { artifact, reader } = open(id, viewer);
       const schema = entryStore.schema(artifact.currentVersionId);
+      const entries = listEntries(artifact);
       return {
-        entries: listEntries(artifact),
+        entries: reader.guest
+          ? entries.map((entry) => ({ ...entry, author: { ...entry.author, email: null } }))
+          : entries,
         schema: schema === null ? null : JSON.parse(schema),
       };
     },
@@ -1189,16 +1234,20 @@ export function createArtifactService(options: {
     },
 
     async markdown(id, viewer, versionId) {
-      const artifact = visible(id, viewer);
+      const { artifact, reader } = open(id, viewer);
       const version = requireVersion(store, id, versionId ?? artifact.currentVersionId);
-      return { artifact: summary(artifact), ...(await versionMarkdown(version)) };
+      return { artifact: summary(artifact, reader), ...(await versionMarkdown(version)) };
     },
 
     async source(id, viewer, versionId) {
-      const artifact = visible(id, viewer);
+      const { artifact, reader } = open(id, viewer);
       const version = requireVersion(store, id, versionId ?? artifact.currentVersionId);
       const content = await readSource(store, version.id);
-      return { artifact: summary(artifact), version: toVersionSummary(version), content };
+      return {
+        artifact: summary(artifact, reader),
+        version: toVersionSummary(version, reader),
+        content,
+      };
     },
 
     async image(id, viewer, versionId, name) {

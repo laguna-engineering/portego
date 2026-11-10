@@ -14,7 +14,8 @@ export type Comment = {
   artifactId: string;
   body: string;
   createdAt: Date;
-  author: { id: string; name: string; email: string };
+  /** The service sends a null email to a guest. */
+  author: { id: string; name: string; email: string | null };
   anchor: CommentAnchor | null;
   /** The root comment this replies to, or null for a root comment itself. */
   parentId: string | null;

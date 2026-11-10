@@ -452,6 +452,52 @@ export const migrations: readonly Migration[] = [
       create index serviceAccountEnrollments_expires_at on serviceAccountEnrollments (expiresAt);
     `,
   },
+  {
+    // Read only with TEAMS=true. A folder with teams is readable only by
+    // their members, and a guest reads nothing else. A team that restricts a
+    // folder cannot be deleted, so a folder never loses a restriction by accident.
+    id: "024-teams",
+    sql: `
+      create table teams (
+        id text not null primary key,
+        name text not null unique collate nocase,
+        createdBy text not null references "user" ("id"),
+        createdAt integer not null
+      );
+      create table teamMembers (
+        teamId text not null references teams (id) on delete cascade,
+        userId text not null references "user" ("id") on delete cascade,
+        addedBy text not null references "user" ("id"),
+        addedAt integer not null,
+        primary key (teamId, userId)
+      );
+      create index teamMembers_user on teamMembers (userId);
+      create table folderTeams (
+        folderId text not null references folders (id) on delete cascade,
+        teamId text not null references teams (id) on delete restrict,
+        addedBy text not null references "user" ("id"),
+        addedAt integer not null,
+        primary key (folderId, teamId)
+      );
+      create index folderTeams_team on folderTeams (teamId);
+      create table guests (
+        userId text not null primary key references "user" ("id") on delete cascade,
+        invitedBy text not null references "user" ("id"),
+        createdAt integer not null
+      );
+      create table invitations (
+        id text not null primary key,
+        email text not null collate nocase,
+        teamIds text not null,
+        invitedBy text not null references "user" ("id"),
+        createdAt integer not null,
+        expiresAt integer not null,
+        acceptedAt integer,
+        acceptedBy text references "user" ("id")
+      );
+      create index invitations_email on invitations (email);
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {
