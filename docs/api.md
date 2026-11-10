@@ -25,6 +25,13 @@ false when the deployment turned private artifacts off,
 on, `features.serviceAccounts`, which is true when the deployment turned
 service accounts on, and the deployment's `appName`, which names the root of
 the folder tree. `user.admin` is true for a person listed in `PORTEGO_ADMINS`.
+With `TEAMS=true`, it also has `features.teams: true` and `user.guest`.
+
+With `TEAMS=true`, an artifact in a folder the caller cannot read answers
+`NOT_FOUND` on every route, as if it did not exist, and lists, search, and
+counts leave it out. `PRIVATE` stays for another member's private artifact.
+A guest gets `null` for every `email` field. The rules are in
+[organization.md](organization.md#teams).
 
 ## Endpoints
 
@@ -162,7 +169,11 @@ so another person's private artifact sends them nothing. The one exception is
 the `artifact.changed` that makes a shared artifact private. It carries
 `"madePrivate": true` and reaches every stream, because everyone could read the
 artifact until then, and a page that has it open hides it when it hears the
-change. `folder.changed` and `tag.changed` reach every stream.
+change. With `TEAMS=true`, it reaches only the streams of people who can read
+the artifact's folder. `folder.changed` reaches the streams of people who can
+read the folder; a change to who can read it is announced before and after
+the change, so both the old and the new readers hear of it. `tag.changed`
+reaches every stream.
 
 The comment line every 20 seconds is what keeps an idle connection alive
 through a proxy, and it is how the server learns that a client has gone. See
@@ -187,6 +198,8 @@ see [varda-integration.md](varda-integration.md).
 
 - The creator is taken from the session and reported as
   `creator: { id, name, email }`. A `createdBy` field in the form is ignored.
+- With `TEAMS=true`, `folderId` must name a folder the caller can read, and a
+  guest's new artifact needs one.
 - The MIME type and the filename are hints. The document itself has to be
   valid UTF-8 and has to look like HTML: it contains `<!doctype html>` or an
   `<html>` tag, or it starts with a tag or a comment. A fragment such as
@@ -281,6 +294,14 @@ omit `parentId` for a root folder. `PATCH /api/folders/:id` accepts either or
 both fields, with `parentId: null` moving a folder to the root. A folder cannot
 be its own parent or descendant. Deleting one reparents its children and moves
 its direct artifacts to its parent, or unfiles them when it was a root.
+
+With `TEAMS=true`, `GET /api/folders` lists only the folders the caller can
+read; one whose parent they cannot read has `parentId: null`. A move that
+changes the teams on a folder's path is for admins only, and deleting a
+folder that has teams is refused while it holds anything; both answer
+`FORBIDDEN`. A guest sees only the tags on artifacts they can read.
+[organization.md](organization.md#changing-restricted-folders) has every
+rule.
 
 `GET /api/tags` returns the shared tags with `id`, `name`, timestamps, and
 `artifactCount`. `POST /api/tags` accepts `{ "name" }`; `PATCH /api/tags/:id`
@@ -509,8 +530,28 @@ an admin's session and answer `FORBIDDEN` to anyone else.
 | `POST` | `/api/service-accounts/renew` | `{ clientId, publicJwk, assertion }`. Replaces the key; see [mcp.md](mcp.md#service-accounts) |
 | `GET` | `/api/service-accounts` | Every account, with the admin who last approved its key, its last renewal, expiry, and whether it is disabled |
 | `GET` | `/api/service-accounts/enrollments/:id/approval` | The enrollment's name, code, and times |
-| `POST` | `/api/service-accounts/enrollments/:id/approval` | `{}` creates an account; `{ accountId }` gives an existing one the key |
+| `POST` | `/api/service-accounts/enrollments/:id/approval` | `{}` creates an account; `{ accountId }` gives an existing one the key. With `TEAMS=true`, `{ guest: true, teamIds }` creates a guest in those teams |
 | `POST` | `/api/service-accounts/:id/disable` | Disables the account. Its key and tokens stop working at once |
+
+## Teams and invitations
+
+These routes exist only with `TEAMS=true`
+([organization.md](organization.md#teams)). They need an admin's session and
+answer `FORBIDDEN` to anyone else.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/teams` | Every team with its members and the ids of the folders it restricts, every account (`people`), and every folder, including those the admin cannot read |
+| `POST` | `/api/teams` | `{ name }`. Creates a team |
+| `PATCH` | `/api/teams/:id` | `{ name }`. Renames it |
+| `DELETE` | `/api/teams/:id` | Deletes it. `FORBIDDEN` while it restricts a folder |
+| `PUT` | `/api/teams/:id/members/:userId` | Adds an account to the team |
+| `DELETE` | `/api/teams/:id/members/:userId` | Removes it |
+| `PUT` | `/api/teams/:id/folders/:folderId` | Restricts the folder to the team. A folder's first team revokes the public links under it |
+| `DELETE` | `/api/teams/:id/folders/:folderId` | Removes the restriction |
+| `GET` | `/api/invitations` | Every invitation, newest first |
+| `POST` | `/api/invitations` | `{ email, teamIds }`. Invites the address for 7 days |
+| `DELETE` | `/api/invitations/:id` | Revokes an invitation that was not used yet |
 
 ## Errors
 
@@ -523,7 +564,7 @@ Every failure has the same shape:
 | Code | Status | Meaning |
 | --- | --- | --- |
 | `UNAUTHENTICATED` | 401 | No session, or no usable upload ticket. |
-| `NOT_FOUND` | 404 | No artifact with that id. |
+| `NOT_FOUND` | 404 | No artifact with that id, or one in a folder the caller cannot read. |
 | `FORBIDDEN` | 403 | The action is not this caller's to take, or the deployment turned it off. |
 | `PRIVATE` | 403 | The artifact is someone else's private one. Nothing else about it is sent. |
 | `INVALID_INPUT` | 400 | A field is missing, malformed, or too long. |

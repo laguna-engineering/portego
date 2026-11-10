@@ -19,7 +19,9 @@ ever breaks.
 
 Anyone the admission policy admits may change a status, archive, restore,
 comment, and organize any artifact they can see. They may also manage shared folders and
-tags. There are no roles here, so the record of who did what
+tags. With `TEAMS=true`, an artifact in a folder restricted to other teams is
+one they cannot see, and an invited guest can do less: see
+[organization.md](organization.md#teams). There are no roles here, so the record of who did what
 is what matters: every status change stores `statusChangedBy` and
 `statusChangedAt`, archiving stores `archivedBy` and `archivedAt`, and a
 comment stores its author and creation time.
@@ -36,7 +38,8 @@ A deployment with `PUBLIC_LINKS=true` replaces the Make private control with
 Share. Its creator chooses who can see the artifact: only them, everyone
 signed in, or anyone with the link. Any member who can see a shared artifact
 can also add, copy, or revoke its link, as in other document tools; only the
-creator can make it private. When someone else adds or revokes the link, the
+creator can make it private. A guest invited with `TEAMS=true` cannot add or
+revoke a link. When someone else adds or revokes the link, the
 creator is notified. A public link opens the artifact without signing in. Someone who opens the
 link and adds an entry gives a name first. Members see that entry under the
 name, marked as a guest. Guest entries do not appear in the activity feed.
