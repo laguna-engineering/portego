@@ -59,6 +59,8 @@ export type TestServerOptions = {
   baseURL?: string;
   contentOrigin?: string;
   providers?: ResolvedProvider[];
+  /** Lets people connect GitHub accounts. */
+  github?: boolean;
   /** Serve the built client from disk, which the browser tests need. */
   serveClient?: boolean;
 };
@@ -70,6 +72,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     database,
     ...(options.baseURL ? { baseURL: options.baseURL } : {}),
     ...(options.providers ? { providers: options.providers } : {}),
+    ...(options.github ? { github: true } : {}),
   });
   applyMigrations(database);
 

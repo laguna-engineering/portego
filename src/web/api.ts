@@ -138,7 +138,7 @@ export type Session = {
   user: User;
   limits: { maxUploadBytes: number };
   /** Optional features the deployment turned on. */
-  features: { privateArtifacts: boolean; publicLinks: boolean };
+  features: { privateArtifacts: boolean; publicLinks: boolean; githubAccounts: boolean };
   appName: string;
 };
 
@@ -281,6 +281,25 @@ export async function startSignIn(providerId: string, callbackURL = "/"): Promis
     body: JSON.stringify({ provider: providerId, callbackURL, errorCallbackURL: "/" }),
   });
   if (!body.url) throw new ApiError("NO_URL", "The provider returned no sign-in URL.", 500);
+  return body.url;
+}
+
+/**
+ * Starts GitHub's approval page. Returns the URL to send the user to. The
+ * browser comes back to the profile with `github=connected`, or with
+ * `github=error` and Better Auth's `error` code.
+ */
+export async function startGitHubConnection(): Promise<string> {
+  const body = await request<{ url?: string }>("/api/auth/link-social", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      provider: "github",
+      callbackURL: "/profile?github=connected",
+      errorCallbackURL: "/profile?github=error",
+    }),
+  });
+  if (!body.url) throw new ApiError("NO_URL", "GitHub returned no URL to approve access.", 500);
   return body.url;
 }
 
@@ -586,6 +605,29 @@ export function uploadAvatar(image: Blob): Promise<string> {
 
 export async function removeAvatar(): Promise<void> {
   await request<{ avatar: null }>("/api/me/avatar", { method: "DELETE" });
+}
+
+/** Times are epoch ms. */
+export type GitHubAccount = {
+  id: string;
+  githubId: string;
+  login: string;
+  connectedAt: number;
+  updatedAt: number;
+};
+
+export function fetchGitHubAccounts(): Promise<GitHubAccount[]> {
+  return request<{ accounts: GitHubAccount[] }>("/api/me/github-accounts").then(
+    (body) => body.accounts,
+  );
+}
+
+/** Returns the accounts left. */
+export function disconnectGitHubAccount(id: string): Promise<GitHubAccount[]> {
+  return request<{ accounts: GitHubAccount[] }>(
+    `/api/me/github-accounts/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  ).then((body) => body.accounts);
 }
 
 export function fetchComments(id: string): Promise<Comment[]> {
