@@ -262,7 +262,7 @@ export type ArtifactService = {
   canRead: (id: string, viewer: Viewer) => boolean;
   /**
    * Whether each account may read the artifact, from one read of the artifact
-   * and of the folder tree. Keep it for one event at most. `asShared` answers
+   * and of its folder's path. Keep it for one event at most. `asShared` answers
    * as if the artifact were shared, which is who could read it before it was
    * made private.
    */

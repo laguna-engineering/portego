@@ -951,23 +951,23 @@ describe("the change stream with teams on", () => {
     expect(await titles(cookies.outsider)).toEqual([]);
   });
 
-  // Each event is checked for every open stream, so a read of the whole folder
-  // tree per stream grows with both the folders and the open pages.
-  test("reads the folder tree once for each event, however many streams hear it", async () => {
+  // Each event is checked for every open stream, inside the write that
+  // published it. A read of the whole folder tree there would slow every write
+  // as the folders and the open pages grow.
+  test("reads only the event's folder path, once for each event", async () => {
     const streams = await Promise.all(
       (["member", "member", "guest", "outsider"] as const).map((name) => stream(cookies[name])),
     );
     const query = spyOn(server.database, "query");
     server.events.publish({ type: "folder.changed", id: contracts });
     server.events.publish({ type: "artifact.changed", id: contract });
-    const treeReads = query.mock.calls.filter(
-      ([sql]) => sql === "select id, parentId from folders",
-    ).length;
+    const sql = query.mock.calls.map(([text]) => text);
     query.mockRestore();
     server.events.publish({ type: "tag.changed", id: "marker" });
 
     const seen = await Promise.all(streams.map((res) => readUntil(res, /marker/)));
-    expect(treeReads).toBe(2);
+    expect(sql.filter((text) => /from (folders|folderTeams)$/.test(text))).toEqual([]);
+    expect(sql.filter((text) => /with recursive up \(id, parentId\)/.test(text))).toHaveLength(2);
     expect(seen.map((text) => text.includes(contract))).toEqual([true, true, true, false]);
   });
 

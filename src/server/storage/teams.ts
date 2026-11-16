@@ -37,6 +37,8 @@ export type TeamStore = {
   isGuest: (userId: string) => boolean;
   teamIdsOf: (userId: string) => string[];
   folderTree: () => FolderTree;
+  /** The folders on the paths from `folderIds` up to the root, with their teams. */
+  folderPaths: (folderIds: readonly string[]) => FolderTree;
   /**
    * True for an existing guest, or for an address with an invitation that is
    * neither accepted nor expired.
@@ -151,6 +153,16 @@ const SELECT_INVITATION = `
   select invitations.*, ${USER_NAME} as invitedByName
   from invitations join "user" on "user".id = invitations.invitedBy ${JOIN_DISPLAY_NAME}`;
 
+// `union` drops a row it already has, so a cycle cannot repeat forever.
+const FOLDER_PATH = `
+  with recursive up (id, parentId) as (
+    select id, parentId from folders where id = ?
+    union
+    select folders.id, folders.parentId from folders join up on folders.id = up.parentId
+  )
+  select up.id, up.parentId, folderTeams.teamId
+  from up left join folderTeams on folderTeams.folderId = up.id`;
+
 export function createTeamStore(database: Database): TeamStore {
   const invitation = (id: string): Invitation | null => {
     const row = database
@@ -192,6 +204,26 @@ export function createTeamStore(database: Database): TeamStore {
         parentOf: new Map(folders.map((folder) => [folder.id, folder.parentId])),
         teamsOf,
       };
+    },
+
+    folderPaths(folderIds) {
+      const parentOf = new Map<string, string | null>();
+      const teamsOf = new Map<string, Set<string>>();
+      for (const folderId of folderIds) {
+        const rows = database.query(FOLDER_PATH).all(folderId) as {
+          id: string;
+          parentId: string | null;
+          teamId: string | null;
+        }[];
+        for (const { id, parentId, teamId } of rows) {
+          parentOf.set(id, parentId);
+          if (teamId === null) continue;
+          const teams = teamsOf.get(id) ?? new Set<string>();
+          teams.add(teamId);
+          teamsOf.set(id, teams);
+        }
+      }
+      return { parentOf, teamsOf };
     },
 
     invited(identity, now) {

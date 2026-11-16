@@ -14,9 +14,9 @@ export type AccessService = {
   /** Read from the database on every call. Callers keep it for one request at most. */
   reader: (viewer: Viewer) => Reader;
   /**
-   * Each account's reader for `folderIds` only, from one read of the folder
-   * tree. With teams on, it reads no other folder. Keep it for one event at
-   * most: it does not see later changes.
+   * Each account's reader for `folderIds` only, from one read of their paths
+   * to the root. With teams on, it reads no other folder. Keep it for one
+   * event at most: it does not see later changes.
    */
   readers: (folderIds: readonly string[]) => (userId: string) => Reader;
   /** Empty when teams are off. */
@@ -54,7 +54,7 @@ export function createAccessService(store: TeamStore): AccessService {
       };
     },
     readers(folderIds) {
-      const tree = store.folderTree();
+      const tree = store.folderPaths(folderIds);
       const built = new Map<string, Reader>();
       return (userId) => {
         let reader = built.get(userId);
