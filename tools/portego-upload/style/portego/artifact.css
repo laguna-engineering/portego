@@ -48,6 +48,11 @@ h3 {
   font-size: 1.15rem;
 }
 
+/* A heading or a card label already leaves room below it. */
+:not(h1, h2, h3, .artifact-card-label) + h3 {
+  margin-top: var(--space-6);
+}
+
 p,
 ul,
 ol {
@@ -166,7 +171,7 @@ pre {
 }
 
 .artifact-callout {
-  margin-top: var(--space-5);
+  margin: var(--space-5) 0;
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--line);
   border-left: 3px solid var(--accent);
@@ -183,6 +188,7 @@ pre {
 }
 
 .artifact-table-wrap {
+  margin: 0 0 var(--space-4);
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -257,8 +263,7 @@ tr:last-child td {
   margin-top: var(--space-6);
 }
 
-.artifact-markdown pre,
-.artifact-markdown .artifact-table-wrap {
+.artifact-markdown pre {
   margin: 0 0 var(--space-4);
 }
 
