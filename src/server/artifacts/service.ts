@@ -1,5 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { type Reader, readsArtifact, readsFolder, type Viewer } from "../access/reader.ts";
+import {
+  type Reader,
+  readsArtifact,
+  readsFolder,
+  type Viewer,
+  withReadableParent,
+} from "../access/reader.ts";
 import { type AccessService, OPEN_ACCESS } from "../access/service.ts";
 import type { EventBus } from "../events/bus.ts";
 import { CONVERTER_VERSION, htmlToMarkdown } from "../markdown/convert.ts";
@@ -21,7 +27,7 @@ import type {
 import { ContentMissingError, InvalidCursorError } from "../storage/artifacts.ts";
 import type { Comment, CommentAnchor, CommentStore } from "../storage/comments.ts";
 import { type Entry, type EntryStore, guestAuthorId } from "../storage/entries.ts";
-import type { ArtifactOrganization, FolderReference } from "../storage/organization.ts";
+import type { ArtifactOrganization } from "../storage/organization.ts";
 import type {
   NameHit,
   SearchHit,
@@ -375,13 +381,6 @@ export type ArtifactService = {
   publicLinks: boolean;
 };
 
-// A guest cannot read the folders above their teams' folders, so those are
-// not named as parents.
-function folderFor(folder: FolderReference | null, reader?: Reader): FolderReference | null {
-  if (!folder?.parentId || !reader || readsFolder(reader, folder.parentId)) return folder;
-  return { ...folder, parentId: null };
-}
-
 function toSummary(
   artifact: Artifact,
   publicLinks: boolean,
@@ -396,11 +395,12 @@ function toSummary(
     createdByEmail,
     ...summary
   } = artifact;
+  const folder = organization?.folder ?? null;
   return {
     ...summary,
     creator: { id: createdBy, name: createdByName, email: reader?.guest ? null : createdByEmail },
     publicLink: publicLinks && shareToken !== null && artifact.archivedAt === null,
-    folder: folderFor(organization?.folder ?? null, reader),
+    folder: folder && reader ? withReadableParent(folder, reader) : folder,
     tags: organization?.tags ?? [],
   };
 }
@@ -970,6 +970,8 @@ export function createArtifactService(options: {
         }
         ({ folderId } = organization.checkAssignment(filing, input.createdBy));
       }
+      // Checked again when filed: the version write awaits, and access to the
+      // folder can change meanwhile.
       const file = (artifactId: string, what: { folderId?: unknown; tagIds?: unknown }) => {
         if (Object.keys(what).length > 0) {
           organization?.setArtifactOrganization(artifactId, { ...what, actorId: input.createdBy });

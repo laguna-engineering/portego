@@ -1,4 +1,10 @@
-import { NOBODY, type Reader, readsFolder, restrictionsAt } from "../access/reader.ts";
+import {
+  NOBODY,
+  type Reader,
+  readsFolder,
+  restrictionsAt,
+  withReadableParent,
+} from "../access/reader.ts";
 import { type AccessService, OPEN_ACCESS } from "../access/service.ts";
 import { ServiceError } from "../artifacts/errors.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -148,13 +154,6 @@ export function createOrganizationService(options: {
     }
     return false;
   };
-  // A guest cannot read the folders above their teams' folders, so those
-  // are not named as parents.
-  const forReader = (folder: Folder, reader: Reader): Folder =>
-    folder.parentId === null || readsFolder(reader, folder.parentId)
-      ? folder
-      : { ...folder, parentId: null };
-
   const checkAssignment = (input: { folderId?: unknown; tagIds?: unknown }, reader: Reader) => {
     const normalizedFolderId =
       input.folderId === undefined ? undefined : parentId(input.folderId, "folderId");
@@ -174,7 +173,7 @@ export function createOrganizationService(options: {
       return store
         .listFolders(reader)
         .filter((folder) => readsFolder(reader, folder.id))
-        .map((folder) => forReader(folder, reader));
+        .map((folder) => withReadableParent(folder, reader));
     },
     rootArtifactCount: (viewerId) => store.countUnfiled(readerOf(viewerId)),
 
@@ -195,7 +194,7 @@ export function createOrganizationService(options: {
           reader,
         });
         publish({ type: "folder.changed", id: folder.id });
-        return forReader(folder, reader);
+        return withReadableParent(folder, reader);
       } catch (cause) {
         if (cause instanceof Error && /unique/i.test(cause.message)) {
           return conflict("A folder with that name already exists here.");
@@ -254,7 +253,7 @@ export function createOrganizationService(options: {
         publish({ type: "folder.changed", id });
         for (const artifactId of updated.revoked)
           publish({ type: "artifact.changed", id: artifactId });
-        return forReader(updated.folder, reader);
+        return withReadableParent(updated.folder, reader);
       } catch (cause) {
         if (cause instanceof Error && /unique/i.test(cause.message)) {
           return conflict("A folder with that name already exists here.");

@@ -42,6 +42,16 @@ export function readsFolder(scope: FolderScope, folderId: string | null): boolea
   return scope.folders === null || scope.folders.has(folderId);
 }
 
+// A guest cannot read the folders above their teams' folders, so those are
+// not named as parents.
+export function withReadableParent<T extends { parentId: string | null }>(
+  folder: T,
+  reader: Reader,
+): T {
+  if (folder.parentId === null || readsFolder(reader, folder.parentId)) return folder;
+  return { ...folder, parentId: null };
+}
+
 export function readsArtifact(
   reader: Reader,
   artifact: { visibility: ArtifactVisibility; createdBy: string; folderId: string | null },
