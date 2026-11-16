@@ -78,6 +78,24 @@ export function pathTo(tree: FolderTree, folderId: string): string[] {
  * teams, the account is in at least one of them. A guest also needs at least
  * one folder with teams on the path.
  */
+export function readsFolderIn(
+  tree: FolderTree,
+  teams: ReadonlySet<string>,
+  guest: boolean,
+  folderId: string,
+): boolean {
+  const path = pathTo(tree, folderId);
+  if (path.length === 0) return false;
+  let restricted = false;
+  for (const id of path) {
+    const required = tree.teamsOf.get(id);
+    if (!required || required.size === 0) continue;
+    restricted = true;
+    if (![...required].some((team) => teams.has(team))) return false;
+  }
+  return restricted || !guest;
+}
+
 export function readableFolders(
   tree: FolderTree,
   teams: ReadonlySet<string>,
@@ -85,19 +103,7 @@ export function readableFolders(
 ): Set<string> {
   const readable = new Set<string>();
   for (const folderId of tree.parentOf.keys()) {
-    const path = pathTo(tree, folderId);
-    let allowed = path.length > 0;
-    let restricted = false;
-    for (const id of path) {
-      const required = tree.teamsOf.get(id);
-      if (!required || required.size === 0) continue;
-      restricted = true;
-      if (![...required].some((team) => teams.has(team))) {
-        allowed = false;
-        break;
-      }
-    }
-    if (allowed && (restricted || !guest)) readable.add(folderId);
+    if (readsFolderIn(tree, teams, guest, folderId)) readable.add(folderId);
   }
   return readable;
 }

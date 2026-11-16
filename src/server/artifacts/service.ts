@@ -763,7 +763,7 @@ export function createArtifactService(options: {
       const artifact = store.access(id);
       if (artifact === null) return () => false;
       const asRead = options.asShared ? { ...artifact, visibility: "shared" as const } : artifact;
-      const readerOf = access.readers();
+      const readerOf = access.readers(artifact.folderId === null ? [] : [artifact.folderId]);
       return (userId) => readsArtifact(readerOf(userId), asRead);
     },
 

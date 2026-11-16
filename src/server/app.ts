@@ -203,7 +203,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
       bus: options.events,
       audience: (subject) => {
         if ("folderId" in subject) {
-          const readerOf = access.readers();
+          const readerOf = access.readers([subject.folderId]);
           return (userId) => readsFolder(readerOf(userId), subject.folderId);
         }
         return options.artifacts.audience(subject.artifactId, {

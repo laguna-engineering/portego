@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { readsFolder } from "../access/reader.ts";
+import { createAccessService } from "../access/service.ts";
 import type { TestClaims } from "../auth/testing.ts";
 import { authorizeClient, callTool, registerClient } from "../mcp/testing.ts";
 import {
@@ -10,6 +12,7 @@ import {
   enrolledAgent,
 } from "../service-accounts/testing.ts";
 import { pageMeta } from "../social.ts";
+import { createTeamStore } from "../storage/teams.ts";
 import {
   createLiveTestServer,
   createTestServer,
@@ -966,6 +969,49 @@ describe("the change stream with teams on", () => {
     const seen = await Promise.all(streams.map((res) => readUntil(res, /marker/)));
     expect(treeReads).toBe(2);
     expect(seen.map((text) => text.includes(contract))).toEqual([true, true, true, false]);
+  });
+
+  // An event is checked with a reader built for the event's folder alone. A
+  // different answer from a request's reader would send the event to someone
+  // who cannot read the folder.
+  test("the check for an event agrees with the check for a request", async () => {
+    const drafts = await createFolder(cookies.member, "Drafts", contracts);
+    const shared = await createFolder(cookies.member, "Shared", contracts);
+    const budget = await createFolder(cookies.admin, "Budget", open);
+    await restrict(finance, shared);
+    await restrict(finance, budget);
+    const folders = new Map<string | null, string>([
+      [contracts, "Contracts"],
+      [drafts, "Drafts"],
+      [shared, "Shared"],
+      [open, "Open"],
+      [budget, "Budget"],
+      [null, "Unfiled"],
+    ]);
+    const accounts = { ...ids, admin: await userId(cookies.admin) };
+    const access = createAccessService(createTeamStore(server.database));
+    const readable = (reads: (userId: string, folderId: string | null) => boolean) =>
+      Object.fromEntries(
+        Object.entries(accounts).map(([account, id]) => [
+          account,
+          [...folders].filter(([folderId]) => reads(id, folderId)).map(([, name]) => name),
+        ]),
+      );
+
+    const forEvent = readable((id, folderId) =>
+      readsFolder(access.readers(folderId === null ? [] : [folderId])(id), folderId),
+    );
+    expect(forEvent).toEqual(
+      readable((id, folderId) => readsFolder(access.reader({ userId: id }), folderId)),
+    );
+    expect(forEvent).toEqual({
+      member: ["Contracts", "Drafts", "Open", "Unfiled"],
+      outsider: ["Open", "Unfiled"],
+      guest: ["Contracts", "Drafts"],
+      stranger: ["Budget"],
+      admin: ["Open", "Unfiled"],
+    });
+    expect(readsFolder(access.readers([open])(ids.member), contracts)).toBe(false);
   });
 });
 
