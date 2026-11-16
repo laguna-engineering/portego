@@ -127,7 +127,12 @@ export function createTeamService(options: {
     },
 
     addMember(teamId, userId, adminId) {
-      const added = announcing(team(teamId).folderIds, () =>
+      const { folderIds, members } = team(teamId);
+      if (members.some((member) => member.id === userId)) return team(teamId);
+      if (!store.people().some((person) => person.id === userId)) {
+        throw new ServiceError("NOT_FOUND", "No such account.");
+      }
+      const added = announcing(folderIds, () =>
         store.addMember({ teamId, userId, addedBy: adminId, now: now() }),
       );
       if (!added) throw new ServiceError("NOT_FOUND", "No such account.");
@@ -135,12 +140,18 @@ export function createTeamService(options: {
     },
 
     removeMember(teamId, userId) {
-      announcing(team(teamId).folderIds, () => store.removeMember(teamId, userId));
+      const { folderIds, members } = team(teamId);
+      if (members.some((member) => member.id === userId)) {
+        announcing(folderIds, () => store.removeMember(teamId, userId));
+      }
       return team(teamId);
     },
 
     addFolder(teamId, folderId, adminId) {
-      team(teamId);
+      if (team(teamId).folderIds.includes(folderId)) return team(teamId);
+      if (!store.folders().some((folder) => folder.id === folderId)) {
+        throw new ServiceError("NOT_FOUND", "No such folder.");
+      }
       const revoked = announcing([folderId], () =>
         store.addFolder({ teamId, folderId, addedBy: adminId, now: now() }),
       );
@@ -150,8 +161,9 @@ export function createTeamService(options: {
     },
 
     removeFolder(teamId, folderId) {
-      team(teamId);
-      announcing([folderId], () => store.removeFolder(teamId, folderId));
+      if (team(teamId).folderIds.includes(folderId)) {
+        announcing([folderId], () => store.removeFolder(teamId, folderId));
+      }
       return team(teamId);
     },
 

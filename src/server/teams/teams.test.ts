@@ -876,6 +876,32 @@ describe("the change stream with teams on", () => {
     ).toEqual({ outsider: true, guest: true });
   });
 
+  // A folder.changed makes every reader's page fetch the folder again.
+  test("a team change that changes nothing reaches nobody", async () => {
+    expect(
+      await heard(["member", "guest"], async () => {
+        await json(cookies.admin, `/api/teams/${legal}/members/${ids.member}`, { method: "PUT" });
+        await json(
+          cookies.admin,
+          `/api/teams/${legal}/members/no-such-user`,
+          { method: "PUT" },
+          404,
+        );
+        await json(cookies.admin, `/api/teams/${legal}/members/${ids.outsider}`, {
+          method: "DELETE",
+        });
+        await restrict(legal, contracts);
+        return contracts;
+      }),
+    ).toEqual({ member: false, guest: false });
+    expect(
+      await heard(["outsider"], async () => {
+        await json(cookies.admin, `/api/teams/${legal}/folders/${open}`, { method: "DELETE" });
+        return open;
+      }),
+    ).toEqual({ outsider: false });
+  });
+
   test("deleting a team's folder reaches its team and nobody else", async () => {
     const empty = await createFolder(cookies.member, "Empty", contracts);
     expect(

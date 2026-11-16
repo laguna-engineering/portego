@@ -69,8 +69,11 @@ guest also needs at least one folder with teams on the path.
 An artifact in a folder the account cannot read does not exist for that
 account. Every route that names it answers `NOT_FOUND`, and lists, search,
 folder and tag counts, the activity feed, profiles, and the change stream
-leave it out. A private artifact stays visible to its creator only, in any
-folder.
+leave it out. This applies to an artifact's creator too. A private artifact is
+visible only to its creator, and only while the creator can read its folder.
+When a creator cannot read the folder, nobody can read their private artifacts
+in it, admins included. An admin restores access by adding the creator to one
+of the folder's teams, or by removing the restriction.
 
 Admins do not bypass teams. An admin who needs to read a restricted folder
 adds themselves to its team, and the membership records who added it.
