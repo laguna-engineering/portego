@@ -204,7 +204,7 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
       audience: (subject) => {
         if ("folderId" in subject) {
           const readerOf = access.readers([subject.folderId]);
-          return (userId) => readsFolder(readerOf(userId), subject.folderId);
+          return (userId) => readsFolder(readerOf({ userId }), subject.folderId);
         }
         return options.artifacts.audience(subject.artifactId, {
           asShared: subject.asShared === true,

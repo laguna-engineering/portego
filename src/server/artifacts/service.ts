@@ -547,10 +547,13 @@ export function createArtifactService(options: {
 
   // An artifact in a folder the viewer cannot read does not exist for them.
   // PRIVATE stays for another member's private artifact, as before teams.
+  // The reader knows only the artifact's folder path: never pass it to a list
+  // or a search.
   const open = (id: string, viewer: Viewer): { artifact: Artifact; reader: Reader } => {
-    const reader = access.reader(viewer);
     const artifact = store.get(id);
-    if (!artifact || !readsFolder(reader, artifact.folderId)) {
+    if (!artifact) throw new ServiceError("NOT_FOUND", "No such artifact.");
+    const reader = access.readers([artifact.folderId])(viewer);
+    if (!readsFolder(reader, artifact.folderId)) {
       throw new ServiceError("NOT_FOUND", "No such artifact.");
     }
     if (!readsArtifact(reader, artifact)) {
@@ -675,7 +678,8 @@ export function createArtifactService(options: {
     if (!varda) return undefined;
     const schema = entrySchema(artifact.currentVersionId);
     if (schema === null || !vardaKey(schema, key)) return undefined;
-    if (!readsArtifact(access.reader({ userId: varda.account }), artifact)) return undefined;
+    const vardaReader = access.readers([artifact.folderId])({ userId: varda.account });
+    if (!readsArtifact(vardaReader, artifact)) return undefined;
     return JSON.stringify({
       type: "entry",
       artifactId: artifact.id,
@@ -756,15 +760,17 @@ export function createArtifactService(options: {
 
     canRead(id, viewer) {
       const artifact = store.access(id);
-      return artifact !== null && readsArtifact(access.reader(viewer), artifact);
+      return (
+        artifact !== null && readsArtifact(access.readers([artifact.folderId])(viewer), artifact)
+      );
     },
 
     audience(id, options = {}) {
       const artifact = store.access(id);
       if (artifact === null) return () => false;
       const asRead = options.asShared ? { ...artifact, visibility: "shared" as const } : artifact;
-      const readerOf = access.readers(artifact.folderId === null ? [] : [artifact.folderId]);
-      return (userId) => readsArtifact(readerOf(userId), asRead);
+      const readerOf = access.readers([artifact.folderId]);
+      return (userId) => readsArtifact(readerOf({ userId }), asRead);
     },
 
     search(viewer, input) {

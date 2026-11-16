@@ -971,47 +971,92 @@ describe("the change stream with teams on", () => {
     expect(seen.map((text) => text.includes(contract))).toEqual([true, true, true, false]);
   });
 
-  // An event is checked with a reader built for the event's folder alone. A
-  // different answer from a request's reader would send the event to someone
-  // who cannot read the folder.
-  test("the check for an event agrees with the check for a request", async () => {
+  // Events and the routes for one artifact check access with a reader built
+  // from one folder's path. Any answer that differs from a request's full
+  // reader would show a folder, or its parent's id, to someone who cannot
+  // read it, or hide it from someone who can.
+  test("a reader built from one folder's path agrees with the full reader", async () => {
     const drafts = await createFolder(cookies.member, "Drafts", contracts);
     const shared = await createFolder(cookies.member, "Shared", contracts);
     const budget = await createFolder(cookies.admin, "Budget", open);
     await restrict(finance, shared);
     await restrict(finance, budget);
-    const folders = new Map<string | null, string>([
-      [contracts, "Contracts"],
-      [drafts, "Drafts"],
-      [shared, "Shared"],
-      [open, "Open"],
-      [budget, "Budget"],
-      [null, "Unfiled"],
+    const folders = new Map<string | null, { name: string; parentId: string | null }>([
+      [contracts, { name: "Contracts", parentId: null }],
+      [drafts, { name: "Drafts", parentId: contracts }],
+      [shared, { name: "Shared", parentId: contracts }],
+      [open, { name: "Open", parentId: null }],
+      [budget, { name: "Budget", parentId: open }],
+      [null, { name: "Unfiled", parentId: null }],
     ]);
     const accounts = { ...ids, admin: await userId(cookies.admin) };
     const access = createAccessService(createTeamStore(server.database));
+    const pathReader = (userId: string, folderId: string | null) =>
+      access.readers([folderId])({ userId });
     const readable = (reads: (userId: string, folderId: string | null) => boolean) =>
       Object.fromEntries(
         Object.entries(accounts).map(([account, id]) => [
           account,
-          [...folders].filter(([folderId]) => reads(id, folderId)).map(([, name]) => name),
+          [...folders].filter(([folderId]) => reads(id, folderId)).map(([, { name }]) => name),
         ]),
       );
 
-    const forEvent = readable((id, folderId) =>
-      readsFolder(access.readers(folderId === null ? [] : [folderId])(id), folderId),
-    );
-    expect(forEvent).toEqual(
+    const fromPath = readable((id, folderId) => readsFolder(pathReader(id, folderId), folderId));
+    expect(fromPath).toEqual(
       readable((id, folderId) => readsFolder(access.reader({ userId: id }), folderId)),
     );
-    expect(forEvent).toEqual({
+    expect(fromPath).toEqual({
       member: ["Contracts", "Drafts", "Open", "Unfiled"],
       outsider: ["Open", "Unfiled"],
       guest: ["Contracts", "Drafts"],
       stranger: ["Budget"],
       admin: ["Open", "Unfiled"],
     });
-    expect(readsFolder(access.readers([open])(ids.member), contracts)).toBe(false);
+    for (const [account, id] of Object.entries(accounts)) {
+      const full = access.reader({ userId: id });
+      for (const [built, { name, parentId }] of folders) {
+        const path = pathReader(id, built);
+        if (parentId !== null) {
+          expect(readsFolder(path, parentId), `${account}, parent of ${name}`).toBe(
+            readsFolder(full, parentId),
+          );
+        }
+        for (const [asked, folder] of folders) {
+          if (readsFolder(path, asked)) {
+            expect(readsFolder(full, asked), `${account}, ${folder.name} from ${name}`).toBe(true);
+          }
+        }
+      }
+    }
+    expect(readsFolder(pathReader(ids.member, open), contracts)).toBe(false);
+  });
+
+  // Each of these routes opens one artifact, so it needs only that artifact's
+  // folder path. A read of the whole folder tree would slow every one of them
+  // as the folders grow.
+  test("the routes for one artifact read only its folder's path", async () => {
+    const routes: [string, string, unknown?][] = [
+      ["GET", `/api/artifacts/${contract}`],
+      ["GET", `/api/artifacts/${contract}/versions`],
+      ["GET", `/api/artifacts/${contract}/comments`],
+      ["GET", `/api/artifacts/${contract}/entries`],
+      ["GET", `/api/artifacts/${contract}/markdown`],
+      ["POST", `/api/artifacts/${contract}/comments`, { body: "hello" }],
+    ];
+    for (const cookie of [cookies.member, cookies.guest]) {
+      for (const [method, path, body] of routes) {
+        const query = spyOn(server.database, "query");
+        const res = await call(cookie, path, { method, ...(body === undefined ? {} : { body }) });
+        const sql = query.mock.calls.map(([text]) => text);
+        query.mockRestore();
+        expect(res.status, `${method} ${path}`).toBeLessThan(300);
+        expect(sql.filter((text) => /from (folders|folderTeams)$/.test(text))).toEqual([]);
+        expect(
+          sql.filter((text) => /with recursive up \(id, parentId\)/.test(text)).length,
+          `${method} ${path}`,
+        ).toBeGreaterThan(0);
+      }
+    }
   });
 });
 

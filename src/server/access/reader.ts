@@ -78,7 +78,7 @@ export function pathTo(tree: FolderTree, folderId: string): string[] {
  * teams, the account is in at least one of them. A guest also needs at least
  * one folder with teams on the path.
  */
-export function readsFolderIn(
+function readsFolderIn(
   tree: FolderTree,
   teams: ReadonlySet<string>,
   guest: boolean,
