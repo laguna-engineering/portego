@@ -16,7 +16,7 @@ function viewerOf(service: ArtifactService, subject: PreviewSubject): Viewer {
   if (shared.id !== subject.artifactId) {
     throw new ServiceError("NOT_FOUND", "No such artifact.");
   }
-  return { userId: null };
+  return { userId: null, linkHolder: true };
 }
 
 export type PreviewOptions = {

@@ -24,7 +24,12 @@ export type BrowserApp = {
 };
 
 export async function startBrowserApp(
-  options: { publicLinks?: boolean; serviceAccounts?: boolean; admins?: string[] } = {},
+  options: {
+    publicLinks?: boolean;
+    serviceAccounts?: boolean;
+    teams?: boolean;
+    admins?: string[];
+  } = {},
 ): Promise<BrowserApp> {
   const server = await createLiveTestServer({ serveClient: true, ...options });
   const browser = await chromium.launch();

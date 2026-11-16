@@ -1,9 +1,14 @@
 import { Hono } from "hono";
 import { ServiceError } from "../artifacts/errors.ts";
+import { isAdmin } from "../auth/admins.ts";
 import { type AppEnv, currentUser, requireUser } from "../auth/middleware.ts";
 import type { OrganizationService } from "./service.ts";
 
-export function organizationRoutes(service: OrganizationService): Hono<AppEnv> {
+export function organizationRoutes(
+  service: OrganizationService,
+  options: { admins?: readonly string[] } = {},
+): Hono<AppEnv> {
+  const admins = options.admins ?? [];
   const routes = new Hono<AppEnv>();
 
   routes.get("/folders", requireUser, (c) =>
@@ -29,12 +34,13 @@ export function organizationRoutes(service: OrganizationService): Hono<AppEnv> {
       ...(Object.hasOwn(body, "name") ? { name: body.name } : {}),
       ...(Object.hasOwn(body, "parentId") ? { parentId: body.parentId } : {}),
       actorId: currentUser(c).id,
+      admin: isAdmin(admins, currentUser(c)),
     });
     return c.json({ folder });
   });
 
   routes.delete("/folders/:id", requireUser, (c) => {
-    service.deleteFolder(c.req.param("id"));
+    service.deleteFolder(c.req.param("id"), currentUser(c).id);
     return c.body(null, 204);
   });
 
@@ -56,7 +62,7 @@ export function organizationRoutes(service: OrganizationService): Hono<AppEnv> {
   });
 
   routes.delete("/tags/:id", requireUser, (c) => {
-    service.deleteTag(c.req.param("id"));
+    service.deleteTag(c.req.param("id"), currentUser(c).id);
     return c.body(null, 204);
   });
 

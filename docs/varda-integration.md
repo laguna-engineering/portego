@@ -49,7 +49,8 @@ An entry change writes one event when all of these are true:
 2. The key matches a rule with `"varda": true` in the schema of the artifact's
    current version.
 3. Varda's account can read the artifact: it is not private, or Varda's
-   account created it.
+   account created it. With `TEAMS=true`, Varda's account must also be able to
+   read the artifact's folder ([organization.md](organization.md#teams)).
 4. The change sets a new key, sets a value whose JSON differs from the stored
    one, or clears a key that had a value. Writing the same value again writes
    nothing. Writes through a public link count the same as members' writes.

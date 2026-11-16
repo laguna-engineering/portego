@@ -3003,3 +3003,84 @@ button.link {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+.team-create {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.team-create fieldset {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.team-card {
+  display: grid;
+  /* A select is as wide as its longest option. This keeps it inside the page. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.team-card h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.team-card h3 {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+}
+
+/* Wraps on a narrow screen, so the buttons drop below a long name. */
+.team-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.team-row input,
+.team-row select {
+  flex: 1 1 12rem;
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.team-row h2 {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.team-list {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-entry {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.team-badge {
+  margin-inline-start: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+}

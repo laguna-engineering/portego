@@ -10,6 +10,7 @@ import {
 } from "jose";
 import { ServiceError } from "../artifacts/errors.ts";
 import type { ServiceAccount, ServiceAccountStore } from "../storage/service-accounts.ts";
+import type { TeamStore } from "../storage/teams.ts";
 
 export const ENROLLMENT_LIFETIME_MS = 15 * 60 * 1000;
 export const MAX_PENDING_ENROLLMENTS = 10;
@@ -45,8 +46,15 @@ export type ServiceAccountService = {
     proof: string | null,
   ) => Promise<{ status: "pending" } | { status: "approved"; clientId: string }>;
   review: (id: string) => EnrollmentReview;
-  /** Creates an account, or gives the key to the account `accountId` names. */
-  approve: (id: string, input: { accountId?: unknown }, adminId: string) => ServiceAccount;
+  /**
+   * Creates an account, or gives the key to the account `accountId` names.
+   * With teams on, `guest` and `teamIds` make a new account a guest in those teams.
+   */
+  approve: (
+    id: string,
+    input: { accountId?: unknown; guest?: unknown; teamIds?: unknown },
+    adminId: string,
+  ) => ServiceAccount;
   /**
    * `assertion` is signed by the current key and names the new key's RFC 7638
    * thumbprint in `next_jkt`.
@@ -61,6 +69,29 @@ export type ServiceAccountService = {
   /** The user a client_credentials access token acts as, or null to refuse it. */
   principal: (claims: JWTPayload) => string | null;
 };
+
+/** The teams of a new guest account, or null for a member. */
+function readGuest(
+  input: { guest?: unknown; teamIds?: unknown },
+  newAccount: boolean,
+  teams: Pick<TeamStore, "teamExists"> | null,
+): { teamIds: string[] } | null {
+  if (input.guest === undefined || input.guest === false) return null;
+  if (input.guest !== true) throw new ServiceError("INVALID_INPUT", "guest must be true or false.");
+  if (!teams) throw new ServiceError("INVALID_INPUT", "This deployment has no guests.");
+  if (!newAccount) {
+    throw new ServiceError("INVALID_INPUT", "Only a new account can be made a guest.");
+  }
+  const teamIds = input.teamIds;
+  if (
+    !Array.isArray(teamIds) ||
+    teamIds.length === 0 ||
+    teamIds.some((id) => typeof id !== "string" || !teams.teamExists(id))
+  ) {
+    throw new ServiceError("INVALID_INPUT", "A guest needs one or more existing teams.");
+  }
+  return { teamIds: [...new Set(teamIds as string[])] };
+}
 
 export function parsePublicJwk(value: unknown): PublicJwk {
   const jwk = value as Record<string, unknown> | null;
@@ -100,6 +131,8 @@ export function createServiceAccountService(options: {
   /** The MCP resource every service account's client is linked to. */
   mcpResource: string;
   now?: () => number;
+  /** Checks the teams of a guest account. Null when teams are off. */
+  teams?: Pick<TeamStore, "teamExists"> | null;
 }): ServiceAccountService {
   const { store } = options;
   const now = options.now ?? Date.now;
@@ -205,6 +238,7 @@ export function createServiceAccountService(options: {
           "Send accountId to give the key to an existing account, or nothing for a new one.",
         );
       }
+      const guest = readGuest(input, accountId === null, options.teams ?? null);
       const at = now();
       const approved = store.approve({
         enrollmentId: id,
@@ -213,6 +247,7 @@ export function createServiceAccountService(options: {
         expiresAt: at + ACCOUNT_LIFETIME_MS,
         resource: options.mcpResource,
         accountId,
+        ...(guest && { guest }),
       });
       if (!approved) {
         throw new ServiceError(

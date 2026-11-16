@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
-import { VISIBLE } from "./artifacts.ts";
+import type { FolderScope } from "../access/reader.ts";
 import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
+import { READABLE, readableBy } from "./readable.ts";
 import {
   createSubscriptionStore,
   type FollowReason,
@@ -52,6 +53,8 @@ export type ActivityStore = {
     limit: number;
     userId: string;
     scope: "following" | "everyone";
+    /** The folders the user can read. */
+    folderScope: FolderScope;
   }) => Activity[];
   /** When the user last opened their notifications. Null if never. */
   readAt: (userId: string) => Date | null;
@@ -62,7 +65,12 @@ export type ActivityStore = {
    * user, and returns the newest version seen. It never moves back. Null when
    * the artifact has no such version or the user cannot see it.
    */
-  markVersionsSeen: (userId: string, artifactId: string, versionNumber: number) => number | null;
+  markVersionsSeen: (
+    userId: string,
+    artifactId: string,
+    versionNumber: number,
+    folderScope: FolderScope,
+  ) => number | null;
   subscriptions: SubscriptionStore;
 };
 
@@ -144,7 +152,7 @@ const SELECT_ACTIVITY = `
       left join watched on watched.folderId = artifacts.folderId
       left join folders via on via.id = watched.viaId
       left join artifactComments parentComment on parentComment.id = activity.parentId
-    where not (activity.actorId = ? and activity.inApp = 1) and ${VISIBLE}
+    where not (activity.actorId = ? and activity.inApp = 1) and ${READABLE}
   ) feed
   where ? or feed.byLevel or feed.replyToViewer or feed.linkToCreator
   order by feed.createdAt desc, feed.id desc
@@ -197,7 +205,7 @@ export function createActivityStore(options: { database: Database }): ActivitySt
   };
 
   return {
-    list({ since, limit, userId, scope }) {
+    list({ since, limit, userId, scope, folderScope }) {
       const rows = database
         .query(SELECT_ACTIVITY)
         .all(
@@ -213,7 +221,7 @@ export function createActivityStore(options: { database: Database }): ActivitySt
           userId,
           userId,
           userId,
-          userId,
+          ...readableBy(userId, folderScope),
           scope === "everyone" ? 1 : 0,
           limit,
         ) as Row[];
@@ -232,13 +240,13 @@ export function createActivityStore(options: { database: Database }): ActivitySt
       return readAt(userId) as Date;
     },
 
-    markVersionsSeen(userId, artifactId, versionNumber) {
+    markVersionsSeen(userId, artifactId, versionNumber, folderScope) {
       const exists = database
         .query(
           `select 1 from artifactVersions join artifacts on artifacts.id = artifactVersions.artifactId
-           where artifactVersions.artifactId = ? and artifactVersions.number = ? and ${VISIBLE}`,
+           where artifactVersions.artifactId = ? and artifactVersions.number = ? and ${READABLE}`,
         )
-        .get(artifactId, versionNumber, userId);
+        .get(artifactId, versionNumber, ...readableBy(userId, folderScope));
       if (!exists) return null;
       const row = database
         .query(

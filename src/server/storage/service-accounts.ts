@@ -17,7 +17,15 @@ export type ServiceAccount = {
   renewedAt: number;
   expiresAt: number;
   disabledAt: number | null;
+  /** Has a `guests` row. Only counts with teams on. */
+  guest: boolean;
 };
+
+type AccountRow = Omit<ServiceAccount, "guest"> & { guest: number };
+
+function toAccount(row: AccountRow | null): ServiceAccount | null {
+  return row && { ...row, guest: row.guest === 1 };
+}
 
 export type Enrollment = {
   id: string;
@@ -42,6 +50,8 @@ export type Approval = {
   resource: string;
   /** The account that gets the key, or null for a new one. */
   accountId: string | null;
+  /** Makes a new account a guest in these teams. Ignored for an existing account. */
+  guest?: { teamIds: string[] };
 };
 
 export type ServiceAccountStore = {
@@ -72,7 +82,8 @@ export type ServiceAccountStore = {
 };
 
 const SELECT_ACCOUNT = `
-  select serviceAccounts.*, ${USER_NAME} as approvedByName
+  select serviceAccounts.*, ${USER_NAME} as approvedByName,
+    exists (select 1 from guests where guests.userId = serviceAccounts.userId) as guest
   from serviceAccounts join "user" on "user".id = serviceAccounts.approvedBy ${JOIN_DISPLAY_NAME}`;
 
 function randomId(): string {
@@ -127,14 +138,18 @@ export function insertOAuthClient(
 
 export function createServiceAccountStore(database: Database): ServiceAccountStore {
   const byUserId = (userId: string) =>
-    database
-      .query(`${SELECT_ACCOUNT} where serviceAccounts.userId = ?`)
-      .get(userId) as ServiceAccount | null;
+    toAccount(
+      database
+        .query(`${SELECT_ACCOUNT} where serviceAccounts.userId = ?`)
+        .get(userId) as AccountRow | null,
+    );
 
   const byClientId = (clientId: string) =>
-    database
-      .query(`${SELECT_ACCOUNT} where serviceAccounts.clientId = ?`)
-      .get(clientId) as ServiceAccount | null;
+    toAccount(
+      database
+        .query(`${SELECT_ACCOUNT} where serviceAccounts.clientId = ?`)
+        .get(clientId) as AccountRow | null,
+    );
 
   const enrollment = (id: string, now: number) =>
     database
@@ -203,6 +218,18 @@ export function createServiceAccountStore(database: Database): ServiceAccountSto
             { clientId, userId: accountId, name: pending.name, jwks, resource: approval.resource },
             now,
           );
+          if (approval.guest) {
+            database
+              .query("insert into guests (userId, invitedBy, createdAt) values (?, ?, ?)")
+              .run(accountId, approval.approvedBy, now);
+            for (const teamId of approval.guest.teamIds) {
+              database
+                .query(
+                  "insert into teamMembers (teamId, userId, addedBy, addedAt) values (?, ?, ?, ?)",
+                )
+                .run(teamId, accountId, approval.approvedBy, now);
+            }
+          }
         } else {
           const existing = byUserId(approval.accountId);
           if (!existing) return null;
@@ -263,11 +290,12 @@ export function createServiceAccountStore(database: Database): ServiceAccountSto
     byUserId,
 
     list() {
-      return database
+      const rows = database
         .query(
           `${SELECT_ACCOUNT} order by serviceAccounts.name collate nocase, serviceAccounts.userId`,
         )
-        .all() as ServiceAccount[];
+        .all() as AccountRow[];
+      return rows.map((row) => toAccount(row) as ServiceAccount);
     },
 
     clientJwks(clientId) {

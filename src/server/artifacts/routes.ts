@@ -108,7 +108,7 @@ export function artifactRoutes(
     if (tagMatch !== "all" && tagMatch !== "any") {
       throw new ServiceError("INVALID_INPUT", "tagMatch must be all or any.");
     }
-    organization.validateListFilters({ folderId, tagIds });
+    organization.validateListFilters({ folderId, tagIds }, currentUser(c).id);
 
     const page = service.list(viewer(c), {
       query: c.req.query("q") ?? null,
@@ -127,7 +127,7 @@ export function artifactRoutes(
 
   routes.get("/search", (c) => {
     const folderId = c.req.query("folderId") ?? null;
-    organization.validateListFilters({ folderId, tagIds: [] });
+    organization.validateListFilters({ folderId, tagIds: [] }, currentUser(c).id);
     const results = service.search(viewer(c), {
       query: c.req.query("q") ?? "",
       folderId,
@@ -469,9 +469,13 @@ export function sharedRoutes(
       viewer: { shareToken: token },
     });
     c.header("Cache-Control", "private, no-store");
+    const user = c.get("user");
     return c.json({
-      // A member can open the artifact itself. Anyone else gets no id.
-      ...(c.get("user") ? { artifactId: artifact.id } : {}),
+      // A member who can read the artifact can open it itself. Anyone else
+      // gets no id.
+      ...(user && service.canRead(artifact.id, { userId: user.id })
+        ? { artifactId: artifact.id }
+        : {}),
       artifact: {
         title: artifact.title,
         description: artifact.description,

@@ -17,6 +17,8 @@ export type UploadDialogProps = {
   privateArtifacts: boolean;
   /** The folder open in the gallery, which a new artifact is filed in by default. */
   initialFolderId?: string | null;
+  /** A guest uploads only into a team's folder, and cannot create one at the top level. */
+  guest?: boolean;
   onClose: () => void;
   onUploaded: (artifact: Artifact) => void;
 };
@@ -39,6 +41,7 @@ export function UploadDialog({
   maxUploadBytes,
   privateArtifacts,
   initialFolderId = null,
+  guest = false,
   onClose,
   onUploaded,
 }: UploadDialogProps) {
@@ -71,13 +74,19 @@ export function UploadDialog({
       .then((loaded) => {
         setFolders(loaded);
         // A gallery URL can name a folder that has since been deleted.
-        setFolder((current) => (loaded.some((entry) => entry.id === current) ? current : ""));
+        setFolder((current) =>
+          loaded.some((entry) => entry.id === current)
+            ? current
+            : guest
+              ? (loaded[0]?.id ?? "")
+              : "",
+        );
       })
       .catch(() => {
         setFolders([]);
         setFolder("");
       });
-  }, []);
+  }, [guest]);
 
   useModal(dialog, onClose);
 
@@ -233,14 +242,14 @@ export function UploadDialog({
             disabled={uploading || folders === null}
             onChange={(event) => setFolder(event.target.value)}
           >
-            <option value="">No folder</option>
+            {guest ? null : <option value="">No folder</option>}
             {folders === null && folder ? <option value={folder}>Loading...</option> : null}
             {(folders ? folderRows(folders) : []).map((row) => (
               <option key={row.folder.id} value={row.folder.id}>
                 {folderPath(row.folder, folders ?? [])}
               </option>
             ))}
-            <option value={NEW_FOLDER}>New folder...</option>
+            {guest ? null : <option value={NEW_FOLDER}>New folder...</option>}
           </select>
 
           {folder === NEW_FOLDER ? (

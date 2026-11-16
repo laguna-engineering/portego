@@ -244,7 +244,8 @@ version.
 
 - Any member who can see a shared artifact can make, read, or revoke its link.
   The creator is notified when someone else does. Listings and search never
-  carry the link, only that one exists.
+  carry the link, only that one exists. With `TEAMS=true`, a guest cannot make
+  or revoke one, and a folder's first team revokes the links under it.
 - The page served for `/s/*` sends `Referrer-Policy: no-referrer`, so a link
   followed from it does not carry the token to another site.
 - The page for a working link carries the artifact's title and description in
@@ -296,8 +297,47 @@ With `SERVICE_ACCOUNTS=true`, an agent signs in with an Ed25519 key pair
   enroll a key and ask an admin to approve it. The approval page shows the
   code the enrolling terminal printed, and the admin has to compare the two.
 
+## Teams
+
+With `TEAMS=true`, folders can be restricted to teams and admins can invite
+guests from any domain ([organization.md](organization.md#teams)).
+
+- One rule decides who reads an artifact: its visibility and its folder's
+  path. The service computes the folders an account can read from the
+  database for each call and applies it to every read: the artifact SQL
+  filter, folder and tag lists, search, counts, the activity feed, profiles,
+  subscriptions, the Varda outbox, and the change stream. Nothing is cached
+  between requests, so removing a member from a team takes effect at their
+  next request.
+- An artifact the account cannot read answers `NOT_FOUND`, the same as an id
+  that does not exist, so a guest cannot learn that it exists.
+- Admins do not bypass teams. To read a restricted folder, an admin adds
+  themselves to its team, which records who did it.
+- An invitation admits one verified address. Admission refuses an
+  unverified address and `service.invalid` before it looks at invitations.
+  After the first sign-in the guest is admitted by their `guests` row, on
+  every session and every MCP request; with `TEAMS` unset nothing admits them.
+- A guest sees no email address, and sees another person's profile only when
+  that person worked on an artifact the guest can read.
+- A guest can upload into their teams' folders. Their pages reach the team
+  members who open them, with the limits below that apply to every page.
+- A public link works in every folder. A folder's first team revokes the
+  links under it, because they were made for a wider audience.
+- Who can read a folder changes when its teams, its path, or a team's members
+  change. The change stream sends the folder's event before and after such a
+  change, and checks each stream when the event is sent, so the old readers
+  and the new both hear of it.
+
 ## Known limitations
 
+- With `TEAMS=true`, folder names are unique among siblings the account
+  cannot read too, so naming a folder can reveal that a hidden sibling has
+  that name.
+- Turning `TEAMS` off keeps an invited guest's existing browser session
+  working with a member's access until it expires, because a session is not
+  admitted again on each request.
+  [organization.md](organization.md#turning-teams-off) shows how to end those
+  sessions first.
 - Anyone who can reach the server can hold all 10 enrollment slots, 10
   requests every 15 minutes, which blocks real enrollments while it lasts. A
   deployment that sees this can rate-limit

@@ -31,6 +31,7 @@ import { createProfileStore } from "./storage/profiles.ts";
 import { createSearchStore } from "./storage/search.ts";
 import { createServiceAccountStore } from "./storage/service-accounts.ts";
 import { createVardaOutbox, type VardaOutbox } from "./storage/varda-outbox.ts";
+import { createTeams, type TeamService } from "./teams/service.ts";
 
 /** A different host from TEST_BASE_URL, which is what isolates a preview. */
 export const TEST_CONTENT_ORIGIN = "http://127.0.0.1:5173";
@@ -59,6 +60,8 @@ export type TestServer = {
   events: EventBus;
   /** Null unless the test turned service accounts on. */
   serviceAccounts: ServiceAccountService | null;
+  /** Null unless the test turned teams on. */
+  teams: TeamService | null;
   vardaOutbox: VardaOutbox;
   /** The user id of VARDA_USER, when the Varda integration is on. */
   vardaAccount?: string;
@@ -81,10 +84,11 @@ export type TestServerOptions = {
   /** Serve the built client from disk, which the browser tests need. */
   serveClient?: boolean;
   serviceAccounts?: boolean;
+  teams?: boolean;
   admins?: string[];
   /** Admit every authenticated identity instead of the test domain. */
   allowAll?: boolean;
-  /** The clock service accounts read, in epoch ms. */
+  /** The clock service accounts and invitations read, in epoch ms. */
   now?: () => number;
   /** Turns the Varda integration on, with VARDA_USER as Varda's account. */
   varda?: { webhookSecret?: string; now?: () => number };
@@ -99,6 +103,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     ...(options.providers ? { providers: options.providers } : {}),
     ...(options.admins ? { admins: options.admins } : {}),
     ...(options.serviceAccounts ? { serviceAccounts: true } : {}),
+    ...(options.teams ? { teams: true } : {}),
     ...(options.allowAll ? { allowAll: true } : {}),
   });
   applyMigrations(database);
@@ -116,11 +121,21 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
   const vardaOutbox = createVardaOutbox({ database });
 
   const events = createEventBus();
+  const {
+    access,
+    teams,
+    store: teamStore,
+  } = createTeams(database, {
+    enabled: config.teams,
+    events,
+    ...(options.now ? { now: options.now } : {}),
+  });
   const artifactStore = createArtifactStore({ database, dataDir });
   const organization = createOrganizationService({
     store: createOrganizationStore(database),
     artifactExists: (id) => artifactStore.get(id) !== null,
     events,
+    access,
   });
   const artifacts = createArtifactService({
     store: artifactStore,
@@ -138,6 +153,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
       ? {}
       : { privateArtifacts: options.privateArtifacts }),
     ...(options.publicLinks === undefined ? {} : { publicLinks: options.publicLinks }),
+    access,
   });
 
   const serviceAccounts = config.serviceAccounts
@@ -145,6 +161,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
         store: createServiceAccountStore(database),
         baseURL: config.baseURL,
         mcpResource: config.mcp.resource,
+        teams: teamStore,
         ...(options.now ? { now: options.now } : {}),
       })
     : null;
@@ -163,6 +180,8 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     activity: createActivityStore({ database }),
     profiles: createProfileStore({ database }),
     serviceAccounts,
+    access,
+    teams,
     ...(vardaAccount === undefined
       ? {}
       : {
@@ -183,6 +202,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     organization,
     events,
     serviceAccounts,
+    teams,
     vardaOutbox,
     ...(vardaAccount === undefined ? {} : { vardaAccount }),
     dataDir,
@@ -225,6 +245,7 @@ export async function createLiveTestServer(
     privateArtifacts?: boolean;
     publicLinks?: boolean;
     serviceAccounts?: boolean;
+    teams?: boolean;
     admins?: string[];
     now?: () => number;
     varda?: TestServerOptions["varda"];
@@ -251,6 +272,7 @@ export async function createLiveTestServer(
       : { privateArtifacts: options.privateArtifacts }),
     ...(options.publicLinks === undefined ? {} : { publicLinks: options.publicLinks }),
     ...(options.serviceAccounts ? { serviceAccounts: true } : {}),
+    ...(options.teams ? { teams: true } : {}),
     ...(options.admins ? { admins: options.admins } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.varda ? { varda: options.varda } : {}),

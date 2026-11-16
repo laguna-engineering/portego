@@ -117,6 +117,14 @@ ignored. The admission policy runs again on every MCP request, so removing a
 domain from the allowlist stops the tokens issued under it, without waiting for
 them to expire.
 
+With `TEAMS=true`, an invited guest's token passes admission because the
+account is a guest, and every tool reads only what that account can read
+([organization.md](organization.md#teams)). An artifact in a folder the
+caller cannot read is `NOT_FOUND`, and a guest gets `null` for every `email`
+field. No tool manages teams, folder restrictions, or invitations, and
+`update_folder` never moves a folder that has teams or changes the teams on a
+folder's path: that takes an admin in the web client.
+
 ### Service accounts
 
 With `SERVICE_ACCOUNTS=true`, an agent that an admin approved
@@ -142,6 +150,9 @@ as for a person. Its `sub` and `azp` are the client id and it has no `sid`,
 which is how the endpoint tells it from a person's token. Without `resource`
 the token is opaque, and this endpoint refuses it. No refresh token is issued:
 the agent signs a new assertion when its token expires.
+
+With `TEAMS=true`, an admin can approve a new service account as a guest in
+some teams. It then reads only those teams' folders.
 
 The endpoint refuses such a token when the account is disabled or expired, or
 when the token was issued before the account's key last changed. A token from

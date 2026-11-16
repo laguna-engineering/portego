@@ -186,13 +186,15 @@ name, logos, and colors.
 | `OIDC_SCOPES`    | `openid profile email` | Scopes the OIDC provider is asked for. |
 | `OIDC_LABEL`     | `Single sign-on` | What the sign-in page calls the OIDC provider. |
 | `MCP_ALLOW_DYNAMIC_CLIENT_REGISTRATION` | `false` | Let any caller register an OAuth client. |
-| `PORTEGO_ADMINS` | none           | Addresses of the admins, comma separated. Required when `SERVICE_ACCOUNTS=true`. |
+| `PORTEGO_ADMINS` | none           | Addresses of the admins, comma separated. Required when `SERVICE_ACCOUNTS=true` or `TEAMS=true`. |
 | `SERVICE_ACCOUNTS` | `false`      | `true` lets an agent sign in with a key pair that an admin approved. See [docs/authentication.md](docs/authentication.md#service-accounts). |
+| `TEAMS`          | `false`        | `true` lets admins restrict folders to teams and invite guests. See [docs/organization.md](docs/organization.md#teams). |
 
 ## Layout
 
 ```
 src/server/         Hono app, environment parsing, entry point
+src/server/access/  Which folders an account can read
 src/server/auth/    Identity providers, admission policy, session middleware
 src/server/artifacts/ Artifact service, HTTP routes, upload validation
 src/server/markdown/ HTML to Markdown conversion and its cache
@@ -200,6 +202,7 @@ src/server/mcp/    MCP tools, endpoint, and token principal mapping
 src/server/preview/ Preview tokens, isolated content responses
 src/server/service-accounts/ Agent enrollment, key renewal, and their routes
 src/server/storage/ Artifact metadata, file storage, migrations
+src/server/teams/   Teams, folder restrictions, invitations, and their routes
 src/web/            React client, views, and Vite entry point
 plugins/            Claude Code plugin skills and metadata
 tools/portego-upload/ Local creation, validation, and upload tool

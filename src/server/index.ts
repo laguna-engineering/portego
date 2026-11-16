@@ -19,17 +19,27 @@ import { createProfileStore } from "./storage/profiles.ts";
 import { createSearchStore } from "./storage/search.ts";
 import { createServiceAccountStore } from "./storage/service-accounts.ts";
 import { createVardaOutbox } from "./storage/varda-outbox.ts";
+import { createTeams } from "./teams/service.ts";
 
 const env = parseEnv(Bun.env);
 const authConfig = parseAuthConfig(env, Bun.env);
 const database = openDatabase(databasePath(env.DATA_DIR));
 const auth = createAuth({ config: authConfig, database });
 const events = createEventBus();
+const {
+  access,
+  teams,
+  store: teamStore,
+} = createTeams(database, {
+  enabled: authConfig.teams,
+  events,
+});
 const artifactStore = createArtifactStore({ database, dataDir: env.DATA_DIR });
 const organization = createOrganizationService({
   store: createOrganizationStore(database),
   artifactExists: (id) => artifactStore.get(id) !== null,
   events,
+  access,
 });
 const vardaOutbox = createVardaOutbox({ database });
 const varda = env.VARDA_ACCOUNT ? { account: env.VARDA_ACCOUNT, outbox: vardaOutbox } : undefined;
@@ -47,6 +57,7 @@ const artifacts = createArtifactService({
   publicLinks: env.PUBLIC_LINKS,
   events,
   ...(varda ? { varda } : {}),
+  access,
 });
 
 const serviceAccounts = authConfig.serviceAccounts
@@ -54,6 +65,7 @@ const serviceAccounts = authConfig.serviceAccounts
       store: createServiceAccountStore(database),
       baseURL: authConfig.baseURL,
       mcpResource: authConfig.mcp.resource,
+      teams: teamStore,
     })
   : null;
 
@@ -71,6 +83,8 @@ const app = createApp({
   activity: createActivityStore({ database }),
   profiles: createProfileStore({ database }),
   serviceAccounts,
+  access,
+  teams,
   ...(varda
     ? {
         varda: {

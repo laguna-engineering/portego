@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { type AccessService, OPEN_ACCESS } from "../access/service.ts";
 import { ServiceError } from "../artifacts/errors.ts";
 import { type AppEnv, currentUser, requireUser } from "../auth/middleware.ts";
 import type { EventBus } from "../events/bus.ts";
@@ -13,9 +14,11 @@ export const ACTIVITY_LIMIT = 100;
 
 export function activityRoutes(
   store: ActivityStore,
-  options: { now?: () => number; events?: EventBus } = {},
+  options: { now?: () => number; events?: EventBus; access?: AccessService } = {},
 ) {
   const now = options.now ?? Date.now;
+  const access = options.access ?? OPEN_ACCESS;
+  const scopeOf = (userId: string) => access.reader({ userId });
   const publish = options.events?.publish ?? (() => {});
   const routes = new Hono<AppEnv>();
   routes.use("*", requireUser);
@@ -30,6 +33,7 @@ export function activityRoutes(
         limit: ACTIVITY_LIMIT,
         userId,
         scope,
+        folderScope: scopeOf(userId),
       }),
       readAt: store.readAt(userId),
     });
@@ -48,7 +52,12 @@ export function activityRoutes(
       throw new ServiceError("INVALID_INPUT", "Send a versionNumber, a whole number from 1.");
     }
     const userId = currentUser(c).id;
-    const seen = store.markVersionsSeen(userId, c.req.param("id"), versionNumber as number);
+    const seen = store.markVersionsSeen(
+      userId,
+      c.req.param("id"),
+      versionNumber as number,
+      scopeOf(userId),
+    );
     if (seen === null) throw new ServiceError("NOT_FOUND", "No such version.");
     publish({ type: "activity.read", userId });
     return c.json({ versionNumber: seen });
@@ -56,23 +65,34 @@ export function activityRoutes(
 
   const { subscriptions } = store;
 
-  routes.get("/subscriptions/artifacts/:id", (c) =>
-    c.json({ subscription: found(subscriptions.artifact(currentUser(c).id, c.req.param("id"))) }),
-  );
-
-  routes.put("/subscriptions/artifacts/:id", async (c) => {
-    const level = await readLevel(c.req.raw);
-    const subscription = subscriptions.setArtifact(currentUser(c).id, c.req.param("id"), level);
+  routes.get("/subscriptions/artifacts/:id", (c) => {
+    const userId = currentUser(c).id;
+    const subscription = subscriptions.artifact(userId, c.req.param("id"), scopeOf(userId));
     return c.json({ subscription: found(subscription) });
   });
 
-  routes.get("/subscriptions/folders/:id", (c) =>
-    c.json({ subscription: found(subscriptions.folder(currentUser(c).id, c.req.param("id"))) }),
-  );
+  routes.put("/subscriptions/artifacts/:id", async (c) => {
+    const level = await readLevel(c.req.raw);
+    const userId = currentUser(c).id;
+    const subscription = subscriptions.setArtifact(
+      userId,
+      c.req.param("id"),
+      level,
+      scopeOf(userId),
+    );
+    return c.json({ subscription: found(subscription) });
+  });
+
+  routes.get("/subscriptions/folders/:id", (c) => {
+    const userId = currentUser(c).id;
+    const subscription = subscriptions.folder(userId, c.req.param("id"), scopeOf(userId));
+    return c.json({ subscription: found(subscription) });
+  });
 
   routes.put("/subscriptions/folders/:id", async (c) => {
     const level = await readLevel(c.req.raw);
-    const subscription = subscriptions.setFolder(currentUser(c).id, c.req.param("id"), level);
+    const userId = currentUser(c).id;
+    const subscription = subscriptions.setFolder(userId, c.req.param("id"), level, scopeOf(userId));
     return c.json({ subscription: found(subscription) });
   });
 

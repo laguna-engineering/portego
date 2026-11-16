@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
-import { VISIBLE } from "./artifacts.ts";
+import type { FolderScope } from "../access/reader.ts";
+import { foldersReadableBy, READABLE, readableBy, readableFolder } from "./readable.ts";
 
 /** What reaches the bell: everything, new versions only, or nothing. */
 export type SubscriptionLevel = "all" | "versions" | "none";
@@ -18,17 +19,24 @@ export type Subscription = {
   inherited: { folder: { id: string; name: string }; level: SubscriptionLevel } | null;
 };
 
+/** `scope` holds the folders the user can read. */
 export type SubscriptionStore = {
   /** Null when the artifact does not exist or the user cannot see it. */
-  artifact: (userId: string, artifactId: string) => Subscription | null;
-  /** Null when the folder does not exist. */
-  folder: (userId: string, folderId: string) => Subscription | null;
+  artifact: (userId: string, artifactId: string, scope: FolderScope) => Subscription | null;
+  /** Null when the folder does not exist or the user cannot read it. */
+  folder: (userId: string, folderId: string, scope: FolderScope) => Subscription | null;
   setArtifact: (
     userId: string,
     artifactId: string,
     level: SubscriptionLevel,
+    scope: FolderScope,
   ) => Subscription | null;
-  setFolder: (userId: string, folderId: string, level: SubscriptionLevel) => Subscription | null;
+  setFolder: (
+    userId: string,
+    folderId: string,
+    level: SubscriptionLevel,
+    scope: FolderScope,
+  ) => Subscription | null;
 };
 
 /**
@@ -79,16 +87,20 @@ export function createSubscriptionStore(options: { database: Database }): Subscr
     return row ? { folder: { id: row.id, name: row.name }, level: row.level } : null;
   };
 
-  const artifact = (userId: string, artifactId: string): Subscription | null => {
+  const artifact = (
+    userId: string,
+    artifactId: string,
+    scope: FolderScope,
+  ): Subscription | null => {
     const row = database
       .query(
         `select artifacts.folderId, artifactSubscriptions.level, artifactSubscriptions.reason
          from artifacts
            left join artifactSubscriptions on artifactSubscriptions.artifactId = artifacts.id
              and artifactSubscriptions.userId = ?
-         where artifacts.id = ? and ${VISIBLE}`,
+         where artifacts.id = ? and ${READABLE}`,
       )
-      .get(userId, artifactId, userId) as {
+      .get(userId, artifactId, ...readableBy(userId, scope)) as {
       folderId: string | null;
       level: SubscriptionLevel | null;
       reason: FollowReason | null;
@@ -97,16 +109,19 @@ export function createSubscriptionStore(options: { database: Database }): Subscr
     return { level: row.level, reason: row.reason, inherited: inherited(userId, row.folderId) };
   };
 
-  const folder = (userId: string, folderId: string): Subscription | null => {
+  const folder = (userId: string, folderId: string, scope: FolderScope): Subscription | null => {
     const row = database
       .query(
         `select folders.parentId, folderSubscriptions.level
          from folders
            left join folderSubscriptions on folderSubscriptions.folderId = folders.id
              and folderSubscriptions.userId = ?
-         where folders.id = ?`,
+         where folders.id = ? and ${readableFolder("folders.id")}`,
       )
-      .get(userId, folderId) as { parentId: string | null; level: SubscriptionLevel | null } | null;
+      .get(userId, folderId, ...foldersReadableBy(scope)) as {
+      parentId: string | null;
+      level: SubscriptionLevel | null;
+    } | null;
     if (!row) return null;
     return { level: row.level, reason: null, inherited: inherited(userId, row.parentId) };
   };
@@ -115,8 +130,8 @@ export function createSubscriptionStore(options: { database: Database }): Subscr
     artifact,
     folder,
 
-    setArtifact(userId, artifactId, level) {
-      if (!artifact(userId, artifactId)) return null;
+    setArtifact(userId, artifactId, level, scope) {
+      if (!artifact(userId, artifactId, scope)) return null;
       database
         .query(
           `insert into artifactSubscriptions (userId, artifactId, level, reason, updatedAt)
@@ -125,11 +140,11 @@ export function createSubscriptionStore(options: { database: Database }): Subscr
              set level = excluded.level, reason = 'chosen', updatedAt = excluded.updatedAt`,
         )
         .run(userId, artifactId, level, Date.now());
-      return artifact(userId, artifactId);
+      return artifact(userId, artifactId, scope);
     },
 
-    setFolder(userId, folderId, level) {
-      if (!folder(userId, folderId)) return null;
+    setFolder(userId, folderId, level, scope) {
+      if (!folder(userId, folderId, scope)) return null;
       database
         .query(
           `insert into folderSubscriptions (userId, folderId, level, updatedAt)
@@ -138,7 +153,7 @@ export function createSubscriptionStore(options: { database: Database }): Subscr
              set level = excluded.level, updatedAt = excluded.updatedAt`,
         )
         .run(userId, folderId, level, Date.now());
-      return folder(userId, folderId);
+      return folder(userId, folderId, scope);
     },
   };
 }

@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
-import { VISIBLE } from "./artifacts.ts";
+import type { FolderScope } from "../access/reader.ts";
 import { JOIN_DISPLAY_NAME, USER_NAME } from "./names.ts";
+import { READABLE, readableBy } from "./readable.ts";
 
 export type Avatar = { contentType: string; bytes: Uint8Array<ArrayBuffer>; updatedAt: number };
 
@@ -43,16 +44,23 @@ export type ProfileStore = {
   /**
    * What the user did, newest first, leaving out artifacts `viewerId` cannot
    * open. `total` counts every matching entry, not only this page.
+   * `folderScope` holds the folders the viewer can read.
    */
   history: (options: {
     userId: string;
     viewerId: string;
+    folderScope: FolderScope;
     kind: HistoryKind | null;
     offset: number;
     limit: number;
   }) => { entries: HistoryEntry[]; total: number };
   /** How many artifacts the viewer can open that the user uploaded to or commented on. */
-  artifactCount: (userId: string, viewerId: string) => number;
+  artifactCount: (userId: string, viewerId: string, folderScope: FolderScope) => number;
+  /**
+   * Whether the user uploaded to, commented on, or set an entry on an artifact
+   * the viewer can open.
+   */
+  workedOnReadable: (userId: string, viewerId: string, folderScope: FolderScope) => boolean;
 };
 
 // Version 1 is the upload that created the artifact.
@@ -69,7 +77,7 @@ const HISTORY = `
     from artifactComments where authorId = ?
   ) history
     join artifacts on artifacts.id = history.artifactId
-  where ${VISIBLE} and (? is null or history.kind = ?)`;
+  where ${READABLE} and (? is null or history.kind = ?)`;
 
 type HistoryRow = {
   id: string;
@@ -168,8 +176,8 @@ export function createProfileStore(options: { database: Database }): ProfileStor
       return { id: row.id, name: row.name, joinedAt };
     },
 
-    history({ userId, viewerId, kind, offset, limit }) {
-      const params = [userId, userId, viewerId, kind, kind];
+    history({ userId, viewerId, folderScope, kind, offset, limit }) {
+      const params = [userId, userId, ...readableBy(viewerId, folderScope), kind, kind];
       const { total } = database
         .query(`select count(*) as total from (${HISTORY})`)
         .get(...params) as { total: number };
@@ -188,11 +196,29 @@ export function createProfileStore(options: { database: Database }): ProfileStor
       };
     },
 
-    artifactCount(userId, viewerId) {
+    artifactCount(userId, viewerId, folderScope) {
       const row = database
         .query(`select count(distinct history.artifactId) as count from (${HISTORY}) history`)
-        .get(userId, userId, viewerId, null, null) as { count: number };
+        .get(userId, userId, ...readableBy(viewerId, folderScope), null, null) as {
+        count: number;
+      };
       return row.count;
+    },
+
+    workedOnReadable(userId, viewerId, folderScope) {
+      const row = database
+        .query(
+          `select 1 from artifacts where ${READABLE} and (
+             exists (select 1 from artifactVersions
+               where artifactVersions.artifactId = artifacts.id and artifactVersions.createdBy = ?)
+             or exists (select 1 from artifactComments
+               where artifactComments.artifactId = artifacts.id and artifactComments.authorId = ?)
+             or exists (select 1 from artifactEntries
+               where artifactEntries.artifactId = artifacts.id and artifactEntries.authorId = ?))
+           limit 1`,
+        )
+        .get(...readableBy(viewerId, folderScope), userId, userId, userId);
+      return row !== null;
     },
   };
 }

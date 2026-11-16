@@ -23,8 +23,9 @@ code.
 | `GOOGLE_HOSTED_DOMAIN` | Google Workspace domain, enforced against the `hd` claim. |
 | `APP_URL` | Public origin. Callback URLs are built from it. |
 | `SESSION_SECRET` | Signing key. Required in production. |
-| `PORTEGO_ADMINS` | Addresses of the admins, comma separated. Required by `SERVICE_ACCOUNTS`. |
+| `PORTEGO_ADMINS` | Addresses of the admins, comma separated. Required by `SERVICE_ACCOUNTS` and `TEAMS`. |
 | `SERVICE_ACCOUNTS` | `true` lets agents sign in with a key pair. See [Service accounts](#service-accounts). |
+| `TEAMS` | `true` lets admins restrict folders to teams and invite guests. See [Invited guests](#invited-guests). |
 
 Startup fails, with every problem listed at once, when an enabled provider has
 no credentials, when a provider id is unknown, or when the admission policy
@@ -80,7 +81,8 @@ not start with `SERVICE_ACCOUNTS=true` and no admin.
 2. An admin opens the URL. The page shows the name, the code, and when the
    request was made. The admin checks that the code matches the agent's
    terminal, picks a new account or an existing account to give the key to,
-   and approves. Each existing account shows its status, because names are
+   and approves. With `TEAMS=true`, a new account is a member or a guest in
+   the teams the admin picks. Each existing account shows its status, because names are
    not unique and giving the key to an active account locks out the agent
    that uses it.
 3. The agent polls with a request signed by the new key, so only the holder of
@@ -90,7 +92,9 @@ not start with `SERVICE_ACCOUNTS=true` and no admin.
 An enrollment expires after 15 minutes. At most 10 can wait for approval at
 once, because the endpoint takes no authentication.
 
-A service account sees what a member sees.
+Without teams, a service account sees what a member sees. With `TEAMS=true`,
+a guest service account sees only its teams' folders, as
+[organization.md](organization.md#teams) describes.
 
 ### Renewal and expiry
 
@@ -280,11 +284,35 @@ id tokens with a real key. The conformance tests drive the whole browser flow
 against it, so signature, issuer, audience, and nonce checks are exercised
 without a public identity service.
 
+## Invited guests
+
+With `TEAMS=true`, an admin can invite an email address from any domain into
+one or more teams. Admission then has one more way in, after the checks every
+identity passes: the address must be verified, and an address at
+`service.invalid` is refused under every policy, invited or not. A verified
+address with an open invitation is admitted even though its domain is not
+allowed. An invitation is open until it is used, revoked, or 7 days old.
+
+The first session after the invitation uses it up. In the same transaction,
+the person becomes a guest, unless the email policy alone admits them, and
+joins the invited teams. From then on the `guests` row admits them, at every
+sign-in and on every MCP request, as the email policy admits a member. A
+guest reads only their teams' folders; [organization.md](organization.md#teams)
+lists what else a guest cannot do.
+
+`/api/me` reports `features.teams` and `user.guest` when teams are on.
+
 ## Known limitations
 
 - Signing out ends the session here. It does not sign the user out of the
   identity provider.
 - Session revocation is not immediate for the cookie's lifetime unless the
   session row is deleted; there is no separate revocation list.
-- Admission is deployment-wide. Admins approve and disable service accounts,
-  and that is the only role. There are no teams or per-artifact permissions.
+- Admins are the only role: they approve and disable service accounts, and
+  with `TEAMS=true` they manage teams, folder restrictions, and invitations.
+  Teams limit who reads a folder. There are no per-artifact permissions
+  beyond private artifacts.
+- Turning `TEAMS` off leaves an invited guest's existing browser session
+  working, with a member's access, until it expires.
+  [organization.md](organization.md#turning-teams-off) shows how to end those
+  sessions first.

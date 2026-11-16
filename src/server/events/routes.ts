@@ -20,28 +20,38 @@ const RETRY_MS = 3_000;
 export const MAX_STREAMS_PER_USER = 8;
 export const MAX_STREAMS = 200;
 
+/**
+ * What an event is about. `asShared` asks who could read the artifact before
+ * it was made private.
+ */
+export type EventSubject = { artifactId: string; asShared?: boolean } | { folderId: string };
+
 export type EventRouteOptions = {
   bus: EventBus;
   /**
-   * Whether the user may read the artifact. Events about it reach only those
-   * who may, apart from `madePrivate`.
+   * Whether each user may read the subject. Events about it reach only those
+   * who may. Called once per event; the function it returns, once per stream.
    */
-  canRead: (artifactId: string, userId: string) => boolean;
+  audience: (subject: EventSubject) => (userId: string) => boolean;
   heartbeatMs?: number;
   maxPerUser?: number;
   maxTotal?: number;
 };
 
-/** The artifact an event is about, if it is about one. */
-function artifactOf(event: ChangeEvent): string | null {
+/** What an event is about, if it is about something only some may read. */
+function subjectOf(event: ChangeEvent): EventSubject | null {
   switch (event.type) {
     case "artifact.created":
+      return { artifactId: event.id };
+    // The page of everyone who could read it until this change hides it on
+    // hearing the change.
     case "artifact.changed":
-      return event.id;
+      return { artifactId: event.id, ...(event.madePrivate && { asShared: true }) };
     case "comment.changed":
     case "entry.changed":
-      return event.artifactId;
+      return { artifactId: event.artifactId };
     case "folder.changed":
+      return { folderId: event.id };
     case "tag.changed":
     case "activity.read":
       return null;
@@ -52,12 +62,20 @@ export function eventRoutes(options: EventRouteOptions): Hono<AppEnv> {
   const { bus } = options;
 
   // Visibility is read when an event is sent, never cached per connection, so
-  // a change of visibility applies from the next event on.
+  // a change of visibility applies from the next event on. Every publish
+  // passes a new event object, so the streams that hear one event share one
+  // answer and the next event reads again.
+  const audiences = new WeakMap<ChangeEvent, (userId: string) => boolean>();
   const reaches = (event: ChangeEvent, userId: string): boolean => {
     if ("userId" in event) return event.userId === userId;
-    if (event.type === "artifact.changed" && event.madePrivate) return true;
-    const artifactId = artifactOf(event);
-    return artifactId === null || options.canRead(artifactId, userId);
+    const subject = subjectOf(event);
+    if (subject === null) return true;
+    let audience = audiences.get(event);
+    if (!audience) {
+      audience = options.audience(subject);
+      audiences.set(event, audience);
+    }
+    return audience(userId);
   };
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
   const maxPerUser = options.maxPerUser ?? MAX_STREAMS_PER_USER;

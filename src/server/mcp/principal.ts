@@ -1,6 +1,7 @@
 import type { Auth } from "../auth/auth.ts";
 import { type AdmissionPolicy, admits } from "../auth/policy.ts";
 import type { ServiceAccountService } from "../service-accounts/service.ts";
+import type { TeamService } from "../teams/service.ts";
 import type { ResolvePrincipal } from "./routes.ts";
 
 /**
@@ -13,6 +14,8 @@ export function createPrincipalResolver(options: {
   admission: AdmissionPolicy;
   /** Null when service accounts are off. */
   serviceAccounts: ServiceAccountService | null;
+  /** Admits guests. Absent or null when teams are off. */
+  teams?: Pick<TeamService, "invited"> | null;
 }): ResolvePrincipal {
   return async (claims) => {
     const subject = typeof claims.sub === "string" ? claims.sub : null;
@@ -31,6 +34,7 @@ export function createPrincipalResolver(options: {
     const user = await context.internalAdapter.findUserById(subject);
     if (!user) return null;
 
-    return admits(options.admission, user).admitted ? { userId: user.id } : null;
+    const invited = options.teams?.invited(user) ?? false;
+    return admits(options.admission, user, invited).admitted ? { userId: user.id } : null;
   };
 }

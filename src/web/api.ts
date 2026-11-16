@@ -14,6 +14,8 @@ export type User = {
   avatar: string | null;
   /** Named in PORTEGO_ADMINS. */
   admin?: boolean;
+  /** Set when the deployment has teams. A guest reads only their teams' folders. */
+  guest?: boolean;
 };
 
 export type Provider = { id: string; label: string };
@@ -30,7 +32,8 @@ export type Artifact = {
   originalFilename: string;
   sha256: string;
   byteSize: number;
-  creator: { id: string; name: string; email: string };
+  /** A guest gets no email address. */
+  creator: { id: string; name: string; email: string | null };
   createdAt: string;
   updatedAt: string;
   status: ArtifactStatus;
@@ -53,7 +56,8 @@ export type ArtifactVersion = {
   originalFilename: string;
   sha256: string;
   byteSize: number;
-  creator: { id: string; name: string; email: string };
+  /** A guest gets no email address. */
+  creator: { id: string; name: string; email: string | null };
   createdAt: string;
   /** Uploaded in the web app, not by an agent or a ticket. */
   inApp: boolean;
@@ -66,7 +70,8 @@ export type Comment = {
   id: string;
   body: string;
   createdAt: string;
-  author: { id: string; name: string; email: string };
+  /** A guest gets no email address. */
+  author: { id: string; name: string; email: string | null };
   /** Null for a comment on the artifact as a whole. */
   anchor: CommentAnchor | null;
   /** The root comment this replies to, or null for a root comment itself. */
@@ -133,6 +138,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body?.error.artifactId,
     );
   }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -140,7 +146,12 @@ export type Session = {
   user: User;
   limits: { maxUploadBytes: number };
   /** Optional features the deployment turned on. */
-  features: { privateArtifacts: boolean; publicLinks: boolean; serviceAccounts?: boolean };
+  features: {
+    privateArtifacts: boolean;
+    publicLinks: boolean;
+    serviceAccounts?: boolean;
+    teams?: boolean;
+  };
   appName: string;
 };
 
@@ -411,6 +422,8 @@ export type ServiceAccount = {
   renewedAt: string;
   expiresAt: string;
   disabledAt: string | null;
+  /** Set when the deployment has teams. */
+  guest?: boolean;
 };
 
 /** A key an agent sent, waiting for an admin. */
@@ -434,10 +447,13 @@ export function fetchEnrollment(id: string): Promise<Enrollment> {
   ).then((body) => body.enrollment);
 }
 
-/** `accountId` gives an existing account the new key; without it, a new account is created. */
+/**
+ * `accountId` gives an existing account the new key; without it, a new account
+ * is created, as a guest in `teamIds` when `guest` is set.
+ */
 export function approveEnrollment(
   id: string,
-  decision: { accountId?: string },
+  decision: { accountId?: string; guest?: true; teamIds?: string[] },
 ): Promise<ServiceAccount> {
   return request<{ account: ServiceAccount }>(
     `/api/service-accounts/enrollments/${encodeURIComponent(id)}/approval`,
@@ -454,6 +470,101 @@ export function disableServiceAccount(id: string): Promise<ServiceAccount> {
     `/api/service-accounts/${encodeURIComponent(id)}/disable`,
     { method: "POST" },
   ).then((body) => body.account);
+}
+
+export type TeamMember = { id: string; name: string; email: string; guest: boolean };
+
+export type Team = {
+  id: string;
+  name: string;
+  createdAt: string;
+  members: TeamMember[];
+  /** The folders the team restricts. */
+  folderIds: string[];
+};
+
+/** Every account an admin can add to a team. */
+export type Account = {
+  id: string;
+  name: string;
+  email: string;
+  guest: boolean;
+  serviceAccount: boolean;
+};
+
+export type TeamOverview = {
+  teams: Team[];
+  people: Account[];
+  /** Every folder, including those the admin cannot read. */
+  folders: { id: string; name: string; parentId: string | null }[];
+};
+
+export type Invitation = {
+  id: string;
+  email: string;
+  teamIds: string[];
+  invitedBy: { id: string; name: string };
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+};
+
+export function fetchTeams(): Promise<TeamOverview> {
+  return request<TeamOverview>("/api/teams");
+}
+
+function teamRequest(path: string, method: string, body?: unknown): Promise<Team> {
+  return request<{ team: Team }>(`/api/teams${path}`, {
+    method,
+    ...(body === undefined
+      ? {}
+      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+  }).then((result) => result.team);
+}
+
+export function createTeam(name: string): Promise<Team> {
+  return teamRequest("", "POST", { name });
+}
+
+export function renameTeam(id: string, name: string): Promise<Team> {
+  return teamRequest(`/${encodeURIComponent(id)}`, "PATCH", { name });
+}
+
+export function deleteTeam(id: string): Promise<void> {
+  return request<void>(`/api/teams/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export function setTeamMember(teamId: string, userId: string, member: boolean): Promise<Team> {
+  return teamRequest(
+    `/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`,
+    member ? "PUT" : "DELETE",
+  );
+}
+
+/** Restricting a folder that had no team revokes the public links under it. */
+export function setTeamFolder(teamId: string, folderId: string, restricts: boolean): Promise<Team> {
+  return teamRequest(
+    `/${encodeURIComponent(teamId)}/folders/${encodeURIComponent(folderId)}`,
+    restricts ? "PUT" : "DELETE",
+  );
+}
+
+export function fetchInvitations(): Promise<Invitation[]> {
+  return request<{ invitations: Invitation[] }>("/api/invitations").then(
+    (body) => body.invitations,
+  );
+}
+
+export function createInvitation(email: string, teamIds: string[]): Promise<Invitation> {
+  return request<{ invitation: Invitation }>("/api/invitations", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, teamIds }),
+  }).then((body) => body.invitation);
+}
+
+export function revokeInvitation(id: string): Promise<void> {
+  return request<void>(`/api/invitations/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 /** Without `parentId` the folder is created at the top level. */

@@ -22,7 +22,7 @@ function streamApp(options: { bus: EventBus; heartbeatMs?: number; maxPerUser?: 
     c.set("session", null);
     await next();
   });
-  app.route("/api/events", eventRoutes({ ...options, canRead: () => true }));
+  app.route("/api/events", eventRoutes({ ...options, audience: () => () => true }));
   return app;
 }
 

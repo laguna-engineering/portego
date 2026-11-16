@@ -68,8 +68,16 @@ export function emailDomain(email: string): string | null {
 /**
  * Decides admission. Fail-closed: an absent policy, absent email, or unverified
  * email is a refusal, never a default allow.
+ *
+ * `invited` admits a verified address outside the allowed domains. The caller
+ * sets it only with teams on, for an open invitation or an existing guest. It
+ * never admits a service account's address.
  */
-export function admits(policy: AdmissionPolicy, identity: Identity): AdmissionResult {
+export function admits(
+  policy: AdmissionPolicy,
+  identity: Identity,
+  invited = false,
+): AdmissionResult {
   const email = identity.email?.trim();
   if (!email) return { admitted: false, reason: "the identity has no email address" };
   if (identity.emailVerified !== true) {
@@ -84,6 +92,7 @@ export function admits(policy: AdmissionPolicy, identity: Identity): AdmissionRe
   if (policy.kind === "all-authenticated") return { admitted: true };
 
   if (!domain) return { admitted: false, reason: "the email address is malformed" };
+  if (invited) return { admitted: true };
   if (!policy.domains.includes(domain)) {
     return { admitted: false, reason: "the email domain is not on the allowlist" };
   }
