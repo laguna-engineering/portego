@@ -201,14 +201,15 @@ export function createApp(options: AppOptions): Hono<AppEnv> {
     "/api/events",
     eventRoutes({
       bus: options.events,
-      canRead: (subject, userId) =>
-        "folderId" in subject
-          ? readsFolder(access.reader({ userId }), subject.folderId)
-          : options.artifacts.canRead(
-              subject.artifactId,
-              { userId },
-              { asShared: subject.asShared === true },
-            ),
+      audience: (subject) => {
+        if ("folderId" in subject) {
+          const readerOf = access.readers();
+          return (userId) => readsFolder(readerOf(userId), subject.folderId);
+        }
+        return options.artifacts.audience(subject.artifactId, {
+          asShared: subject.asShared === true,
+        });
+      },
     }),
   );
   if (options.varda) {

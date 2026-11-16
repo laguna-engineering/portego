@@ -258,12 +258,15 @@ export type ArtifactService = {
     input?: ListInput,
   ) => { items: ArtifactSummary[]; nextCursor: string | null };
   get: (id: string, viewer: Viewer) => ArtifactSummary;
+  /** Whether `viewer` may read the artifact. False when it does not exist. */
+  canRead: (id: string, viewer: Viewer) => boolean;
   /**
-   * Whether `viewer` may read the artifact. False when it does not exist.
-   * `asShared` answers as if the artifact were shared, which is who could read
-   * it before it was made private.
+   * Whether each account may read the artifact, from one read of the artifact
+   * and of the folder tree. Keep it for one event at most. `asShared` answers
+   * as if the artifact were shared, which is who could read it before it was
+   * made private.
    */
-  canRead: (id: string, viewer: Viewer, options?: { asShared?: boolean }) => boolean;
+  audience: (id: string, options?: { asShared?: boolean }) => (userId: string) => boolean;
   search: (viewer: Viewer, input: SearchInput) => SearchResults;
   /**
    * Indexes the text of current versions that have none, or whose text older
@@ -751,13 +754,17 @@ export function createArtifactService(options: {
       return summary(artifact, reader);
     },
 
-    canRead(id, viewer, options = {}) {
+    canRead(id, viewer) {
       const artifact = store.access(id);
-      if (artifact === null) return false;
-      return readsArtifact(
-        access.reader(viewer),
-        options.asShared ? { ...artifact, visibility: "shared" } : artifact,
-      );
+      return artifact !== null && readsArtifact(access.reader(viewer), artifact);
+    },
+
+    audience(id, options = {}) {
+      const artifact = store.access(id);
+      if (artifact === null) return () => false;
+      const asRead = options.asShared ? { ...artifact, visibility: "shared" as const } : artifact;
+      const readerOf = access.readers();
+      return (userId) => readsArtifact(readerOf(userId), asRead);
     },
 
     search(viewer, input) {

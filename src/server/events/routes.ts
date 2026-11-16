@@ -28,8 +28,11 @@ export type EventSubject = { artifactId: string; asShared?: boolean } | { folder
 
 export type EventRouteOptions = {
   bus: EventBus;
-  /** Whether the user may read the subject. Events about it reach only those who may. */
-  canRead: (subject: EventSubject, userId: string) => boolean;
+  /**
+   * Whether each user may read the subject. Events about it reach only those
+   * who may. Called once per event; the function it returns, once per stream.
+   */
+  audience: (subject: EventSubject) => (userId: string) => boolean;
   heartbeatMs?: number;
   maxPerUser?: number;
   maxTotal?: number;
@@ -59,11 +62,20 @@ export function eventRoutes(options: EventRouteOptions): Hono<AppEnv> {
   const { bus } = options;
 
   // Visibility is read when an event is sent, never cached per connection, so
-  // a change of visibility applies from the next event on.
+  // a change of visibility applies from the next event on. Every publish
+  // passes a new event object, so the streams that hear one event share one
+  // answer and the next event reads again.
+  const audiences = new WeakMap<ChangeEvent, (userId: string) => boolean>();
   const reaches = (event: ChangeEvent, userId: string): boolean => {
     if ("userId" in event) return event.userId === userId;
     const subject = subjectOf(event);
-    return subject === null || options.canRead(subject, userId);
+    if (subject === null) return true;
+    let audience = audiences.get(event);
+    if (!audience) {
+      audience = options.audience(subject);
+      audiences.set(event, audience);
+    }
+    return audience(userId);
   };
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
   const maxPerUser = options.maxPerUser ?? MAX_STREAMS_PER_USER;

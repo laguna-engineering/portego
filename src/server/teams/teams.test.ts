@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { TestClaims } from "../auth/testing.ts";
 import { authorizeClient, callTool, registerClient } from "../mcp/testing.ts";
 import {
@@ -946,6 +946,26 @@ describe("the change stream with teams on", () => {
       }),
     ).toEqual({ outsider: true, stranger: false });
     expect(await titles(cookies.outsider)).toEqual([]);
+  });
+
+  // Each event is checked for every open stream, so a read of the whole folder
+  // tree per stream grows with both the folders and the open pages.
+  test("reads the folder tree once for each event, however many streams hear it", async () => {
+    const streams = await Promise.all(
+      (["member", "member", "guest", "outsider"] as const).map((name) => stream(cookies[name])),
+    );
+    const query = spyOn(server.database, "query");
+    server.events.publish({ type: "folder.changed", id: contracts });
+    server.events.publish({ type: "artifact.changed", id: contract });
+    const treeReads = query.mock.calls.filter(
+      ([sql]) => sql === "select id, parentId from folders",
+    ).length;
+    query.mockRestore();
+    server.events.publish({ type: "tag.changed", id: "marker" });
+
+    const seen = await Promise.all(streams.map((res) => readUntil(res, /marker/)));
+    expect(treeReads).toBe(2);
+    expect(seen.map((text) => text.includes(contract))).toEqual([true, true, true, false]);
   });
 });
 
