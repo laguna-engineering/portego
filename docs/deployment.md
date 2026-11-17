@@ -66,7 +66,7 @@ Pin the version. `@types/bun` in `package.json` names the version the code is
 written against.
 
 ```sh
-BUN_VERSION=1.4.0
+BUN_VERSION=1.4.4
 curl -fsSL -o /tmp/bun.zip \
   "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip"
 unzip -j /tmp/bun.zip 'bun-linux-x64/bun' -d /usr/local/bin

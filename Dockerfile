@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # The version CI tests with.
-ARG BUN_VERSION=1.4.0
+ARG BUN_VERSION=1.4.4
 
 # The build output is JavaScript and static files, so one build on the
 # runner's platform serves every target platform.
