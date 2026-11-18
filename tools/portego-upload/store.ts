@@ -1,7 +1,10 @@
 /**
- * The credentials file: one token per deployment, and the deployment to use
- * when PORTEGO_ORIGIN does not name one.
+ * The credentials file: one token per deployment, and each build's default
+ * deployment for when PORTEGO_ORIGIN does not name one. Portego and every
+ * company's build of it share the file.
  */
+
+import { type Brand, DEFAULT_BRAND } from "./brand.ts";
 
 export type Token = {
   accessToken: string;
@@ -13,9 +16,20 @@ export type Token = {
 };
 
 export type Store = {
+  /** Portego's default. */
   defaultOrigin?: string;
+  /** A company build's default, by slug. */
+  defaultOrigins?: Record<string, string>;
   tokens: Record<string, Token>;
 };
+
+type Build = Pick<Brand, "slug" | "origin">;
+
+function ownDefault(store: Store, brand: Build): string | undefined {
+  return brand.slug === DEFAULT_BRAND.slug
+    ? store.defaultOrigin
+    : store.defaultOrigins?.[brand.slug];
+}
 
 /** The file as written before it held more than one deployment. */
 type SingleOriginFile = Token & { origin: string };
@@ -33,7 +47,11 @@ export function parseStore(text: string | null): Store {
       const { origin, ...token } = parsed as SingleOriginFile;
       return { defaultOrigin: origin, tokens: { [origin]: token } };
     }
-    return { defaultOrigin: parsed.defaultOrigin, tokens: parsed.tokens ?? {} };
+    return {
+      defaultOrigin: parsed.defaultOrigin,
+      defaultOrigins: parsed.defaultOrigins,
+      tokens: parsed.tokens ?? {},
+    };
   } catch {
     return { tokens: {} };
   }
@@ -41,28 +59,42 @@ export function parseStore(text: string | null): Store {
 
 /**
  * PORTEGO_ORIGIN wins, so a project can point at another deployment without
- * changing the default that every other project uses. `fallback`, the
- * deployment a company's build names, comes last so a person's own choice
- * overrides it.
+ * changing the default that every other project uses. A company's build reads
+ * Portego's default only when it has neither its own nor a built-in one: that
+ * default can name another company's deployment, and older versions kept the
+ * build's own default there.
  */
 export function resolveOrigin(sources: {
   env?: string;
   argument?: string;
   store: Store;
-  fallback?: string;
+  brand: Build;
 }): string | undefined {
-  const origin = sources.env || sources.argument || sources.store.defaultOrigin || sources.fallback;
+  const origin =
+    sources.env ||
+    sources.argument ||
+    ownDefault(sources.store, sources.brand) ||
+    sources.brand.origin ||
+    sources.store.defaultOrigin;
   return origin ? normalizeOrigin(origin) : undefined;
 }
 
+/**
+ * The first sign-in becomes the default, except in a build with a deployment
+ * built in: storing that one would keep people on it after a newer build
+ * names another.
+ */
 export function withToken(
   store: Store,
   origin: string,
   token: Token,
-  options: { makeDefault: boolean },
+  options: { makeDefault: boolean; brand: Build },
 ): Store {
-  return {
-    defaultOrigin: options.makeDefault ? origin : (store.defaultOrigin ?? origin),
-    tokens: { ...store.tokens, [origin]: token },
-  };
+  const { brand } = options;
+  const current = ownDefault(store, brand);
+  const next = options.makeDefault ? origin : (current ?? (brand.origin ? undefined : origin));
+  const tokens = { ...store.tokens, [origin]: token };
+  if (brand.slug === DEFAULT_BRAND.slug) return { ...store, defaultOrigin: next, tokens };
+  if (!next) return { ...store, tokens };
+  return { ...store, defaultOrigins: { ...store.defaultOrigins, [brand.slug]: next }, tokens };
 }

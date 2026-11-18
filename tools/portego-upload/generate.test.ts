@@ -45,7 +45,7 @@ const plugin = (root: string) => join(root, "plugins", "acme-share-upload");
 const bundle = (root: string) => join(plugin(root), "server", "acme-share-upload.js");
 
 /** A machine with no deployment, credentials, or style of its own. */
-async function cleanEnvironment(): Promise<Record<string, string>> {
+async function cleanEnvironment() {
   const home = await mkdtemp(join(directory, "home-"));
   return {
     PATH: process.env.PATH ?? "",
@@ -56,10 +56,12 @@ async function cleanEnvironment(): Promise<Record<string, string>> {
 }
 
 /** Runs a generated bundle the way the plugin and npx start it: with node. */
-async function run(root: string, args: string[]) {
+async function run(root: string, args: string[], credentials?: unknown) {
+  const env = await cleanEnvironment();
+  if (credentials) await writeFile(env.PORTEGO_CREDENTIALS, JSON.stringify(credentials));
   const child = Bun.spawn(["node", bundle(root), ...args], {
     cwd: directory,
-    env: await cleanEnvironment(),
+    env,
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -75,8 +77,13 @@ describe("validateOptions", () => {
     const valid = { ...ACME, out: "x" };
     expect(() => validateOptions({ ...valid, slug: "Acme Share" })).toThrow(GenerateError);
     expect(() => validateOptions({ ...valid, slug: "acme--share" })).toThrow(GenerateError);
+    // The tool keeps Portego's default deployment apart from a company's by slug.
+    expect(() => validateOptions({ ...valid, slug: "portego" })).toThrow(GenerateError);
     expect(() => validateOptions({ ...valid, packageName: "Acme" })).toThrow(GenerateError);
     expect(() => validateOptions({ ...valid, name: "Acme\nShare" })).toThrow(GenerateError);
+    // The name goes into plugin.json and the style's manifest.json.
+    expect(() => validateOptions({ ...valid, name: 'Acme "Share"' })).toThrow(GenerateError);
+    expect(() => validateOptions({ ...valid, name: "Acme\\Share" })).toThrow(GenerateError);
   });
 
   test("accepts only an https origin, and drops any path from it", () => {
@@ -100,6 +107,10 @@ describe("renameProse", () => {
         "Mark it <style data-portego-style>. Run npx -y @acme/share-upload auth.",
     );
   });
+
+  test("writes a name with dollar signs as it is", () => {
+    expect(renameProse("Portego", { ...ACME, name: "Ca$$h Docs" })).toBe("Ca$$h Docs");
+  });
 });
 
 describe("generate", () => {
@@ -107,9 +118,16 @@ describe("generate", () => {
     await expect(generate({ ...ACME, out: full })).rejects.toThrow(GenerateError);
   });
 
-  test("refuses a style the tool could not load", async () => {
+  test("refuses a style the tool could not load, before writing anything", async () => {
+    const style = join(directory, "broken-style");
+    await mkdir(style);
+    await writeFile(
+      join(style, "manifest.json"),
+      JSON.stringify({ schemaVersion: 1, name: "Broken", extends: "acme" }),
+    );
     const out = join(directory, "bad-style");
-    await expect(generate({ ...ACME, style: join(directory, "missing"), out })).rejects.toThrow();
+    await expect(generate({ ...ACME, style, out })).rejects.toThrow();
+    expect(await readdir(out).catch(() => [])).toEqual([]);
   });
 
   test("writes a marketplace whose plugin runs the renamed server with the same settings", async () => {
@@ -212,6 +230,17 @@ describe("a generated build with --origin and --style", () => {
     expect(code).not.toBe(0);
     expect(stderr).toContain("Not signed in to https://share.acme.example");
     expect(stderr).toContain("npx -y @acme/share-upload auth");
+  });
+
+  // Portego and other companies' builds share the credentials file, and the
+  // default one of them stored must not send this company's files elsewhere.
+  test("uses the company's deployment over a default another build stored", async () => {
+    await writeFile(join(directory, "page.html"), "<!doctype html><title>t</title>");
+    const { stderr } = await run(full, ["upload", join(directory, "page.html")], {
+      defaultOrigin: "https://share.other.example",
+      tokens: {},
+    });
+    expect(stderr).toContain("Not signed in to https://share.acme.example");
   });
 
   test("uses the company's style when the person selects none", async () => {
