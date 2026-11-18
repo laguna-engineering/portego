@@ -6,7 +6,7 @@ export type Brand = {
   slug: string;
   /** The npm package that starts the tool, for the messages that tell a person to run it. */
   packageName: string;
-  /** The deployment to use when neither PORTEGO_ORIGIN nor `auth <origin>` names one. */
+  /** The deployment to use when neither PORTEGO_ORIGIN nor this build's `auth <origin>` names one. */
   origin?: string;
 };
 
