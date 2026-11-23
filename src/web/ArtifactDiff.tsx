@@ -1,7 +1,7 @@
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError, type ArtifactVersion, fetchMarkdown, type Markdown } from "./api.ts";
 import { HighlightIcon, SideBySideIcon } from "./Icons.tsx";
-import { type DiffRow, diffRows, type Segment } from "./versionDiff.ts";
+import { changeRuns, type DiffMode, type DiffRow, diffRows, type Segment } from "./versionDiff.ts";
 
 export type ArtifactDiffProps = {
   artifactId: string;
@@ -12,8 +12,6 @@ export type ArtifactDiffProps = {
   onSelect: (pair: { fromId: string; toId: string }) => void;
   onClose: () => void;
 };
-
-type Mode = "inline" | "split";
 
 type State =
   | { status: "loading" }
@@ -32,7 +30,7 @@ export function ArtifactDiff({
   onSelect,
   onClose,
 }: ArtifactDiffProps) {
-  const [mode, setMode] = useState<Mode>("inline");
+  const [mode, setMode] = useState<DiffMode>("inline");
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
@@ -65,25 +63,26 @@ export function ArtifactDiff({
     </option>
   ));
 
-  let body: ReactNode;
+  let message: ReactNode = null;
   if (state.status === "loading") {
-    body = <p className="hint">Comparing versions...</p>;
+    message = <p className="hint">Comparing versions...</p>;
   } else if (state.status === "error") {
-    body = <p role="alert">{state.message}</p>;
+    message = <p role="alert">{state.message}</p>;
   } else if (state.before.empty && state.after.empty) {
-    body = (
+    message = (
       <p className="hint">
         These versions have no static text. Everything they show is drawn by their own JavaScript,
         so there is nothing to compare.
       </p>
     );
   } else if (!rows.some((row) => row.changed)) {
-    body = <p className="hint">The text of these versions is the same.</p>;
-  } else if (mode === "inline") {
-    body = <InlineDiff rows={rows} />;
-  } else {
-    body = <SplitDiff rows={rows} />;
+    message = <p className="hint">The text of these versions is the same.</p>;
   }
+  const body = message ? (
+    <div className="diff-scroll">{message}</div>
+  ) : (
+    <DiffWithMinimap rows={rows} mode={mode} />
+  );
 
   return (
     <section className="diff" aria-label="Changes between versions">
@@ -130,6 +129,96 @@ export function ArtifactDiff({
   );
 }
 
+/** A run's place in the scrolled content, as fractions of its height. */
+type Position = { top: number; height: number };
+
+function showViewport(scroller: HTMLElement | null, viewport: HTMLElement | null) {
+  if (!scroller || !viewport || !scroller.scrollHeight) return;
+  viewport.style.top = `${(scroller.scrollTop / scroller.scrollHeight) * 100}%`;
+  viewport.style.height = `${(scroller.clientHeight / scroller.scrollHeight) * 100}%`;
+}
+
+/**
+ * The diff in its own scroll area, with a strip beside it that marks where
+ * each run of changes sits and scrolls to it when clicked.
+ */
+function DiffWithMinimap({ rows, mode }: { rows: DiffRow[]; mode: DiffMode }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const runs = useMemo(() => changeRuns(rows, mode), [rows, mode]);
+  const [positions, setPositions] = useState<Position[]>([]);
+  // Measuring runs on every resize, so the rows must not render again with it.
+  const diff = useMemo(
+    () => (mode === "inline" ? <InlineDiff rows={rows} /> : <SplitDiff rows={rows} />),
+    [rows, mode],
+  );
+
+  // Lines wrap, so positions come from the layout, not from row indices.
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const measure = () => {
+      const total = scroller.scrollHeight;
+      const origin = scroller.getBoundingClientRect().top - scroller.scrollTop;
+      const elements = new Map<string, Element>();
+      for (const element of scroller.querySelectorAll("[data-row]")) {
+        elements.set(element.getAttribute("data-row") ?? "", element);
+      }
+      const edge = (index: number, side: "top" | "bottom") =>
+        elements.get(String(index))?.getBoundingClientRect()[side] ?? origin;
+      setPositions(
+        runs.map((run) => {
+          if (!total) return { top: 0, height: 0 };
+          const top = edge(run.first, "top") - origin;
+          const bottom = edge(run.last, "bottom") - origin;
+          return { top: top / total, height: (bottom - top) / total };
+        }),
+      );
+      showViewport(scroller, viewportRef.current);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(scroller);
+    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild);
+    return () => observer.disconnect();
+  }, [runs]);
+
+  const scrollTo = (position: Position | undefined) => {
+    const scroller = scrollRef.current;
+    if (!scroller || !position) return;
+    scroller.scrollTo({ top: position.top * scroller.scrollHeight - scroller.clientHeight / 3 });
+  };
+
+  return (
+    <div className="diff-main">
+      <div
+        className="diff-scroll"
+        ref={scrollRef}
+        onScroll={() => showViewport(scrollRef.current, viewportRef.current)}
+      >
+        {diff}
+      </div>
+      <nav className="diff-minimap" aria-label="Changes">
+        <div className="diff-minimap-viewport" ref={viewportRef} />
+        {runs.map((run, index) => (
+          <button
+            key={run.first}
+            type="button"
+            className={`diff-minimap-mark ${run.kind}`}
+            style={{
+              top: `${(positions[index]?.top ?? 0) * 100}%`,
+              height: `${(positions[index]?.height ?? 0) * 100}%`,
+            }}
+            aria-label={`Change ${index + 1} of ${runs.length}, ${run.kind}`}
+            onClick={() => scrollTo(positions[index])}
+          />
+        ))}
+      </nav>
+    </div>
+  );
+}
+
 function Segments({ segments, Mark }: { segments: Segment[]; Mark: "ins" | "del" }) {
   return segments.map((segment, index) =>
     segment.changed ? (
@@ -148,7 +237,7 @@ function InlineDiff({ rows }: { rows: DiffRow[] }) {
       {rows.map((row, index) =>
         row.right ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: rows never reorder
-          <span key={index}>
+          <span key={index} data-row={index}>
             <Segments segments={row.right} Mark="ins" />
             {"\n"}
           </span>
@@ -164,7 +253,7 @@ function SplitDiff({ rows }: { rows: DiffRow[] }) {
       {rows.map((row, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: rows never reorder
         <div key={index} className="diff-row">
-          <pre className={row.left ? "diff-cell" : "diff-cell missing"}>
+          <pre className={row.left ? "diff-cell" : "diff-cell missing"} data-row={index}>
             {row.left ? <Segments segments={row.left} Mark="del" /> : null}
           </pre>
           <pre className={row.right ? "diff-cell" : "diff-cell missing"}>

@@ -67,3 +67,33 @@ function pairWords(before: string, after: string): DiffRow {
   }
   return { left, right, changed: true };
 }
+
+export type DiffMode = "inline" | "split";
+
+/** Consecutive changed rows, by index into the rows. */
+export type ChangeRun = { first: number; last: number; kind: "added" | "removed" | "changed" };
+
+/**
+ * Groups the changed rows a mode shows into runs. Inline mode highlights only
+ * new text, so rows whose only change is a removal are left out.
+ */
+export function changeRuns(rows: DiffRow[], mode: DiffMode): ChangeRun[] {
+  const runs: ChangeRun[] = [];
+  let current: ChangeRun | null = null;
+  rows.forEach((row, index) => {
+    const shown = mode === "inline" ? Boolean(row.right?.some((s) => s.changed)) : row.changed;
+    if (!shown) {
+      current = null;
+      return;
+    }
+    const kind = !row.left ? "added" : !row.right ? "removed" : "changed";
+    if (current) {
+      current.last = index;
+      if (current.kind !== kind) current.kind = "changed";
+    } else {
+      current = { first: index, last: index, kind };
+      runs.push(current);
+    }
+  });
+  return runs;
+}
