@@ -768,8 +768,8 @@ describe("version changes", () => {
     try {
       await compare("Compare version 2 with version 1");
       const minimap = await screen.findByRole("navigation", { name: "Changes" });
-      // The edited line and the two removed after it are one run side by side.
-      // Highlighting shows no removed lines, so only the edit is marked.
+      // The edited line and the two removed after it are one run in both views,
+      // though highlighting does not show the removed lines.
       const marks = () =>
         within(minimap)
           .getAllByRole("button")

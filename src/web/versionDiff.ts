@@ -68,25 +68,24 @@ function pairWords(before: string, after: string): DiffRow {
   return { left, right, changed: true };
 }
 
-export type DiffMode = "inline" | "split";
-
 /** Consecutive changed rows, by index into the rows. */
 export type ChangeRun = { first: number; last: number; kind: "added" | "removed" | "changed" };
 
-/**
- * Groups the changed rows a mode shows into runs. Inline mode highlights only
- * new text, so rows whose only change is a removal are left out.
- */
-export function changeRuns(rows: DiffRow[], mode: DiffMode): ChangeRun[] {
+const hasChange = (segments: Segment[] | null) => Boolean(segments?.some((s) => s.changed));
+
+/** Groups consecutive changed rows into runs. */
+export function changeRuns(rows: DiffRow[]): ChangeRun[] {
   const runs: ChangeRun[] = [];
   let current: ChangeRun | null = null;
   rows.forEach((row, index) => {
-    const shown = mode === "inline" ? Boolean(row.right?.some((s) => s.changed)) : row.changed;
-    if (!shown) {
+    if (!row.changed) {
       current = null;
       return;
     }
-    const kind = !row.left ? "added" : !row.right ? "removed" : "changed";
+    // A blank line has no segments, so a missing side decides before the segments do.
+    const removed = !row.right || (hasChange(row.left) && !hasChange(row.right));
+    const added = !row.left || (hasChange(row.right) && !hasChange(row.left));
+    const kind = added ? "added" : removed ? "removed" : "changed";
     if (current) {
       current.last = index;
       if (current.kind !== kind) current.kind = "changed";

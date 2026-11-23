@@ -1,7 +1,9 @@
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ApiError, type ArtifactVersion, fetchMarkdown, type Markdown } from "./api.ts";
 import { HighlightIcon, SideBySideIcon } from "./Icons.tsx";
-import { changeRuns, type DiffMode, type DiffRow, diffRows, type Segment } from "./versionDiff.ts";
+import { changeRuns, type DiffRow, diffRows, type Segment } from "./versionDiff.ts";
+
+type Mode = "inline" | "split";
 
 export type ArtifactDiffProps = {
   artifactId: string;
@@ -30,7 +32,7 @@ export function ArtifactDiff({
   onSelect,
   onClose,
 }: ArtifactDiffProps) {
-  const [mode, setMode] = useState<DiffMode>("inline");
+  const [mode, setMode] = useState<Mode>("inline");
   const [state, setState] = useState<State>({ status: "loading" });
 
   useEffect(() => {
@@ -142,10 +144,10 @@ function showViewport(scroller: HTMLElement | null, viewport: HTMLElement | null
  * The diff in its own scroll area, with a strip beside it that marks where
  * each run of changes sits and scrolls to it when clicked.
  */
-function DiffWithMinimap({ rows, mode }: { rows: DiffRow[]; mode: DiffMode }) {
+function DiffWithMinimap({ rows, mode }: { rows: DiffRow[]; mode: Mode }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const runs = useMemo(() => changeRuns(rows, mode), [rows, mode]);
+  const runs = useMemo(() => changeRuns(rows), [rows]);
   const [positions, setPositions] = useState<Position[]>([]);
   // Measuring runs on every resize, so the rows must not render again with it.
   const diff = useMemo(
@@ -232,17 +234,20 @@ function Segments({ segments, Mark }: { segments: Segment[]; Mark: "ins" | "del"
 }
 
 function InlineDiff({ rows }: { rows: DiffRow[] }) {
+  // A removed line renders as an empty span, so the minimap can place its marker.
   return (
     <pre className="text-view diff-inline">
-      {rows.map((row, index) =>
-        row.right ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: rows never reorder
-          <span key={index} data-row={index}>
-            <Segments segments={row.right} Mark="ins" />
-            {"\n"}
-          </span>
-        ) : null,
-      )}
+      {rows.map((row, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: rows never reorder
+        <span key={index} data-row={index}>
+          {row.right ? (
+            <>
+              <Segments segments={row.right} Mark="ins" />
+              {"\n"}
+            </>
+          ) : null}
+        </span>
+      ))}
     </pre>
   );
 }
