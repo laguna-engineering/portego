@@ -127,7 +127,7 @@ function deployment(): Deployment {
     env: process.env.PORTEGO_ORIGIN,
     argument: AUTH_ORIGIN,
     store: readStore(),
-    fallback: brand.origin,
+    brand,
   });
   if (!origin) throw new UploadError(SETUP_NEEDED);
   resolved = {
@@ -190,7 +190,7 @@ function loadToken(): Token | null {
 async function saveToken(token: Token, options: { makeDefault: boolean }): Promise<void> {
   // Read again: another project's process can have refreshed its own token
   // since this one started.
-  const store = withToken(readStore(), deployment().origin, token, options);
+  const store = withToken(readStore(), deployment().origin, token, { ...options, brand });
   await mkdir(dirname(CREDENTIALS_PATH), { recursive: true, mode: 0o700 });
   // Rename, so that a concurrent reader never sees half a file.
   const temporary = `${CREDENTIALS_PATH}.${process.pid}.tmp`;

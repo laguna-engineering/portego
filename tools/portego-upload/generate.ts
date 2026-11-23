@@ -11,7 +11,7 @@
 import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import type { Brand } from "./brand.ts";
+import { type Brand, DEFAULT_BRAND } from "./brand.ts";
 import { bundleTool } from "./bundle.ts";
 import { resolveArtifactStyle } from "./style.ts";
 
@@ -35,16 +35,21 @@ export class GenerateError extends Error {}
 export function renameProse(text: string, brand: Brand): string {
   return text
     .replaceAll("npx -y portego-upload", `npx -y ${brand.packageName}`)
-    .replace(/\bPortego\b/g, brand.name);
+    .replace(/\bPortego\b/g, () => brand.name);
 }
 
 export function validateOptions(options: GenerateOptions): GenerateOptions {
   const errors: string[] = [];
-  if (!options.name.trim() || /[\n\r]/.test(options.name) || options.name.length > 60) {
-    errors.push("--name must be one line of at most 60 characters");
+  // The name goes into JSON files unescaped.
+  if (!options.name.trim() || /["\\\n\r]/.test(options.name) || options.name.length > 60) {
+    errors.push('--name must be one line of at most 60 characters, without " or \\');
   }
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(options.slug)) {
     errors.push("--slug must be lowercase letters and digits joined by single hyphens");
+  }
+  // A build with Portego's slug would read and write Portego's default deployment.
+  if (options.slug === DEFAULT_BRAND.slug) {
+    errors.push(`--slug must not be ${DEFAULT_BRAND.slug}`);
   }
   if (!/^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/.test(options.packageName)) {
     errors.push("--package must be a valid npm package name");
