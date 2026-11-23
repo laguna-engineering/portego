@@ -840,7 +840,7 @@ export function ArtifactFull({
     );
   } else if (compareFrom && compareTo) {
     body = (
-      <main className="full-text">
+      <main className="full-text full-diff">
         <ArtifactDiff
           artifactId={artifact.id}
           versions={versions}

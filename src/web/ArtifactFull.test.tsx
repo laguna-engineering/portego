@@ -756,6 +756,35 @@ describe("version changes", () => {
     ]);
   });
 
+  test("marks each run of changes on the minimap and scrolls to it", async () => {
+    stubFetch(twoVersions);
+    renderFull();
+    const scrolled: HTMLElement[] = [];
+    const original = HTMLElement.prototype.scrollTo;
+    HTMLElement.prototype.scrollTo = function (this: HTMLElement) {
+      scrolled.push(this);
+    };
+
+    try {
+      await compare("Compare version 2 with version 1");
+      const minimap = await screen.findByRole("navigation", { name: "Changes" });
+      // The edited line and the two removed after it are one run in both views,
+      // though highlighting does not show the removed lines.
+      const marks = () =>
+        within(minimap)
+          .getAllByRole("button")
+          .map((mark) => mark.getAttribute("aria-label"));
+      expect(marks()).toEqual(["Change 1 of 1, changed"]);
+      await userEvent.click(screen.getByRole("button", { name: "Side by side" }));
+      expect(marks()).toEqual(["Change 1 of 1, changed"]);
+
+      await userEvent.click(within(minimap).getByRole("button"));
+      expect(scrolled.map((element) => element.className)).toEqual(["diff-scroll"]);
+    } finally {
+      HTMLElement.prototype.scrollTo = original;
+    }
+  });
+
   test("compares other versions picked in its header", async () => {
     stubFetch(twoVersions);
     renderFull();
@@ -766,6 +795,7 @@ describe("version changes", () => {
 
     expect(await screen.findByText("The text of these versions is the same.")).toBeDefined();
     await expectComparing("v2", "v2");
+    expect(screen.queryByRole("navigation", { name: "Changes" })).toBeNull();
   });
 
   test("returns to the artifact when the comparison closes or a version is selected", async () => {

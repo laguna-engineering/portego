@@ -12,6 +12,9 @@
   --danger: #a2503a;
   --diff-added: #d7ead0;
   --diff-removed: #f3d9cf;
+  --diff-added-mark: #5d8a4e;
+  --diff-removed-mark: #b5583c;
+  --diff-changed-mark: #4a7180;
 
   --mark-1: #4c7568;
   --mark-2: #5d7a54;
@@ -42,6 +45,9 @@
     --danger: #d99f83;
     --diff-added: #2a4630;
     --diff-removed: #4e2f26;
+    --diff-added-mark: #7fb06c;
+    --diff-removed-mark: #d99f83;
+    --diff-changed-mark: #8fb5c4;
   }
 }
 
@@ -1912,22 +1918,87 @@ button.link {
 
 /* Version diff ---------------------------------------------------------- */
 
-/* Stays at the top while the comparison scrolls. The negative margin and
-   matching padding cover the scroll container's padding. Sticky offsets count
-   from inside that padding, so top is negative too, or text shows above it. */
+/* The comparison scrolls its own area below the controls, so the minimap
+   beside that area spans exactly the scrolled height. */
+.full-diff {
+  display: flex;
+  overflow: hidden;
+  padding: 0;
+}
+
+.diff {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .diff-controls {
-  position: sticky;
-  top: -1rem;
-  z-index: 1;
   /* The side columns share the rest equally, so the modes sit in the center. */
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 1rem;
-  margin: -1rem -1rem 1rem;
   padding: 1rem;
   border-bottom: 1px solid var(--line);
-  background: var(--page);
+}
+
+.diff-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+.diff-scroll {
+  overflow: auto;
+  padding: 1rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .diff-scroll {
+    scroll-behavior: smooth;
+  }
+}
+
+.diff-minimap {
+  position: relative;
+  width: 0.9rem;
+  border-left: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.diff-minimap-viewport {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  pointer-events: none;
+}
+
+.diff-minimap-mark {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  min-height: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 1px;
+}
+
+.diff-minimap-mark:hover {
+  outline: 1px solid var(--ink);
+}
+
+.diff-minimap-mark.added {
+  background: var(--diff-added-mark);
+}
+
+.diff-minimap-mark.removed {
+  background: var(--diff-removed-mark);
+}
+
+.diff-minimap-mark.changed {
+  background: var(--diff-changed-mark);
 }
 
 .diff-title {

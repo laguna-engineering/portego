@@ -67,3 +67,32 @@ function pairWords(before: string, after: string): DiffRow {
   }
   return { left, right, changed: true };
 }
+
+/** Consecutive changed rows, by index into the rows. */
+export type ChangeRun = { first: number; last: number; kind: "added" | "removed" | "changed" };
+
+const hasChange = (segments: Segment[] | null) => Boolean(segments?.some((s) => s.changed));
+
+/** Groups consecutive changed rows into runs. */
+export function changeRuns(rows: DiffRow[]): ChangeRun[] {
+  const runs: ChangeRun[] = [];
+  let current: ChangeRun | null = null;
+  rows.forEach((row, index) => {
+    if (!row.changed) {
+      current = null;
+      return;
+    }
+    // A blank line has no segments, so a missing side decides before the segments do.
+    const removed = !row.right || (hasChange(row.left) && !hasChange(row.right));
+    const added = !row.left || (hasChange(row.right) && !hasChange(row.left));
+    const kind = added ? "added" : removed ? "removed" : "changed";
+    if (current) {
+      current.last = index;
+      if (current.kind !== kind) current.kind = "changed";
+    } else {
+      current = { first: index, last: index, kind };
+      runs.push(current);
+    }
+  });
+  return runs;
+}

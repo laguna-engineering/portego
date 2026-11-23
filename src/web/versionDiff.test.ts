@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type DiffRow, diffRows } from "./versionDiff.ts";
+import { changeRuns, type DiffRow, diffRows } from "./versionDiff.ts";
 
 /** Each side as text, with changed runs in brackets. */
 function show(rows: DiffRow[]) {
@@ -41,5 +41,33 @@ describe("diffRows", () => {
   test("flags unchanged rows so identical texts read as having no changes", () => {
     expect(diffRows("same\ntext", "same\ntext").some((row) => row.changed)).toBe(false);
     expect(diffRows("same\ntext", "same\ntext!").some((row) => row.changed)).toBe(true);
+  });
+});
+
+describe("changeRuns", () => {
+  const before = "same\nedited one\nremoved\nsame\nsame\ngone\nsame\n";
+  const after = "same\nedited two\nsame\nsame\nnew\nsame\n";
+
+  test("every changed row belongs to a run and unchanged rows split runs", () => {
+    expect(changeRuns(diffRows(before, after))).toEqual([
+      { first: 1, last: 2, kind: "changed" },
+      { first: 5, last: 5, kind: "changed" },
+    ]);
+  });
+
+  // A removal must stay visible on the minimap even where the text view hides it.
+  test("names a run by what its rows add or remove", () => {
+    expect(changeRuns(diffRows("a\n", "a\nb\n"))).toEqual([{ first: 1, last: 1, kind: "added" }]);
+    expect(changeRuns(diffRows("a\nb\n", "a\n"))).toEqual([{ first: 1, last: 1, kind: "removed" }]);
+    expect(changeRuns(diffRows("one two\n", "one\n"))).toEqual([
+      { first: 0, last: 0, kind: "removed" },
+    ]);
+    expect(changeRuns(diffRows("one\n", "one two\n"))).toEqual([
+      { first: 0, last: 0, kind: "added" },
+    ]);
+    expect(changeRuns(diffRows("a\n\nb\n", "a\n"))).toEqual([
+      { first: 1, last: 2, kind: "removed" },
+    ]);
+    expect(changeRuns(diffRows("a\n", "a\n\nb\n"))).toEqual([{ first: 1, last: 2, kind: "added" }]);
   });
 });
