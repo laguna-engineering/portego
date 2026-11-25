@@ -35,12 +35,17 @@ function describe(item: ActivityItem, count = 1): string {
       return item.change === "created"
         ? `shared ${artifact.title} with anyone who has the link`
         : `revoked the public link to ${artifact.title}`;
+    case "thread.changed":
+      return item.change === "solved"
+        ? `marked a thread on ${artifact.title} solved`
+        : `reopened a thread on ${artifact.title}`;
   }
 }
 
 function targetOf(item: ActivityItem): ArtifactTarget | undefined {
   if (item.kind === "version.created") return { versionId: item.id };
   if (item.kind === "comment.created") return { commentId: item.id };
+  if (item.kind === "thread.changed") return { commentId: item.commentId };
   return undefined;
 }
 
@@ -72,6 +77,8 @@ function why(item: ActivityItem): {
     }
     case "reply":
       return { text: "A reply to your comment", action: watch };
+    case "thread":
+      return { text: "Your thread", action: watch };
     default:
       return { text: "Not watching", action: watch };
   }

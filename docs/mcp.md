@@ -188,8 +188,9 @@ of it has to pass the browser's `Host` through unchanged.
 | `list_tags` | List shared tags. |
 | `create_tag`, `update_tag`, `delete_tag` | Manage shared tags. Deletion removes assignments and preserves artifacts. |
 | `set_artifact_organization` | Set an artifact's one folder and complete tag set. |
-| `list_artifact_comments` | The comments on one artifact, oldest first, with their authors and the version each was written on. |
-| `add_artifact_comment` | Adds a comment as the caller, on the current version by default or the one named by an optional `versionId`, optionally as a reply to a root comment via `parentId`. Comments cannot be edited. |
+| `list_artifact_comments` | The comments on one artifact, oldest first, with their authors, the version each was written on, and whether each root comment's thread is solved. |
+| `add_artifact_comment` | Adds a comment as the caller, on the current version by default or the one named by an optional `versionId`, optionally as a reply to a root comment via `parentId`. A reply reopens a solved thread. Comments cannot be edited. |
+| `set_comment_solved` | Marks a thread solved, or reopens it, by its root comment's id. |
 | `list_artifact_entries` | Every person's entries on one artifact, with the schema the current version declares. See [entries.md](entries.md). |
 | `set_artifact_entry` | Sets the caller's value for one key, checked against the artifact's schema. |
 | `clear_artifact_entry` | Removes the caller's value for one key. |

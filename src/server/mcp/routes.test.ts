@@ -184,6 +184,7 @@ describe("tools", () => {
       "set_artifact_visibility",
       "list_artifact_comments",
       "add_artifact_comment",
+      "set_comment_solved",
       "list_artifact_entries",
       "set_artifact_entry",
       "clear_artifact_entry",
@@ -422,6 +423,36 @@ describe("tools", () => {
     expect(comments.comments[0]?.body).toBe("From a client");
     expect(comments.comments[0]?.author.email).toBe("person@acme.example");
     expect(comments.comments[0]?.anchor).toBeNull();
+  });
+
+  test("solves and reopens a thread, recording the caller, and lists the state", async () => {
+    const created = await upload("Solved through MCP");
+    const added = (
+      await callTool(client, "add_artifact_comment", { id: created.id, body: "Done?" })
+    ).result?.structuredContent as { id: string };
+
+    const solved = await callTool(client, "set_comment_solved", {
+      id: created.id,
+      commentId: added.id,
+      solved: true,
+    });
+    expect(solved.result?.structuredContent).toMatchObject({
+      id: added.id,
+      solved: { by: { name: "A Person" } },
+    });
+
+    const listed = (await callTool(client, "list_artifact_comments", { id: created.id })).result
+      ?.structuredContent as { comments: { solved: { by: { name: string } } | null }[] };
+    expect(listed.comments[0]?.solved?.by.name).toBe("A Person");
+
+    await callTool(client, "set_comment_solved", {
+      id: created.id,
+      commentId: added.id,
+      solved: false,
+    });
+    const reopened = (await callTool(client, "list_artifact_comments", { id: created.id })).result
+      ?.structuredContent as { comments: { solved: unknown }[] };
+    expect(reopened.comments[0]?.solved).toBeNull();
   });
 
   test("records entries as the caller, checks them against the page's schema, and clears them", async () => {

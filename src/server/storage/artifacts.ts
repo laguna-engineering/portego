@@ -856,6 +856,9 @@ export function createArtifactStore(options: {
         database
           .query("update artifactStatusChanges set artifactId = ? where artifactId = ?")
           .run(intoId, fromId);
+        database
+          .query("update commentStatusChanges set artifactId = ? where artifactId = ?")
+          .run(intoId, fromId);
         // Keep every tag from both artifacts. A duplicate pair stays once,
         // then no assignment points at the row the cascade will remove.
         database

@@ -498,6 +498,27 @@ export const migrations: readonly Migration[] = [
       create index invitations_email on invitations (email);
     `,
   },
+  {
+    // Only a root comment is ever solved: the state belongs to its thread.
+    // A change row cascades with its thread, so removing the thread also
+    // removes it from the activity feed.
+    id: "025-solved-comment-threads",
+    sql: `
+      alter table artifactComments add column solvedAt integer;
+      alter table artifactComments add column solvedBy text references "user" ("id");
+      create table commentStatusChanges (
+        id text not null primary key,
+        artifactId text not null references artifacts (id) on delete cascade,
+        commentId text not null references artifactComments (id) on delete cascade,
+        change text not null check (change in ('solved', 'reopened')),
+        actorId text not null references "user" ("id"),
+        createdAt integer not null,
+        inApp integer not null default 0
+      );
+      create index commentStatusChanges_created_at on commentStatusChanges (createdAt);
+      create index commentStatusChanges_comment on commentStatusChanges (commentId);
+    `,
+  },
 ];
 
 function ensureMigrationTable(database: Database): void {

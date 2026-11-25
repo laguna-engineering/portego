@@ -347,6 +347,14 @@ export type ArtifactService = {
     },
   ) => Comment;
   deleteComment: (id: string, commentId: string, actorId: string) => void;
+  /** Marks a thread solved or open again. Only a root comment stands for its thread. */
+  setCommentSolved: (
+    id: string,
+    commentId: string,
+    solved: boolean,
+    actorId: string,
+    options?: { inApp?: boolean },
+  ) => Comment;
   /**
    * Every person's entries, and the schema the current version declares. An
    * entry whose value the schema formats like a comment carries `format`.
@@ -1230,6 +1238,22 @@ export function createArtifactService(options: {
         throw new ServiceError("NOT_FOUND", "No such comment.");
       }
       publish({ type: "comment.changed", artifactId: id });
+    },
+
+    // Like an artifact's status, anyone who can comment can solve or reopen a thread.
+    setCommentSolved(id, commentId, solved, actorId, options) {
+      visible(id, { userId: actorId });
+      const comment = commentStore.get(commentId);
+      if (!comment || comment.artifactId !== id) {
+        throw new ServiceError("NOT_FOUND", "No such comment.");
+      }
+      if (comment.parentId !== null) {
+        throw new ServiceError("INVALID_INPUT", "Solve the comment that started the thread.");
+      }
+      const updated = commentStore.setSolved(commentId, solved, actorId, options);
+      if (!updated) throw new ServiceError("NOT_FOUND", "No such comment.");
+      publish({ type: "comment.changed", artifactId: id });
+      return updated;
     },
 
     entries(id, viewer) {

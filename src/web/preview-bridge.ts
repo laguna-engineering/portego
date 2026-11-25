@@ -23,7 +23,8 @@ export type BridgeMessage =
 
 export type BridgeCommand =
   | { type: "mode"; enabled: boolean }
-  | { type: "highlights"; anchors: (CommentAnchor & { id: string })[] }
+  /** A solved thread's passage is painted muted. */
+  | { type: "highlights"; anchors: (CommentAnchor & { id: string; solved?: boolean })[] }
   | { type: "reveal"; id: string }
   | { type: "comments"; comments: PageComment[] }
   /** `viewerId` is the reader's `authorId`, or null for a guest who has not given a name. */

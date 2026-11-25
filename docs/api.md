@@ -63,6 +63,7 @@ A guest gets `null` for every `email` field. The rules are in
 | `DELETE` | `/api/tags/:id` | Delete a tag and preserve artifacts |
 | `GET` | `/api/artifacts/:id/comments` | The comment thread, across every version |
 | `POST` | `/api/artifacts/:id/comments` | Add a comment, optionally anchored to a passage of text, on a version, or replying to a root comment |
+| `PATCH` | `/api/artifacts/:id/comments/:commentId` | Mark a thread solved or reopen it, by its root comment |
 | `DELETE` | `/api/artifacts/:id/comments/:commentId` | Remove your own comment |
 | `GET` | `/api/artifacts/:id/entries` | Every entry on the artifact, and the current version's entry schema |
 | `PUT` | `/api/artifacts/:id/entries` | Set your value for one key |
@@ -436,9 +437,10 @@ removed comment or cleared entry is no longer listed.
 
 `kind` is `artifact.created`, `version.created` (with `versionNumber`),
 `comment.created` (with `reply`), `status.changed` (with `change`),
-`entry.changed` (with `key`), or `link.changed` (with `change`: `created` or
-`revoked`). `id` is the id of the version, comment, status or link change, or
-entry write. An entry gets a new `id` each time its value changes. `readAt` is when the caller
+`entry.changed` (with `key`), `link.changed` (with `change`: `created` or
+`revoked`), or `thread.changed` (with `change`: `solved` or `reopened`, and
+`commentId`, the thread's root comment). `id` is the id of the version, comment,
+status, link, or thread change, or entry write. An entry gets a new `id` each time its value changes. `readAt` is when the caller
 last called `POST /api/activity/read`, or null if never; items after it are
 unread, except those with `seen`. The read marker is per user and only moves forward.
 
@@ -453,8 +455,8 @@ version, or an artifact the caller cannot see, is `NOT_FOUND`.
 
 `reason` says why an item reaches the caller: `uploaded`, `commented`, or
 `chosen` for a level set on the artifact, `folder` (with `folder`, the watched
-folder) for a level set on a folder above it, or `reply` for a reply to the
-caller's comment. It is null on an item that does not reach them, which only
+folder) for a level set on a folder above it, `reply` for a reply to the
+caller's comment, or `thread` for a solve or reopen of the caller's thread. It is null on an item that does not reach them, which only
 `scope=everyone` lists.
 
 #### Watching

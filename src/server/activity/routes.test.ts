@@ -108,7 +108,7 @@ function told(item: Item): string {
           ? ` ${item.change}`
           : item.kind === "entry.changed"
             ? ` ${item.key}`
-            : item.kind === "link.changed"
+            : item.kind === "link.changed" || item.kind === "thread.changed"
               ? ` ${item.change}`
               : "";
   return `${item.actor.name} ${item.kind}${detail} on ${item.artifact.title}`;
@@ -169,6 +169,49 @@ describe("feed", () => {
     ]);
   });
 
+  test("records solving and reopening a thread only when its state changes", async () => {
+    const id = await upload("Plan");
+    const root = await comment(id, "Why this order?");
+    const path = `/api/artifacts/${id}/comments/${root}`;
+    await send("PATCH", path, { solved: true });
+    await send("PATCH", path, { solved: true });
+    await send("PATCH", path, { solved: false });
+
+    const { items } = await feed();
+
+    expect(items.filter((item) => item.kind === "thread.changed").map(told)).toEqual([
+      "A Person thread.changed reopened on Plan",
+      "A Person thread.changed solved on Plan",
+    ]);
+  });
+
+  // The reply already reaches the thread's author; a second item for the
+  // reopen would tell them the same thing twice.
+  test("records no separate reopen when a reply reopens a thread", async () => {
+    const id = await upload("Plan");
+    const root = await comment(id, "Why this order?");
+    await send("PATCH", `/api/artifacts/${id}/comments/${root}`, { solved: true });
+    await comment(id, "Still unclear", root);
+
+    const { items } = await feed();
+
+    expect(items.filter((item) => item.kind === "thread.changed").map(told)).toEqual([
+      "A Person thread.changed solved on Plan",
+    ]);
+  });
+
+  test("drops a thread's changes once the thread is deleted", async () => {
+    const id = await upload("Plan");
+    const root = await comment(id, "Oops");
+    await send("PATCH", `/api/artifacts/${id}/comments/${root}`, { solved: true });
+    await server.app.request(`/api/artifacts/${id}/comments/${root}`, {
+      method: "DELETE",
+      headers: { cookie, origin: TEST_BASE_URL },
+    });
+
+    expect((await feed()).items.filter((item) => item.kind === "thread.changed")).toEqual([]);
+  });
+
   test("leaves out anything older than the window", async () => {
     const id = await upload("Plan");
     const old = await comment(id, "Last week");
@@ -207,6 +250,21 @@ describe("feed", () => {
 
     const changes = (await feed()).items.filter((item) => item.kind === "status.changed");
     expect(changes.map(told)).toEqual(["A Person status.changed solved on Plan"]);
+  });
+
+  test("keeps the thread history of an artifact merged into another", async () => {
+    const into = await upload("Plan");
+    const from = await upload("Plan, again");
+    const root = await comment(from, "Why this order?");
+    await send("PATCH", `/api/artifacts/${from}/comments/${root}`, { solved: true });
+
+    createArtifactStore({ database: server.database, dataDir: server.dataDir }).mergeInto(
+      into,
+      from,
+    );
+
+    const changes = (await feed()).items.filter((item) => item.kind === "thread.changed");
+    expect(changes.map(told)).toEqual(["A Person thread.changed solved on Plan"]);
   });
 
   test("leaves out what the reader did in the web app, and only for them", async () => {
@@ -340,6 +398,17 @@ describe("following", () => {
 
     expect((await following()).map((item) => [told(item), item.reason?.kind])).toEqual([
       ["A Person comment.created reply on Plan", "reply"],
+    ]);
+  });
+
+  test("tells the thread's author when someone solves it, whatever they follow", async () => {
+    const id = await upload("Plan");
+    const root = await comment(id, "Why this order?", undefined, reader);
+    await watch("artifacts", id, "none");
+    await send("PATCH", `/api/artifacts/${id}/comments/${root}`, { solved: true });
+
+    expect((await following()).map((item) => [told(item), item.reason?.kind])).toEqual([
+      ["A Person thread.changed solved on Plan", "thread"],
     ]);
   });
 

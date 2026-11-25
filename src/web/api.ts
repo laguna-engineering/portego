@@ -81,6 +81,8 @@ export type Comment = {
   versionNumber: number;
   /** Written in the web app, not by an agent. */
   inApp: boolean;
+  /** Set on a root comment whose thread is solved. Always null on a reply. */
+  solved: { at: string; by: { id: string; name: string } } | null;
 };
 
 /** `artifactCount` counts artifacts filed or tagged directly, including solved and archived ones. */
@@ -625,13 +627,15 @@ export type ActivityItem = {
   | { kind: "status.changed"; change: "solved" | "reopened" | "archived" | "restored" }
   | { kind: "entry.changed"; key: string }
   | { kind: "link.changed"; change: "created" | "revoked" }
+  /** `commentId` is the thread's root comment. */
+  | { kind: "thread.changed"; change: "solved" | "reopened"; commentId: string }
 );
 
 /** The last seven days, newest first. `readAt` is when the reader last opened the list. */
 export type ActivityFeed = { items: ActivityItem[]; readAt: string | null };
 
 export type ActivityReason =
-  | { kind: "uploaded" | "commented" | "chosen" | "reply" }
+  | { kind: "uploaded" | "commented" | "chosen" | "reply" | "thread" }
   | { kind: "folder"; folder: { id: string; name: string } };
 
 /** "following" is what reaches the bell. "everyone" is everything the reader can see. */
@@ -797,6 +801,22 @@ export async function deleteComment(artifactId: string, commentId: string): Prom
     { method: "DELETE" },
   );
   if (!res.ok) throw new ApiError("DELETE_FAILED", "Could not remove that comment.", res.status);
+}
+
+/** Marks a thread solved or open again, by its root comment. */
+export function setCommentSolved(
+  artifactId: string,
+  commentId: string,
+  solved: boolean,
+): Promise<Comment> {
+  return request<{ comment: Comment }>(
+    `/api/artifacts/${encodeURIComponent(artifactId)}/comments/${encodeURIComponent(commentId)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ solved }),
+    },
+  ).then((response) => response.comment);
 }
 
 /** One person's value for one key on an artifact. */

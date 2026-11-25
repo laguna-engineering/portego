@@ -265,6 +265,21 @@ export function artifactRoutes(
     return c.json({ comment }, 201);
   });
 
+  routes.patch("/:id/comments/:commentId", async (c) => {
+    const body = await readJson(c);
+    if (typeof body.solved !== "boolean") {
+      throw new ServiceError("INVALID_INPUT", "solved must be true or false.");
+    }
+    const comment = service.setCommentSolved(
+      c.req.param("id"),
+      c.req.param("commentId"),
+      body.solved,
+      currentUser(c).id,
+      { inApp: true },
+    );
+    return c.json({ comment });
+  });
+
   routes.delete("/:id/comments/:commentId", (c) => {
     service.deleteComment(c.req.param("id"), c.req.param("commentId"), currentUser(c).id);
     return c.body(null, 204);

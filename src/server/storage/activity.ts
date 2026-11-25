@@ -11,13 +11,16 @@ import {
 
 export type StatusChange = "solved" | "reopened" | "archived" | "restored";
 export type LinkChange = "created" | "revoked";
+export type ThreadChange = "solved" | "reopened";
 
 /** Why an item reaches the user's bell. */
 export type ActivityReason =
   | { kind: FollowReason }
   | { kind: "folder"; folder: { id: string; name: string } }
   /** A reply to the user's comment, which reaches them whatever they follow. */
-  | { kind: "reply" };
+  | { kind: "reply" }
+  /** Someone solved or reopened the user's thread, which reaches them whatever they follow. */
+  | { kind: "thread" };
 
 /**
  * One thing that happened to an artifact. `id` is the id of the version,
@@ -39,6 +42,8 @@ export type Activity = {
   | { kind: "status.changed"; change: StatusChange }
   | { kind: "entry.changed"; key: string }
   | { kind: "link.changed"; change: LinkChange }
+  /** `commentId` is the thread's root comment. */
+  | { kind: "thread.changed"; change: ThreadChange; commentId: string }
 );
 
 export type ActivityStore = {
@@ -75,7 +80,7 @@ export type ActivityStore = {
 };
 
 type Row = {
-  source: "version" | "comment" | "status" | "entry" | "link";
+  source: "version" | "comment" | "status" | "entry" | "link" | "thread";
   id: string;
   createdAt: number;
   actorId: string;
@@ -84,14 +89,14 @@ type Row = {
   artifactTitle: string;
   versionNumber: number | null;
   parentId: string | null;
-  change: StatusChange | LinkChange | null;
+  change: StatusChange | LinkChange | ThreadChange | null;
   entryKey: string | null;
   ownLevel: SubscriptionLevel | null;
   ownReason: FollowReason | null;
   viaFolderId: string | null;
   viaFolderName: string | null;
   byLevel: 0 | 1;
-  replyToViewer: 0 | 1;
+  inViewersThread: 0 | 1;
   linkToCreator: 0 | 1;
   seen: 0 | 1;
 };
@@ -121,7 +126,7 @@ const SELECT_ACTIVITY = `
         when 'versions' then activity.source = 'version'
         else 0
       end as byLevel,
-      coalesce(parentComment.authorId = ?, 0) as replyToViewer,
+      coalesce(parentComment.authorId = ?, 0) as inViewersThread,
       activity.source = 'link' and artifacts.createdBy = ? as linkToCreator,
       coalesce(activity.source = 'version'
         and activity.versionNumber <= artifactReads.versionNumber, 0) as seen
@@ -141,6 +146,9 @@ const SELECT_ACTIVITY = `
       union all
       select 'link', id, createdAt, actorId, artifactId, inApp, null, null, change, null
       from artifactLinkChanges where createdAt >= ?
+      union all
+      select 'thread', id, createdAt, actorId, artifactId, inApp, null, commentId, change, null
+      from commentStatusChanges where createdAt >= ?
     ) activity
       join artifacts on artifacts.id = activity.artifactId
       join "user" on "user".id = activity.actorId
@@ -154,7 +162,7 @@ const SELECT_ACTIVITY = `
       left join artifactComments parentComment on parentComment.id = activity.parentId
     where not (activity.actorId = ? and activity.inApp = 1) and ${READABLE}
   ) feed
-  where ? or feed.byLevel or feed.replyToViewer or feed.linkToCreator
+  where ? or feed.byLevel or feed.inViewersThread or feed.linkToCreator
   order by feed.createdAt desc, feed.id desc
   limit ?`;
 
@@ -166,7 +174,7 @@ function reasonOf(row: Row): ActivityReason | null {
       folder: { id: row.viaFolderId as string, name: row.viaFolderName as string },
     };
   }
-  if (row.replyToViewer) return { kind: "reply" };
+  if (row.inViewersThread) return { kind: row.source === "thread" ? "thread" : "reply" };
   return row.linkToCreator ? { kind: "uploaded" } : null;
 }
 
@@ -189,6 +197,14 @@ function toActivity(row: Row): Activity {
     return { ...base, kind: "entry.changed", key: row.entryKey as string };
   if (row.source === "link") {
     return { ...base, kind: "link.changed", change: row.change as LinkChange };
+  }
+  if (row.source === "thread") {
+    return {
+      ...base,
+      kind: "thread.changed",
+      change: row.change as ThreadChange,
+      commentId: row.parentId as string,
+    };
   }
   if (row.versionNumber === 1) return { ...base, kind: "artifact.created" };
   return { ...base, kind: "version.created", versionNumber: row.versionNumber as number };
@@ -213,6 +229,7 @@ export function createActivityStore(options: { database: Database }): ActivitySt
           userId,
           userId,
           userId,
+          since,
           since,
           since,
           since,

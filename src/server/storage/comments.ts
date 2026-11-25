@@ -24,6 +24,8 @@ export type Comment = {
   versionNumber: number;
   /** Written in the web app, not by an agent. */
   inApp: boolean;
+  /** Set on a root comment whose thread is solved. Always null on a reply. */
+  solved: { at: Date; by: { id: string; name: string } } | null;
 };
 
 export type CommentStore = {
@@ -41,6 +43,16 @@ export type CommentStore = {
   get: (id: string) => Comment | null;
   /** Removes a comment. Returns false when it is not this author's to remove. */
   remove: (id: string, authorId: string) => boolean;
+  /**
+   * Marks a root comment's thread solved or open again, recording the change
+   * only when the state moves. Null when there is no such comment.
+   */
+  setSolved: (
+    id: string,
+    solved: boolean,
+    actorId: string,
+    options?: { inApp?: boolean },
+  ) => Comment | null;
 };
 
 type Row = {
@@ -56,15 +68,21 @@ type Row = {
   versionId: string;
   versionNumber: number;
   inApp: number;
+  solvedAt: number | null;
+  solvedBy: string | null;
+  solverName: string | null;
 };
 
 const SELECT_COMMENT = `
   select artifactComments.*, ${USER_NAME} as authorName, "user".email as authorEmail,
-    artifactVersions.number as versionNumber
+    artifactVersions.number as versionNumber,
+    coalesce(solverDisplayName.name, solver.name) as solverName
   from artifactComments
     join "user" on "user".id = artifactComments.authorId
     ${JOIN_DISPLAY_NAME}
-    join artifactVersions on artifactVersions.id = artifactComments.versionId`;
+    join artifactVersions on artifactVersions.id = artifactComments.versionId
+    left join "user" solver on solver.id = artifactComments.solvedBy
+    left join userDisplayNames solverDisplayName on solverDisplayName.userId = solver.id`;
 
 function toComment(row: Row): Comment {
   return {
@@ -78,6 +96,10 @@ function toComment(row: Row): Comment {
     versionId: row.versionId,
     versionNumber: row.versionNumber,
     inApp: row.inApp === 1,
+    solved:
+      row.solvedAt !== null && row.solvedBy !== null
+        ? { at: new Date(row.solvedAt), by: { id: row.solvedBy, name: row.solverName ?? "" } }
+        : null,
   };
 }
 
@@ -85,6 +107,7 @@ function toComment(row: Row): Comment {
  * Comments are append-only rows. Two people commenting at the same time write
  * two rows, so neither can overwrite the other, and nothing has to be merged.
  * Text and creation time are immutable; an author may remove their own comment.
+ * A thread's solved state lives on its root and changes in place.
  */
 export function createCommentStore(options: { database: Database }): CommentStore {
   const { database } = options;
@@ -140,6 +163,13 @@ export function createCommentStore(options: { database: Database }): CommentStor
           reason: "commented",
           at: now,
         });
+        // A reply reopens a solved thread. The reply itself reaches the
+        // thread's author, so no separate reopen is recorded.
+        if (input.parentId) {
+          database
+            .query("update artifactComments set solvedAt = null, solvedBy = null where id = ?")
+            .run(input.parentId);
+        }
       })();
       const comment = get(id);
       if (!comment) throw new Error(`Comment ${id} disappeared right after it was written`);
@@ -151,6 +181,33 @@ export function createCommentStore(options: { database: Database }): CommentStor
         .query("delete from artifactComments where id = ? and authorId = ?")
         .run(id, authorId);
       return result.changes > 0;
+    },
+
+    setSolved(id, solved, actorId, options = {}) {
+      const now = Date.now();
+      database.transaction(() => {
+        const before = get(id);
+        if (!before || (before.solved !== null) === solved) return;
+        database
+          .query("update artifactComments set solvedAt = ?, solvedBy = ? where id = ?")
+          .run(solved ? now : null, solved ? actorId : null, id);
+        database
+          .query(
+            `insert into commentStatusChanges
+               (id, artifactId, commentId, change, actorId, createdAt, inApp)
+             values (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            Bun.randomUUIDv7(),
+            before.artifactId,
+            id,
+            solved ? "solved" : "reopened",
+            actorId,
+            now,
+            options.inApp ? 1 : 0,
+          );
+      })();
+      return get(id);
     },
   };
 }

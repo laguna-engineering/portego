@@ -103,6 +103,8 @@ type HeaderAction = {
   keepsMenuOpen?: boolean;
   /** Puts a dot on the header button, e.g. when the artifact has tags. */
   dot?: boolean;
+  /** Puts a number on the header button, with what it counts for screen readers. */
+  count?: { value: number; description: string };
   /** Colours the header button, e.g. while the reader watches the artifact. */
   active?: boolean;
 };
@@ -139,6 +141,7 @@ function HeaderControl({
       aria-controls={action.controls}
       data-dot={action.dot || undefined}
       data-active={action.active || undefined}
+      aria-description={action.count?.description}
       onClick={() => {
         action.onSelect?.();
         onDone?.();
@@ -146,6 +149,11 @@ function HeaderControl({
     >
       {action.icon}
       <span>{action.label}</span>
+      {action.count ? (
+        <b className="count-badge" aria-hidden="true">
+          {action.count.value > 99 ? "99+" : action.count.value}
+        </b>
+      ) : null}
     </button>
   );
 }
@@ -189,6 +197,7 @@ export function ArtifactFull({
   const [live, setLive] = useState<{ anchor: CommentAnchor; rect: SelectionRect } | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [showSolved, setShowSolved] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([]);
   /** The entry the artifact just recorded for the reader, shown for a moment. */
   const [recorded, setRecorded] = useState<string | null>(null);
@@ -278,12 +287,27 @@ export function ArtifactFull({
     linkShown.current?.();
   }, [versionId, commentId]);
 
+  /** Root comments of solved threads. Only a root carries the thread's state. */
+  const solvedRoots = useMemo(
+    () => new Set(comments.filter((comment) => comment.solved).map((comment) => comment.id)),
+    [comments],
+  );
+
+  const openComments = comments.filter(
+    (comment) => !solvedRoots.has(comment.parentId ?? comment.id),
+  ).length;
+
   const highlights = useMemo(
     () =>
       comments
         .filter((comment): comment is Comment & { anchor: CommentAnchor } => comment.anchor != null)
-        .map(({ id: commentId, anchor }) => ({ id: commentId, ...anchor })),
-    [comments],
+        .filter((comment) => showSolved || !solvedRoots.has(comment.id))
+        .map(({ id: commentId, anchor }) =>
+          solvedRoots.has(commentId)
+            ? { id: commentId, ...anchor, solved: true }
+            : { id: commentId, ...anchor },
+        ),
+    [comments, showSolved, solvedRoots],
   );
 
   const pageComments = useMemo(
@@ -407,10 +431,13 @@ export function ArtifactFull({
   // is asked to reveal it.
   useEffect(() => {
     if (!pendingReveal || !frameReady) return;
-    if (!comments.some((comment) => comment.id === pendingReveal)) return;
+    const target = comments.find((comment) => comment.id === pendingReveal);
+    if (!target) return;
+    // A solved thread's passage is painted once the panel shows solved threads.
+    if (solvedRoots.has(target.parentId ?? target.id) && !showSolved) return;
     sendToPreview(frameRef.current, { type: "reveal", id: pendingReveal });
     setPendingReveal(null);
-  }, [pendingReveal, frameReady, comments]);
+  }, [pendingReveal, frameReady, comments, solvedRoots, showSolved]);
 
   // The popover finds in the frame, so a link's find waits until the frame can answer.
   useEffect(() => {
@@ -691,6 +718,13 @@ export function ArtifactFull({
     pressed: panelOpen,
     expanded: panelOpen,
     controls: COMMENTS_PANEL_ID,
+    count:
+      openComments > 0
+        ? {
+            value: openComments,
+            description: openComments === 1 ? "1 open comment" : `${openComments} open comments`,
+          }
+        : undefined,
     onSelect: () => setPanelOpen((open) => !open),
   };
 
@@ -963,6 +997,7 @@ export function ArtifactFull({
             onClearAnchor={() => setSelection(null)}
             onClose={closePanel}
             onComments={handleComments}
+            onShowSolvedChange={setShowSolved}
             onEntries={setEntries}
             onFocusComment={revealComment}
             focusedId={focusedId}

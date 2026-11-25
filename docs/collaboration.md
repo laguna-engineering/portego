@@ -51,7 +51,19 @@ two rows, so neither can overwrite the other and nothing has to be merged.
 
 **A comment cannot be edited.** The text and the time it was written are the
 record. The author may remove their own comment, and nobody else can; a removal
-deletes the row. Someone who wants to correct a comment writes another one.
+deletes the row. Removing a root comment removes its replies too, including
+other people's, so the web app asks before it deletes. Someone who wants to
+correct a comment writes another one.
+
+**A thread can be solved.** Anyone who can comment can mark a thread solved or
+reopen it. The state lives on the root comment (`solved: { at, by }`, or null)
+and a reply cannot be solved on its own. A reply to a solved thread reopens it.
+Each solve and reopen is recorded in `commentStatusChanges`, only when the
+state moves, and reaches the thread's author in the activity feed whatever they
+follow. A reply that reopens a thread records no separate change: the reply
+already reaches the author. The web app hides solved threads until the reader
+turns on "Show solved", and the header's comments button counts the comments
+and replies in open threads.
 
 A comment can optionally carry an anchor that points at a passage of the
 artifact's rendered text: `{ quote, prefix, suffix }`. `quote` is the selected
@@ -138,6 +150,7 @@ rebuilding the list underneath them.
 | `PATCH` | `/api/artifacts/:id/archived` | `{ "archived": true \| false }` |
 | `GET` | `/api/artifacts/:id/comments` | The thread, oldest first |
 | `POST` | `/api/artifacts/:id/comments` | `{ "body": "…", "anchor"?: { "quote", "prefix", "suffix" }, "parentId"?: "…", "versionId"?: "…" }`, body 4000 characters at most |
+| `PATCH` | `/api/artifacts/:id/comments/:commentId` | `{ "solved": true \| false }`, on a root comment only |
 | `DELETE` | `/api/artifacts/:id/comments/:commentId` | The author's own comment only |
 
 Every route needs a session, and the actor comes from it.
@@ -147,7 +160,8 @@ Every route needs a session, and the actor comes from it.
 `list_artifacts` takes `status` and `includeArchived`. `set_artifact_status`
 moves the status, archives, or restores. `list_artifact_comments` and
 `add_artifact_comment` cover the thread, including replies through
-`add_artifact_comment`'s optional `parentId`. The write tools need the
+`add_artifact_comment`'s optional `parentId`. `set_comment_solved` solves or
+reopens a thread by its root comment. The write tools need the
 `artifacts:write` scope, and the actor is the token's subject, exactly as on the
 web.
 

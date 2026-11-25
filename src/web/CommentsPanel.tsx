@@ -24,6 +24,7 @@ export type CommentsPanelProps = {
   onClearAnchor: () => void;
   onClose: () => void;
   onComments: (comments: Comment[]) => void;
+  onShowSolvedChange: (shown: boolean) => void;
   onEntries: (entries: Entry[]) => void;
   onFocusComment: (id: string) => void;
   focusedId: string | null;
@@ -67,6 +68,7 @@ export function CommentsPanel({
   onClearAnchor,
   onClose,
   onComments,
+  onShowSolvedChange,
   onEntries,
   onFocusComment,
   focusedId,
@@ -176,6 +178,7 @@ export function CommentsPanel({
         onFocusComment={onFocusComment}
         focusedId={focusedId}
         onComments={onComments}
+        onShowSolvedChange={onShowSolvedChange}
         heading={false}
         versionId={viewedId}
         viewedVersionNumber={viewedVersion?.number ?? null}

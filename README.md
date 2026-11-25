@@ -426,8 +426,9 @@ and the team rules.
 An artifact is open or solved, and can be archived separately, so a solved
 artifact can also be archived. The gallery filters on both, archived artifacts
 stay out of it unless asked for, and their links keep working. Comments are
-append-only: they cannot be edited, and only their author can remove one. Every
-change records who made it. See
+append-only: they cannot be edited, and only their author can remove one. Anyone
+can mark a comment thread solved, which hides it until a reader asks to see
+solved threads. Every change records who made it. See
 [docs/collaboration.md](docs/collaboration.md).
 
 ## Reading an artifact as text
