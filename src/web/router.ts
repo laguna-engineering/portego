@@ -59,7 +59,7 @@ export type Route =
   | { name: "invitations" }
   | { name: "unknown" };
 
-/** Reads the current URL. Two views and a search term need no router library. */
+/** Reads the current URL. These routes and their query parameters need no router library. */
 export function readRoute(url: URL): Route {
   // `/full` is the path the view had before it became the only one. Links
   // copied then still open.

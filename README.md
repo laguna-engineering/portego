@@ -1,9 +1,106 @@
 # portego
 
-A single TypeScript application. [Hono](https://hono.dev) serves the API, and
+Portego is where a team keeps the HTML pages that people and AI agents make:
+reports, prototypes, dashboards, decision records. Agents upload them over
+MCP, and people read them in an isolated preview, comment on them, compare
+their versions, and file them in folders and tags.
+
+It is a single TypeScript application. [Hono](https://hono.dev) serves the API, and
 [Vite](https://vite.dev) builds the React client. Bun runs both.
 
 ![The artifact gallery, with folders, tags, and status filters](docs/images/dashboard.png)
+
+## Features
+
+### Compare versions
+
+Each upload of the same artifact is a new version. Compare any two versions
+from the versions panel, with changes highlighted in place or side by side. A
+minimap along the edge marks where text was added, removed, or changed.
+
+![Two versions compared, with the changes highlighted and marked on the minimap](docs/images/version-compare.jpg)
+
+### Comment on a passage
+
+Select text in an artifact to comment on it. The comment keeps the quoted
+passage, and later versions highlight the passage wherever its text is still
+found.
+
+![A comment anchored to a highlighted sentence in the artifact](docs/images/comments.jpg)
+
+### Notifications
+
+The bell in the masthead lists new artifacts, versions, and comments, and the
+entries an artifact marks for notification, on a Watching tab and an Everyone
+tab. Each artifact and each folder can be
+watched for all activity, for new versions only, or not at all, and an
+artifact follows the nearest watched folder above it.
+
+![The notification bell open over the gallery](docs/images/notifications.jpg)
+
+### Entries
+
+An artifact can collect input from its readers: votes, poll answers,
+checklists, proposals. Each reader holds one value per key, so a page counts
+votes without de-duplicating them. Entries are listed next to the comments,
+and agents read and write them over MCP. See
+[docs/entries.md](docs/entries.md).
+
+![A poll artifact with its votes listed as entries in the side panel](docs/images/entries.jpg)
+
+### Find and link
+
+Search runs everywhere, in the current folder, or inside the open artifact,
+where it works like a browser's find. A link can open an artifact at a given
+version, comment, or search term, and Copy link keeps the part of the
+artifact the reader last clicked a link to.
+
+![Find inside an artifact, with the match highlighted](docs/images/find.jpg)
+
+### Read as Markdown
+
+The artifact page switches between the rendered artifact and its Markdown
+text, which is also what agents read. See
+[Reading an artifact as text](#reading-an-artifact-as-text).
+
+![The Markdown view of an artifact](docs/images/markdown.jpg)
+
+### Private artifacts and public links
+
+The Share control sets who can see an artifact: only its creator, everyone
+who can sign in, or anyone with its link. A public link opens without
+signing in, and a visitor gives a name before adding entries. Revoking a link
+stops it, and a new link is a different one. `PRIVATE_ARTIFACTS` and
+`PUBLIC_LINKS` turn these on or off for a deployment.
+
+![The Share popover with a public link](docs/images/share.jpg)
+
+### Teams and guests
+
+With `TEAMS=true`, admins group people into teams and restrict folders to
+them. A restricted folder, and everything in it, exists only for its teams'
+members. Admins can also invite guests from other domains, who read only
+their teams' folders. See [docs/organization.md](docs/organization.md#teams).
+
+![The Teams settings page with members and a restricted folder](docs/images/teams.jpg)
+
+### Service accounts
+
+With `SERVICE_ACCOUNTS=true`, an agent signs in with its own key pair instead
+of a person's browser session. The agent prints an approval link and a code,
+and an admin approves it. With `TEAMS=true`, the admin also makes it a member
+or a guest in chosen teams. See
+[docs/authentication.md](docs/authentication.md#service-accounts).
+
+![The approval page for an agent's enrollment](docs/images/service-account-approval.jpg)
+
+### Profiles
+
+Each person has a profile with an avatar, a display name, an activity graph,
+and their recent uploads, versions, and comments. Names across the
+application link to the person's profile.
+
+![A profile page with the activity graph](docs/images/profile.png)
 
 ## Connect an agent
 
@@ -163,6 +260,7 @@ name, logos, and colors.
 | ---------------- | -------------- | ----------------------------------------- |
 | `NODE_ENV`       | `development`  | `development`, `test`, or `production`     |
 | `APP_NAME`       | `Portego`      | Shown on the sign-in page and by the OAuth consent screen. |
+| `BRANDING_DIR`   | none           | Directory of replacement logos, icons, and colors. See [docs/branding.md](docs/branding.md). |
 | `HOST`           | `127.0.0.1`    | Loopback by default. A reverse proxy is the public listener. |
 | `PORT`           | `3000`         |                                           |
 | `CLIENT_DIST`    | `dist/client`  | Built client directory. Must be a relative path. |
@@ -189,6 +287,8 @@ name, logos, and colors.
 | `PORTEGO_ADMINS` | none           | Addresses of the admins, comma separated. Required when `SERVICE_ACCOUNTS=true` or `TEAMS=true`. |
 | `SERVICE_ACCOUNTS` | `false`      | `true` lets an agent sign in with a key pair that an admin approved. See [docs/authentication.md](docs/authentication.md#service-accounts). |
 | `TEAMS`          | `false`        | `true` lets admins restrict folders to teams and invite guests. See [docs/organization.md](docs/organization.md#teams). |
+| `VARDA_ACCOUNT`  | none           | User id of Varda's account. Setting it turns the Varda integration on. See [docs/varda-integration.md](docs/varda-integration.md). |
+| `VARDA_GITHUB_WEBHOOK_SECRET` | none | Webhook secret of the GitHub App, at least 32 characters. Needs `VARDA_ACCOUNT`. |
 
 ## Layout
 
@@ -282,8 +382,11 @@ describes the suites and the hostile-artifact cases.
 
 ## Web client
 
-Two views. The gallery lists artifacts as cards and keeps its search term in
-the URL, so a link reproduces what the sender was looking at. Search sits in
+The main views are the gallery and the artifact page. Around them are the
+profile pages, the page a public link opens, the admin pages for teams,
+invitations, and service accounts, and the MCP sign-in and consent pages.
+The gallery lists artifacts as cards and keeps its search term, filters, and
+sort in the URL, so a link reproduces what the sender was looking at. Search sits in
 the masthead (a field in the gallery, a button on an artifact; `/` opens it)
 and finds words in titles, descriptions, artifact text, comments, and folder
 and tag names. Enter without picking a result filters the gallery. The artifact page
@@ -297,8 +400,9 @@ Component tests need a DOM, so `bun run test:web` registers happy-dom first.
 
 ## Artifact API
 
-`GET`, `POST` under `/api/artifacts` covers listing, upload, metadata, and
-source download, and every route there needs a session. `GET`, `POST`, `PATCH`,
+`GET`, `POST`, `PATCH`, `PUT`, and `DELETE` under `/api/artifacts` cover
+listing, upload, metadata, source download, status, visibility, organization,
+public links, comments, and entries, and every route there needs a session. `GET`, `POST`, `PATCH`,
 and `DELETE` under `/api/folders` and `/api/tags` manage shared organization. `POST /api/uploads`
 takes a signed upload ticket instead, for an MCP client sending a file. The
 rules live in a transport-independent service that the MCP tools call
@@ -309,10 +413,13 @@ upload limits.
 ## Folders and tags
 
 Folders form a shared nested tree. An artifact has zero or one folder and any
-number of shared tags. They organize artifacts only: the normal gallery remains
-a global view across folders and tags, with its existing open and solved filters.
+number of shared tags. The gallery opens on the artifacts in no folder, and
+"All artifacts" lists every artifact the reader can see, with the open and
+solved filters. Without teams, folders and tags only organize artifacts. With
+`TEAMS=true`, an admin can restrict a folder to teams, and the folder and
+everything in it exist only for their members.
 [docs/organization.md](docs/organization.md) defines the model, API behavior,
-and the boundary prepared for a later permission system.
+and the team rules.
 
 ## Status, archiving, and comments
 
