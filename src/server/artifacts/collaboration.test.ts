@@ -354,7 +354,8 @@ describe("comments", () => {
       body: JSON.stringify({ body: "rewritten" }),
     });
 
-    expect(res.status).toBe(404);
+    // PATCH only solves or reopens a thread; the text stays as written.
+    expect(res.status).toBe(400);
     expect((await read(id)).comments[0]?.body).toBe("As written");
   });
 
@@ -442,6 +443,94 @@ describe("comments", () => {
     const remaining = (await read(id)).comments;
     expect(remaining).toHaveLength(1);
     expect(remaining[0]?.id).toBe(root.comment.id);
+  });
+});
+
+describe("solved threads", () => {
+  type Listed = { id: string; solved: { at: string; by: { id: string; name: string } } | null };
+
+  async function comment(id: string, body: string, parentId?: string) {
+    const res = await server.app.request(`/api/artifacts/${id}/comments`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify(parentId ? { body, parentId } : { body }),
+    });
+    return ((await res.json()) as { comment: { id: string } }).comment.id;
+  }
+
+  function solve(id: string, commentId: string, solved: unknown, sessionCookie = cookie) {
+    return server.app.request(`/api/artifacts/${id}/comments/${commentId}`, {
+      method: "PATCH",
+      headers: headers(sessionCookie),
+      body: JSON.stringify({ solved }),
+    });
+  }
+
+  async function read(id: string): Promise<Listed[]> {
+    const res = await server.app.request(`/api/artifacts/${id}/comments`, { headers: { cookie } });
+    return ((await res.json()) as { comments: Listed[] }).comments;
+  }
+
+  async function signInOther() {
+    return server.signIn({
+      sub: "google-subject-2",
+      email: "other@acme.example",
+      email_verified: true,
+      name: "Another Person",
+    });
+  }
+
+  test("anyone who can comment can solve a thread, and the thread records who did", async () => {
+    const id = await upload("A question");
+    const root = await comment(id, "Root");
+
+    const res = await solve(id, root, true, await signInOther());
+
+    expect(res.status).toBe(200);
+    const [listed] = await read(id);
+    expect(listed?.solved?.by.name).toBe("Another Person");
+  });
+
+  test("reopens a solved thread", async () => {
+    const id = await upload("A question");
+    const root = await comment(id, "Root");
+    await solve(id, root, true);
+
+    expect((await solve(id, root, false)).status).toBe(200);
+    expect((await read(id))[0]?.solved).toBeNull();
+  });
+
+  test("refuses to solve a reply, since the state belongs to the whole thread", async () => {
+    const id = await upload("A question");
+    const root = await comment(id, "Root");
+    const reply = await comment(id, "Reply", root);
+
+    expect((await solve(id, reply, true)).status).toBe(400);
+  });
+
+  test("refuses anything but true or false", async () => {
+    const id = await upload("A question");
+    const root = await comment(id, "Root");
+
+    expect((await solve(id, root, "yes")).status).toBe(400);
+  });
+
+  test("a reply reopens a solved thread, so new discussion is not hidden", async () => {
+    const id = await upload("A question");
+    const root = await comment(id, "Root");
+    await solve(id, root, true);
+
+    await comment(id, "Not quite", root);
+
+    expect((await read(id))[0]?.solved).toBeNull();
+  });
+
+  test("refuses a comment on another artifact", async () => {
+    const first = await upload("First");
+    const second = await upload("Second");
+    const root = await comment(first, "Root");
+
+    expect((await solve(second, root, true)).status).toBe(404);
   });
 });
 

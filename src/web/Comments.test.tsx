@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Comments } from "./Comments.tsx";
 import { restoreFetch, StubEventSource, stubFetch } from "./testing.ts";
@@ -198,8 +198,8 @@ describe("writing", () => {
   });
 });
 
-describe("removing", () => {
-  test("offers removal only on your own comment", async () => {
+describe("deleting", () => {
+  test("offers delete only on your own comment", async () => {
     stubFetch(() => ({
       body: {
         comments: [
@@ -215,18 +215,68 @@ describe("removing", () => {
 
     render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
     await screen.findByText("Theirs");
-    expect(screen.getAllByRole("button", { name: "Remove" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(1);
   });
 
-  test("removes a comment from the thread", async () => {
+  // Deleting a root takes every reply with it, including other people's, so
+  // one stray click must not do it.
+  test("asks before deleting, and a cancel keeps the comment", async () => {
+    const deleted: string[] = [];
+    stubFetch((path, init) => {
+      if (init?.method === "DELETE") {
+        deleted.push(path);
+        return { status: 204, body: {} };
+      }
+      return { body: { comments: [comment()] } };
+    });
+
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(screen.getByText("Delete this comment?")).toBeDefined();
+    expect(deleted).toEqual([]);
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("A thought")).toBeDefined();
+    expect(deleted).toEqual([]);
+  });
+
+  test("deletes a comment once confirmed", async () => {
     stubFetch((_path, init) =>
       init?.method === "DELETE" ? { status: 204, body: {} } : { body: { comments: [comment()] } },
     );
 
     render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
-    await userEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await userEvent.click(at(screen.getAllByRole("button", { name: "Delete" }), 0));
 
     await waitFor(() => expect(screen.queryByText("A thought")).toBeNull());
+  });
+
+  test("says how many replies go with a root, and how many are someone else's", async () => {
+    stubFetch(() => ({
+      body: {
+        comments: [
+          comment({ id: "root-1", body: "Root thought" }),
+          comment({ id: "reply-1", body: "Mine too", parentId: "root-1" }),
+          comment({
+            id: "reply-2",
+            body: "Theirs",
+            parentId: "root-1",
+            author: { id: "user-2", name: "Someone", email: "s@x.test" },
+          }),
+        ],
+      },
+    }));
+
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+    await screen.findByText("Theirs");
+    // The root's delete comes after the reply's in the thread.
+    const deletes = screen.getAllByRole("button", { name: "Delete" });
+    await userEvent.click(at(deletes, deletes.length - 1));
+
+    expect(
+      screen.getByText("Delete this comment and 2 replies? One is by someone else."),
+    ).toBeDefined();
   });
 
   test("offers no way to edit an existing comment", async () => {
@@ -356,8 +406,13 @@ describe("threading", () => {
     await screen.findByText("Root thought");
     await screen.findByText("A reply");
 
-    const removeButtons = screen.getAllByRole("button", { name: "Remove" });
-    await userEvent.click(at(removeButtons, 0));
+    await userEvent.click(at(screen.getAllByRole("button", { name: "Delete" }), 1));
+    await userEvent.click(
+      within(screen.getByText(/^Delete this comment/).parentElement as HTMLElement).getByRole(
+        "button",
+        { name: "Delete" },
+      ),
+    );
 
     await waitFor(() => expect(screen.queryByText("Root thought")).toBeNull());
     expect(screen.queryByText("A reply")).toBeNull();
@@ -632,5 +687,149 @@ describe("versions", () => {
 
     await screen.findByText("A thought");
     expect(document.querySelector(".version-badge")).toBeNull();
+  });
+});
+
+describe("solved threads", () => {
+  const SOLVED = { at: new Date().toISOString(), by: { id: "user-2", name: "Someone" } };
+
+  /** Serves `list`, and answers a PATCH with the root it names, solved or not. */
+  function serve(list: Record<string, unknown>[], patches: unknown[] = []) {
+    stubFetch((path, init) => {
+      if (init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as { solved: boolean };
+        patches.push({ path, ...body });
+        const id = path.split("/").pop();
+        const root = list.find((item) => item.id === id) ?? comment();
+        return {
+          body: {
+            comment: {
+              ...root,
+              solved: body.solved ? { ...SOLVED, by: { id: "user-1", name: "A Person" } } : null,
+            },
+          },
+        };
+      }
+      return { body: { comments: list } };
+    });
+  }
+
+  test("marks a thread solved and takes it out of the list", async () => {
+    const patches: unknown[] = [];
+    serve([comment({ id: "root-1", body: "Done?" })], patches);
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Mark as solved" }));
+
+    expect(patches).toEqual([{ path: "/api/artifacts/artifact-1/comments/root-1", solved: true }]);
+    await waitFor(() => expect(screen.queryByText("Done?")).toBeNull());
+    expect(screen.getByText("0 open · 1 solved")).toBeDefined();
+    expect(screen.getByText("All threads are solved.")).toBeDefined();
+  });
+
+  test("offers the solve button on a thread's root and not on its replies", async () => {
+    serve([
+      comment({ id: "root-1", body: "Root" }),
+      comment({ id: "reply-1", body: "An answer", parentId: "root-1" }),
+    ]);
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    await screen.findByText("An answer");
+    expect(screen.getAllByRole("button", { name: "Mark as solved" })).toHaveLength(1);
+  });
+
+  test("hides solved threads until the reader asks for them, then shows who solved them", async () => {
+    serve([
+      comment({ id: "root-1", body: "Open one" }),
+      comment({ id: "root-2", body: "Settled one", solved: SOLVED }),
+    ]);
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    await screen.findByText("Open one");
+    expect(screen.queryByText(/Settled one/)).toBeNull();
+
+    await userEvent.click(screen.getByRole("switch", { name: "Show solved" }));
+
+    expect(screen.getByText(/Settled one/)).toBeDefined();
+    expect(screen.getByText(/Solved by Someone/)).toBeDefined();
+  });
+
+  test("reopens a solved thread", async () => {
+    const patches: unknown[] = [];
+    serve([comment({ id: "root-1", body: "Settled one", solved: SOLVED })], patches);
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    await userEvent.click(await screen.findByRole("switch", { name: "Show solved" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reopen" }));
+
+    expect(patches).toEqual([{ path: "/api/artifacts/artifact-1/comments/root-1", solved: false }]);
+    expect(await screen.findByRole("button", { name: "Mark as solved" })).toBeDefined();
+  });
+
+  test("undoes a solve from the notice", async () => {
+    const patches: unknown[] = [];
+    serve([comment({ id: "root-1", body: "Done?" })], patches);
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Mark as solved" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Undo" }));
+
+    expect(patches).toHaveLength(2);
+    expect(await screen.findByText("Done?")).toBeDefined();
+  });
+
+  test("shows a solved thread a link points to, with its replies", async () => {
+    serve([
+      comment({ id: "root-1", body: "Settled one", solved: SOLVED }),
+      comment({ id: "reply-1", body: "The answer", parentId: "root-1" }),
+    ]);
+    let shown = false;
+    render(
+      <Comments
+        artifactId="artifact-1"
+        currentUserId="user-1"
+        focusedId="reply-1"
+        onShowSolvedChange={(value) => (shown = value)}
+      />,
+    );
+
+    expect(await screen.findByText("The answer")).toBeDefined();
+    expect(document.getElementById("comment-root-1")?.className).toContain("focused");
+    // The page needs to know, to paint the thread's passage.
+    expect(shown).toBe(true);
+  });
+
+  test("hides the focused thread once it is solved, leaving solved threads hidden", async () => {
+    serve([comment({ id: "root-1", body: "Done?" })]);
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" focusedId="root-1" />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Mark as solved" }));
+
+    await waitFor(() => expect(screen.queryByText("Done?")).toBeNull());
+    expect((screen.getByRole("switch", { name: "Show solved" }) as HTMLInputElement).checked).toBe(
+      false,
+    );
+  });
+
+  test("says a reply reopens a solved thread, and shows it open once posted", async () => {
+    const root = comment({ id: "root-1", body: "Settled one", solved: SOLVED });
+    stubFetch((_path, init) => {
+      if (init?.method === "POST") {
+        return {
+          status: 201,
+          body: { comment: comment({ id: "reply-1", body: "Not quite", parentId: "root-1" }) },
+        };
+      }
+      return { body: { comments: [root] } };
+    });
+    render(<Comments artifactId="artifact-1" currentUserId="user-1" />);
+
+    await userEvent.click(await screen.findByRole("switch", { name: "Show solved" }));
+    await userEvent.click(screen.getByRole("button", { name: "Reply" }));
+    expect(screen.getByText("Posting a reply reopens the thread.")).toBeDefined();
+    await userEvent.type(screen.getByLabelText("Reply to A Person"), "Not quite");
+    await userEvent.click(screen.getByRole("button", { name: "Reply" }));
+
+    expect(await screen.findByRole("button", { name: "Mark as solved" })).toBeDefined();
   });
 });

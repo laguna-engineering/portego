@@ -51,6 +51,7 @@ export const BRIDGE_SCRIPT = `(() => {
     style.textContent =
       "::highlight(portego-comment){background-color:rgba(255,196,0,0.45)}" +
       "::highlight(portego-comment-active){background-color:rgba(255,140,0,0.75)}" +
+      "::highlight(portego-comment-solved){background-color:rgba(128,128,128,0.2)}" +
       "::highlight(portego-find){background-color:rgba(47,109,99,0.25)}" +
       "::highlight(portego-find-active){background-color:rgba(47,109,99,0.6)}";
     (document.head || document.documentElement).appendChild(style);
@@ -102,14 +103,16 @@ export const BRIDGE_SCRIPT = `(() => {
     const corpus = textNodes();
     const all = new Highlight();
     const active = new Highlight();
+    const solved = new Highlight();
     for (const anchor of anchors) {
       const range = locate(anchor, corpus);
       if (!range) continue;
       ranges.set(anchor.id, range);
-      (anchor.id === activeId ? active : all).add(range);
+      (anchor.id === activeId ? active : anchor.solved ? solved : all).add(range);
     }
     CSS.highlights.set("portego-comment", all);
     CSS.highlights.set("portego-comment-active", active);
+    CSS.highlights.set("portego-comment-solved", solved);
   }
 
   // Find matches what a reader can see, so script, style, and hidden text are

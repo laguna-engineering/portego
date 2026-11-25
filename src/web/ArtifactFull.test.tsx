@@ -1388,6 +1388,7 @@ describe("change notices", () => {
       versionId: "artifact-1",
       versionNumber: 1,
       inApp: false,
+      solved: null,
       ...overrides,
     };
   }
@@ -1995,5 +1996,129 @@ describe("versions", () => {
     expect(
       screen.getByRole("button", { name: "Show versions, viewing version 2" }).textContent,
     ).toBe("v2");
+  });
+});
+
+describe("comment count", () => {
+  const SOLVED = { at: new Date().toISOString(), by: { id: "user-2", name: "Someone" } };
+
+  function note(overrides: Partial<Comment>): Comment {
+    return {
+      id: "comment-1",
+      body: "A thought",
+      createdAt: new Date().toISOString(),
+      author: { id: "user-2", name: "Someone", email: "s@x.test" },
+      anchor: null,
+      parentId: null,
+      versionId: "artifact-1",
+      versionNumber: 1,
+      inApp: false,
+      solved: null,
+      ...overrides,
+    };
+  }
+
+  function serveComments(comments: Comment[]) {
+    stubFetch((path) =>
+      (path.split("?")[0] ?? path).endsWith("/comments") ? { body: { comments } } : answer(path),
+    );
+  }
+
+  function badge(): string | null {
+    const button = screen.getByRole("button", { name: "Versions & comments" });
+    return button.querySelector(".count-badge")?.textContent ?? null;
+  }
+
+  // The number says whether there is still something to read, so a solved
+  // thread and its replies stop counting.
+  test("counts the comments and replies in open threads only", async () => {
+    serveComments([
+      note({ id: "open-1" }),
+      note({ id: "reply-1", parentId: "open-1" }),
+      note({ id: "reply-2", parentId: "open-1" }),
+      note({ id: "solved-1", solved: SOLVED }),
+      note({ id: "reply-3", parentId: "solved-1" }),
+    ]);
+    renderFull();
+
+    await waitFor(() => expect(badge()).toBe("3"));
+    expect(
+      screen.getByRole("button", { name: "Versions & comments" }).getAttribute("aria-description"),
+    ).toBe("3 open comments");
+  });
+
+  test("caps the number at 99+", async () => {
+    serveComments(Array.from({ length: 120 }, (_, index) => note({ id: `comment-${index}` })));
+    renderFull();
+
+    await waitFor(() => expect(badge()).toBe("99+"));
+  });
+
+  test("shows no number when every thread is solved", async () => {
+    serveComments([note({ id: "solved-1", solved: SOLVED })]);
+    renderFull();
+
+    await screen.findByText("All threads are solved.");
+    expect(badge()).toBeNull();
+  });
+
+  test("reveals a linked solved thread's passage after painting it", async () => {
+    serveComments([
+      note({
+        id: "solved-1",
+        anchor: { quote: "settled", prefix: "", suffix: "" },
+        solved: SOLVED,
+      }),
+    ]);
+    renderFull({ commentId: "solved-1" });
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+    await screen.findByText("settled");
+
+    await sendFromFrame(frame, { type: "ready" });
+
+    const painted = sent.findIndex(
+      (message) =>
+        (message as { type?: string }).type === "highlights" &&
+        JSON.stringify(message).includes('"solved-1"'),
+    );
+    const revealed = sent.findIndex(
+      (message) =>
+        JSON.stringify(message) === JSON.stringify({ portego: 1, type: "reveal", id: "solved-1" }),
+    );
+    expect(painted).toBeGreaterThanOrEqual(0);
+    expect(revealed).toBeGreaterThan(painted);
+  });
+
+  test("leaves a solved thread's passage unpainted until the reader shows solved threads", async () => {
+    serveComments([
+      note({ id: "open-1", anchor: { quote: "still open", prefix: "", suffix: "" } }),
+      note({
+        id: "solved-1",
+        anchor: { quote: "settled", prefix: "", suffix: "" },
+        solved: SOLVED,
+      }),
+    ]);
+    renderFull();
+    const frame = (await screen.findByTitle("Preview of Sales chart")) as HTMLIFrameElement;
+    const sent = stubPostMessage(frame);
+    await screen.findByText("still open");
+
+    await sendFromFrame(frame, { type: "ready" });
+    expect(sent).toContainEqual({
+      portego: 1,
+      type: "highlights",
+      anchors: [{ id: "open-1", quote: "still open", prefix: "", suffix: "" }],
+    });
+
+    await userEvent.click(screen.getByRole("switch", { name: "Show solved" }));
+    expect(sent).toContainEqual({
+      portego: 1,
+      type: "highlights",
+      anchors: [
+        { id: "open-1", quote: "still open", prefix: "", suffix: "" },
+        { id: "solved-1", quote: "settled", prefix: "", suffix: "", solved: true },
+      ],
+    });
   });
 });
