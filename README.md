@@ -18,7 +18,7 @@ Each upload of the same artifact is a new version. Compare any two versions
 from the versions panel, with changes highlighted in place or side by side. A
 minimap along the edge marks where text was added, removed, or changed.
 
-![Two versions compared, with the changes highlighted and marked on the minimap](docs/images/version-compare.jpg)
+![Two versions side by side, with removed text on the left, added text on the right, and the changes marked on the minimap](docs/images/version-compare.jpg)
 
 ### Comment on a passage
 
