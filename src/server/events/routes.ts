@@ -54,6 +54,7 @@ function subjectOf(event: ChangeEvent): EventSubject | null {
       return { folderId: event.id };
     case "tag.changed":
     case "activity.read":
+    case "varda.changed":
       return null;
   }
 }

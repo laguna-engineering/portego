@@ -18,6 +18,7 @@ import {
   setArtifactVisibility,
   setEntry,
   sourceUrl,
+  type VardaStatus,
 } from "./api.ts";
 import { COMMENTS_PANEL_ID, CommentsPanel } from "./CommentsPanel.tsx";
 import { useFaviconDot } from "./favicon.ts";
@@ -199,6 +200,11 @@ export function ArtifactFull({
   const [comments, setComments] = useState<Comment[]>([]);
   const [showSolved, setShowSolved] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [varda, setVarda] = useState<VardaStatus | null>(null);
+  const handleEntries = useCallback((list: Entry[], status: VardaStatus | null) => {
+    setEntries(list);
+    setVarda(status);
+  }, []);
   /** The entry the artifact just recorded for the reader, shown for a moment. */
   const [recorded, setRecorded] = useState<string | null>(null);
   /** A comment added from somewhere other than this page, shown for a moment. */
@@ -388,6 +394,7 @@ export function ArtifactFull({
           type: "entries",
           entries: pageEntries,
           viewerId: currentUserId,
+          varda,
         });
       } else if (message.type === "selection") {
         setLive(
@@ -408,7 +415,7 @@ export function ArtifactFull({
         setPanelOpen(true);
       }
     },
-    [panelOpen, highlights, pageComments, pageEntries, currentUserId, changeEntry],
+    [panelOpen, highlights, pageComments, pageEntries, currentUserId, varda, changeEntry],
   );
 
   usePreviewBridge(frameRef, handleBridgeMessage);
@@ -460,8 +467,9 @@ export function ArtifactFull({
       type: "entries",
       entries: pageEntries,
       viewerId: currentUserId,
+      varda,
     });
-  }, [pageEntries, currentUserId]);
+  }, [pageEntries, currentUserId, varda]);
 
   // Takes the selection into the composer, like the comment control in the
   // margin of a document. The panel opens if it was closed.
@@ -998,7 +1006,7 @@ export function ArtifactFull({
             onClose={closePanel}
             onComments={handleComments}
             onShowSolvedChange={setShowSolved}
-            onEntries={setEntries}
+            onEntries={handleEntries}
             onFocusComment={revealComment}
             focusedId={focusedId}
           />

@@ -9,6 +9,7 @@ import {
   joinAsGuest,
   type SharedArtifact as Shared,
   setSharedEntry,
+  type VardaStatus,
 } from "./api.ts";
 import { useModal } from "./modal.ts";
 import {
@@ -58,6 +59,7 @@ export function SharedArtifact({ token }: { token: string }) {
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [varda, setVarda] = useState<VardaStatus | null>(null);
   const [guest, setGuest] = useState<Guest | null>(() => storedGuest(token));
   /** The write waiting for the reader's name. */
   const [pending, setPending] = useState<Change | null>(null);
@@ -92,7 +94,9 @@ export function SharedArtifact({ token }: { token: string }) {
 
   const loadEntries = useCallback(async () => {
     try {
-      setEntries((await fetchSharedEntries(token)).entries);
+      const loaded = await fetchSharedEntries(token);
+      setEntries(loaded.entries);
+      setVarda(loaded.varda);
     } catch {
       // The artifact still shows. Its page sees the entries it had.
     }
@@ -116,8 +120,9 @@ export function SharedArtifact({ token }: { token: string }) {
       type: "entries",
       entries: pageEntries,
       viewerId: guest?.id ?? null,
+      varda,
     });
-  }, [pageEntries, guest]);
+  }, [pageEntries, guest, varda]);
 
   const write = useCallback(
     async (as: Guest, change: Change) => {
@@ -147,6 +152,7 @@ export function SharedArtifact({ token }: { token: string }) {
           type: "entries",
           entries: pageEntries,
           viewerId: guest?.id ?? null,
+          varda,
         });
       } else if (message.type === "open") {
         openFromPreview(message.url);
@@ -162,7 +168,7 @@ export function SharedArtifact({ token }: { token: string }) {
         else setPending(change);
       }
     },
-    [pageEntries, guest, write],
+    [pageEntries, guest, varda, write],
   );
 
   usePreviewBridge(frameRef, handleBridgeMessage);

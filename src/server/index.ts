@@ -20,6 +20,7 @@ import { createSearchStore } from "./storage/search.ts";
 import { createServiceAccountStore } from "./storage/service-accounts.ts";
 import { createVardaOutbox } from "./storage/varda-outbox.ts";
 import { createTeams } from "./teams/service.ts";
+import { createVardaPresence } from "./varda/presence.ts";
 
 const env = parseEnv(Bun.env);
 const authConfig = parseAuthConfig(env, Bun.env);
@@ -42,7 +43,15 @@ const organization = createOrganizationService({
   access,
 });
 const vardaOutbox = createVardaOutbox({ database });
-const varda = env.VARDA_ACCOUNT ? { account: env.VARDA_ACCOUNT, outbox: vardaOutbox } : undefined;
+const varda = env.VARDA_ACCOUNT
+  ? {
+      account: env.VARDA_ACCOUNT,
+      outbox: vardaOutbox,
+      presence: createVardaPresence({
+        onChange: () => events.publish({ type: "varda.changed" }),
+      }),
+    }
+  : undefined;
 const artifacts = createArtifactService({
   store: artifactStore,
   markdownStore: createMarkdownStore({ database }),

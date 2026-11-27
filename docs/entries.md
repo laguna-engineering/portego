@@ -32,7 +32,8 @@ The bridge that Portego adds to every preview gives the page:
 | --- | --- |
 | `window.portego.entries` | Every entry on the artifact: `{ key, value, authorId, author, updatedAt }`. `author` is a name; `authorId` is an opaque id that tells two people with one name apart. No email reaches the page. |
 | `window.portego.viewerId` | The reader's `authorId`, set before each `portego:entries` event. It is null for someone on a public link who has not given a name yet. The page has no storage, so this is how it finds the reader's own entries after a reload. |
-| `portego:entries` event on `window` | Fired with the same list in `event.detail` when the page loads and after every change, by anyone. |
+| `window.portego.varda` | Set before each `portego:entries` event. `{ account, connected }` when the artifact's changes reach the [Varda integration](varda-integration.md#what-a-page-sees): `account` is Varda's `authorId`, and `connected` is true while Varda's listener holds its stream open. Null otherwise. Absent before the first event. |
+| `portego:entries` event on `window` | Fired with the same list in `event.detail` when the page loads, after every change, by anyone, and when Varda's listener connects or goes away. |
 | `window.portego.set(key, value)` | Asks to set the reader's value for `key`. |
 | `window.portego.clear(key)` | Asks to remove the reader's value for `key`. |
 | `window.portego.renderComment(text, element)` | Replaces the element's content with `text` formatted as Portego formats comments (see [collaboration.md](collaboration.md#formatting)). It builds text nodes and elements, never HTML, so it is safe for text a reader wrote. |

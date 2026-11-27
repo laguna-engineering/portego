@@ -129,6 +129,20 @@ The same bearer rule. The body is `{"ids": [41, 42]}`, 1 to 1000 positive
 integers. Portego deletes those events and answers 204. Unknown ids are
 ignored; any other body gets 400.
 
+## What a page sees
+
+A page whose changes can reach Varda (the integration is on, the current
+version's schema marks a key with `varda`, and Varda's account can read the
+artifact) gets `window.portego.varda` as `{ account, connected }`. See
+[entries.md](entries.md#in-the-page).
+
+- `connected` is true while a stream is open, and for 30 seconds after the last
+  one closes, so a reconnect after a token expiry does not show Varda as gone.
+- When it changes, Portego publishes `varda.changed` on `/api/events`, and an
+  open page receives a new `portego:entries` event.
+- A page opened from a public link has no live events. It reads the status
+  when it loads and when the reader returns to the tab.
+
 ## Retention
 
 Portego deletes events older than 7 days at each stream connect and each
