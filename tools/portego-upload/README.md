@@ -67,6 +67,18 @@ When the server refuses the key, the tool says so and stops. The key was
 replaced by a copy that renewed first, or an admin disabled the account. Enroll
 again, and ask an admin to check the account.
 
+An MCP client can also connect to the deployment's `/mcp` endpoint with the
+key. Give it this command as its headers helper:
+
+```sh
+npx -y portego-upload service-key header
+```
+
+It prints `{"Authorization":"Bearer <token>"}`. It reuses the stored token
+while that has more than a minute left, and gets a new one otherwise. A token
+is valid for an hour, so the client must run the helper again when the server
+refuses a call. Claude Code does this for a `headersHelper`.
+
 ## Use it with an agent
 
 In Claude Code, install the plugin. It contains its own copy of this server and
