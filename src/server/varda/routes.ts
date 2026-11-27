@@ -9,6 +9,7 @@ import type { AppEnv } from "../auth/middleware.ts";
 import { HEARTBEAT_MS } from "../events/routes.ts";
 import type { ResolvePrincipal } from "../mcp/routes.ts";
 import type { VardaOutbox, VardaRow } from "../storage/varda-outbox.ts";
+import type { VardaPresence } from "./presence.ts";
 
 /** A pull_request event is a few tens of KiB; GitHub would send up to 25 MB. */
 export const WEBHOOK_MAX_BYTES = 1024 * 1024;
@@ -30,6 +31,7 @@ export type VardaOptions = {
   /** The GitHub App's webhook secret. Without it, the GitHub endpoint does not exist. */
   webhookSecret?: string;
   outbox: VardaOutbox;
+  presence: VardaPresence;
   /** The clock for retention and token expiry. Tests move it. */
   now?: () => number;
 };
@@ -45,7 +47,7 @@ export function vardaRoutes(
 ) {
   const routes = new Hono<AppEnv>();
   const secret = options.webhookSecret;
-  const { outbox } = options;
+  const { outbox, presence } = options;
   const now = options.now ?? Date.now;
   let closeStream: (() => void) | null = null;
 
@@ -93,9 +95,11 @@ export function vardaRoutes(
           let unsubscribe = () => {};
           let heartbeat: ReturnType<typeof setInterval> | null = null;
           let expiry: ReturnType<typeof setTimeout> | null = null;
+          const closed = presence.open();
           release = () => {
             if (!open) return;
             open = false;
+            closed();
             unsubscribe();
             if (heartbeat !== null) clearInterval(heartbeat);
             if (expiry !== null) clearTimeout(expiry);

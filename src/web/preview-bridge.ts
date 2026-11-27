@@ -27,8 +27,16 @@ export type BridgeCommand =
   | { type: "highlights"; anchors: (CommentAnchor & { id: string; solved?: boolean })[] }
   | { type: "reveal"; id: string }
   | { type: "comments"; comments: PageComment[] }
-  /** `viewerId` is the reader's `authorId`, or null for a guest who has not given a name. */
-  | { type: "entries"; entries: PageEntry[]; viewerId: string | null }
+  /**
+   * `viewerId` is the reader's `authorId`, or null for a guest who has not given a name.
+   * `varda` is null unless the artifact's changes can reach Varda.
+   */
+  | {
+      type: "entries";
+      entries: PageEntry[];
+      viewerId: string | null;
+      varda: { account: string; connected: boolean } | null;
+    }
   /** Marks every match of `query` and makes match `index` current. An empty query clears. */
   | { type: "find"; query: string; index: number };
 

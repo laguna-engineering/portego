@@ -37,6 +37,7 @@ import type {
 } from "../storage/search.ts";
 import { queryWords } from "../storage/search.ts";
 import type { VardaOutbox, VardaRow } from "../storage/varda-outbox.ts";
+import type { VardaPresence } from "../varda/presence.ts";
 import {
   checkEntry,
   ENTRY_KEY_MAX_LENGTH,
@@ -200,6 +201,9 @@ export const GUEST_NAME_MAX_LENGTH = 80;
 export type Guest = { artifactId: string; guestId: string; name: string };
 
 /** An entry as someone with a public link reads it: no email, and no other ids than authors'. */
+/** Varda's user id, so a page can tell its entries apart, and whether its listener is connected. */
+export type VardaStatus = { account: string; connected: boolean };
+
 export type PublicEntry = {
   key: string;
   value: unknown;
@@ -358,11 +362,16 @@ export type ArtifactService = {
   /**
    * Every person's entries, and the schema the current version declares. An
    * entry whose value the schema formats like a comment carries `format`.
+   * `varda` is null unless the artifact's changes can reach Varda.
    */
   entries: (
     id: string,
     viewer: Viewer,
-  ) => { entries: (Entry & { format?: "comment" })[]; schema: unknown };
+  ) => {
+    entries: (Entry & { format?: "comment" })[];
+    schema: unknown;
+    varda: VardaStatus | null;
+  };
   /** Sets the author's value for a key, replacing any value they had. */
   setEntry: (
     id: string,
@@ -379,7 +388,11 @@ export type ArtifactService = {
   /** Checks the name someone with a public link gives, and makes them a new guest. */
   startGuest: (shareToken: string, name: unknown) => Guest;
   /** The entries and schema of the artifact a public link opens. */
-  sharedEntries: (shareToken: string) => { entries: PublicEntry[]; schema: unknown };
+  sharedEntries: (shareToken: string) => {
+    entries: PublicEntry[];
+    schema: unknown;
+    varda: VardaStatus | null;
+  };
   /** As setEntry, for a guest of the artifact the public link opens. */
   setGuestEntry: (shareToken: string, guest: Guest, key: string, value: unknown) => PublicEntry;
   clearGuestEntry: (shareToken: string, guest: Guest, key: string) => void;
@@ -475,7 +488,7 @@ export function createArtifactService(options: {
    * The Varda integration, on when set: changes to the keys Varda follows are
    * written to its outbox. `account` is the user id of Varda's account.
    */
-  varda?: { account: string; outbox: VardaOutbox };
+  varda?: { account: string; outbox: VardaOutbox; presence: VardaPresence };
   /** Adds shared folder and tag metadata, and files an upload that asks for it. */
   organization?: Pick<
     OrganizationService,
@@ -695,6 +708,19 @@ export function createArtifactService(options: {
       change,
       at: new Date().toISOString(),
     });
+  };
+
+  /**
+   * Varda's account and whether its listener is connected, for an artifact
+   * whose changes can reach Varda under the same rules as `vardaRow`.
+   */
+  const vardaStatus = (artifact: Artifact): VardaStatus | null => {
+    if (!varda) return null;
+    const schema = entrySchema(artifact.currentVersionId);
+    if (schema === null || !schema.rules.some((rule) => rule.varda)) return null;
+    const vardaReader = access.readers([artifact.folderId])({ userId: varda.account });
+    if (!readsArtifact(vardaReader, artifact)) return null;
+    return { account: varda.account, connected: varda.presence.connected() };
   };
 
   const listEntries = (artifact: Artifact) => {
@@ -1127,6 +1153,7 @@ export function createArtifactService(options: {
       return {
         entries: listEntries(artifact).map(publicEntry),
         schema: schema === null ? null : JSON.parse(schema),
+        varda: vardaStatus(artifact),
       };
     },
 
@@ -1265,6 +1292,7 @@ export function createArtifactService(options: {
           ? entries.map((entry) => ({ ...entry, author: { ...entry.author, email: null } }))
           : entries,
         schema: schema === null ? null : JSON.parse(schema),
+        varda: vardaStatus(artifact),
       };
     },
 

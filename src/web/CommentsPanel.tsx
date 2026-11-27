@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { ArtifactVersion, Comment, CommentAnchor, Entry } from "./api.ts";
+import type { ArtifactVersion, Comment, CommentAnchor, Entry, VardaStatus } from "./api.ts";
 import { Comments } from "./Comments.tsx";
 import { Entries } from "./Entries.tsx";
 import { formatBytes } from "./format.ts";
@@ -25,7 +25,7 @@ export type CommentsPanelProps = {
   onClose: () => void;
   onComments: (comments: Comment[]) => void;
   onShowSolvedChange: (shown: boolean) => void;
-  onEntries: (entries: Entry[]) => void;
+  onEntries: (entries: Entry[], varda: VardaStatus | null) => void;
   onFocusComment: (id: string) => void;
   focusedId: string | null;
 };

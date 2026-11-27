@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
-import { authorizeClient, type McpClient, registerClient } from "../mcp/testing.ts";
+import { authorizeClient, callTool, type McpClient, registerClient } from "../mcp/testing.ts";
 import {
   createLiveTestServer,
   createTestServer,
@@ -121,7 +121,7 @@ describe("the stream and acknowledgement", () => {
 
   beforeEach(async () => {
     shift = 0;
-    live = await createLiveTestServer({ varda: { now: () => Date.now() + shift } });
+    live = await createLiveTestServer({ varda: { now: () => Date.now() + shift, graceMs: 50 } });
     const cookie = await live.signIn(VARDA_USER);
     varda = await authorizeClient(live, { cookie, clientId: await registerClient(live, cookie) });
   });
@@ -290,6 +290,73 @@ describe("the stream and acknowledgement", () => {
     shift = exp * 1000 - Date.now() - 200;
     const stream = reader(await get(bearer(varda.accessToken)));
     expect(await stream.end()).toBe(true);
+  });
+
+  const uploadPage = async (cookie: string, title: string, keys: object) => {
+    const form = new FormData();
+    form.set(
+      "file",
+      htmlFile(
+        `<script type="application/json" id="portego-entries">${JSON.stringify({ keys })}</script>`,
+      ),
+    );
+    form.set("title", title);
+    const response = await live.app.request("/api/artifacts", {
+      method: "POST",
+      headers: { cookie, origin: live.origin },
+      body: form,
+    });
+    expect(response.status).toBe(201);
+    return ((await response.json()) as { artifact: { id: string } }).artifact.id;
+  };
+  const pageEntries = async (cookie: string, id: string) =>
+    (await (
+      await live.app.request(`/api/artifacts/${id}/entries`, { headers: { cookie } })
+    ).json()) as {
+      entries: { key: string; author: { id: string } }[];
+      varda: { account: string; connected: boolean } | null;
+    };
+
+  test("a page Varda follows learns whether its listener is connected", async () => {
+    const cookie = await live.signIn();
+    const status = async (id: string): Promise<unknown> => (await pageEntries(cookie, id)).varda;
+    const followed = await uploadPage(cookie, "Review", { "status:{item}": { varda: true } });
+    const unfollowed = await uploadPage(cookie, "Poll", { "vote:{item}": {} });
+    const changes: string[] = [];
+    live.events.subscribe((event) => changes.push(event.type));
+
+    expect(await status(followed)).toEqual({ account: live.vardaAccount, connected: false });
+    expect(await status(unfollowed)).toBeNull();
+
+    const stream = reader(await get(bearer(varda.accessToken)));
+    expect(await status(followed)).toEqual({ account: live.vardaAccount, connected: true });
+    await stream.cancel();
+    // Within the grace period a page still shows Varda connected.
+    expect(await status(followed)).toMatchObject({ connected: true });
+    const deadline = Date.now() + 3000;
+    const connected = async () => (await pageEntries(cookie, followed)).varda?.connected;
+    while ((await connected()) && Date.now() < deadline) await Bun.sleep(20);
+    expect(await status(followed)).toMatchObject({ connected: false });
+    expect(changes.filter((type) => type === "varda.changed")).toHaveLength(2);
+  });
+
+  test("Varda's own entry on a page it follows is stored as Varda's and starts no job", async () => {
+    const cookie = await live.signIn();
+    const id = await uploadPage(cookie, "Review", {
+      "status:{item}": { varda: true },
+      gate: { value: { type: "object" }, notify: false },
+    });
+    const before = live.vardaOutbox.backlog().length;
+    const result = await callTool(varda, "set_artifact_entry", {
+      id,
+      key: "gate",
+      value: { head: "a".repeat(40), at: "2026-11-27T10:00:00Z" },
+    });
+    expect(result.result?.isError).toBeFalsy();
+    expect(live.vardaOutbox.backlog()).toHaveLength(before);
+    const { entries, varda: status } = await pageEntries(cookie, id);
+    // The page trusts the gate's entry only when its author is the account Portego names.
+    expect(entries.find((e) => e.key === "gate")?.author.id).toBe(status?.account);
   });
 });
 

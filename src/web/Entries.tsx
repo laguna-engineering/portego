@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, clearEntry, type Entry, fetchEntries } from "./api.ts";
+import { ApiError, clearEntry, type Entry, fetchEntries, type VardaStatus } from "./api.ts";
 import { CommentText } from "./CommentText.tsx";
 import { useLiveEvents } from "./live.ts";
 import { MemberLink } from "./Member.tsx";
@@ -16,8 +16,8 @@ function describeValue(value: unknown): string {
 export type EntriesProps = {
   artifactId: string;
   currentUserId: string;
-  /** Reports the current list whenever it changes, to pass on to the artifact. */
-  onEntries?: (entries: Entry[]) => void;
+  /** Reports the current list and Varda's status whenever they change, to pass on to the artifact. */
+  onEntries?: (entries: Entry[], varda: VardaStatus | null) => void;
 };
 
 /**
@@ -27,11 +27,14 @@ export type EntriesProps = {
  */
 export function Entries({ artifactId, currentUserId, onEntries }: EntriesProps) {
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [varda, setVarda] = useState<VardaStatus | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setEntries((await fetchEntries(artifactId)).entries);
+      const loaded = await fetchEntries(artifactId);
+      setEntries(loaded.entries);
+      setVarda(loaded.varda);
     } catch (error) {
       setProblem(error instanceof ApiError ? error.message : "Could not read the data entries.");
     }
@@ -42,12 +45,13 @@ export function Entries({ artifactId, currentUserId, onEntries }: EntriesProps) 
   }, [load]);
 
   useEffect(() => {
-    onEntries?.(entries);
-  }, [entries, onEntries]);
+    onEntries?.(entries, varda);
+  }, [entries, varda, onEntries]);
 
   useLiveEvents((event) => {
     if (
       event.type === "reconnected" ||
+      event.type === "varda.changed" ||
       (event.type === "entry.changed" && event.artifactId === artifactId)
     ) {
       void load();

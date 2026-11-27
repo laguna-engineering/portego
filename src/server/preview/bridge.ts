@@ -350,6 +350,11 @@ export const BRIDGE_SCRIPT = `(() => {
       const entries = Array.isArray(message.entries) ? message.entries : [];
       window.portego.entries = entries;
       window.portego.viewerId = typeof message.viewerId === "string" ? message.viewerId : null;
+      const varda = message.varda;
+      window.portego.varda =
+        varda && typeof varda.account === "string"
+          ? { account: varda.account, connected: varda.connected === true }
+          : null;
       window.dispatchEvent(new CustomEvent("portego:entries", { detail: entries }));
       land();
     } else if (message.type === "find") {

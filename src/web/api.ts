@@ -381,7 +381,7 @@ export function joinAsGuest(shareToken: string, name: string): Promise<Guest> {
 
 export function fetchSharedEntries(
   shareToken: string,
-): Promise<{ entries: Entry[]; schema: unknown }> {
+): Promise<{ entries: Entry[]; schema: unknown; varda: VardaStatus | null }> {
   return request(`/api/shared/${encodeURIComponent(shareToken)}/entries`);
 }
 
@@ -830,8 +830,16 @@ export type Entry = {
   format?: "comment";
 };
 
-/** Every person's entries, and the schema the current version declares, if any. */
-export function fetchEntries(id: string): Promise<{ entries: Entry[]; schema: unknown }> {
+/** Varda's user id and whether its listener is connected. */
+export type VardaStatus = { account: string; connected: boolean };
+
+/**
+ * Every person's entries, and the schema the current version declares, if any.
+ * `varda` is null unless the artifact's changes can reach Varda.
+ */
+export function fetchEntries(
+  id: string,
+): Promise<{ entries: Entry[]; schema: unknown; varda: VardaStatus | null }> {
   return request(`/api/artifacts/${encodeURIComponent(id)}/entries`);
 }
 

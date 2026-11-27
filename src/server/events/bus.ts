@@ -17,7 +17,9 @@ export type ChangeEvent =
   | { type: "folder.changed"; id: string }
   | { type: "tag.changed"; id: string }
   /** The user marked activity read, so their bells elsewhere reload. */
-  | { type: "activity.read"; userId: string };
+  | { type: "activity.read"; userId: string }
+  /** Varda's listener connected or went away, which pages it reads show. */
+  | { type: "varda.changed" };
 
 export type EventBus = {
   publish: (event: ChangeEvent) => void;

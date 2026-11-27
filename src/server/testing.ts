@@ -32,6 +32,7 @@ import { createSearchStore } from "./storage/search.ts";
 import { createServiceAccountStore } from "./storage/service-accounts.ts";
 import { createVardaOutbox, type VardaOutbox } from "./storage/varda-outbox.ts";
 import { createTeams, type TeamService } from "./teams/service.ts";
+import { createVardaPresence } from "./varda/presence.ts";
 
 /** A different host from TEST_BASE_URL, which is what isolates a preview. */
 export const TEST_CONTENT_ORIGIN = "http://127.0.0.1:5173";
@@ -91,7 +92,7 @@ export type TestServerOptions = {
   /** The clock service accounts and invitations read, in epoch ms. */
   now?: () => number;
   /** Turns the Varda integration on, with VARDA_USER as Varda's account. */
-  varda?: { webhookSecret?: string; now?: () => number };
+  varda?: { webhookSecret?: string; now?: () => number; graceMs?: number };
 };
 
 export async function createTestServer(options: TestServerOptions = {}): Promise<TestServer> {
@@ -121,6 +122,10 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
   const vardaOutbox = createVardaOutbox({ database });
 
   const events = createEventBus();
+  const vardaPresence = createVardaPresence({
+    ...(options.varda?.graceMs === undefined ? {} : { graceMs: options.varda.graceMs }),
+    onChange: () => events.publish({ type: "varda.changed" }),
+  });
   const {
     access,
     teams,
@@ -147,7 +152,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
     events,
     ...(vardaAccount === undefined
       ? {}
-      : { varda: { account: vardaAccount, outbox: vardaOutbox } }),
+      : { varda: { account: vardaAccount, outbox: vardaOutbox, presence: vardaPresence } }),
     ...(options.maxUploadBytes ? { maxUploadBytes: options.maxUploadBytes } : {}),
     ...(options.privateArtifacts === undefined
       ? {}
@@ -188,6 +193,7 @@ export async function createTestServer(options: TestServerOptions = {}): Promise
           varda: {
             account: vardaAccount,
             outbox: vardaOutbox,
+            presence: vardaPresence,
             ...(options.varda?.webhookSecret ? { webhookSecret: options.varda.webhookSecret } : {}),
             ...(options.varda?.now ? { now: options.varda.now } : {}),
           },
