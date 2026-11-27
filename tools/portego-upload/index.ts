@@ -20,6 +20,7 @@
  *   npx -y portego-upload service-key enroll <origin> --name <name>
  *                                                         sign an agent in with a key pair
  *   npx -y portego-upload service-key renew               replace that key now
+ *   npx -y portego-upload service-key header              print its token as an HTTP header
  *   npx -y portego-upload upload <file>                   upload from a terminal
  *   npx -y portego-upload                                 serve MCP over stdio
  */
@@ -1305,7 +1306,17 @@ async function main(): Promise<void> {
       console.error(`Renewed the service key for ${deployment().origin}.`);
       return;
     }
-    throw new UploadError("Usage: service-key enroll <origin> --name <name> | service-key renew");
+    if (action === "header") {
+      const key = await serviceKey();
+      if (!key) {
+        throw new UploadError(`No service key for ${deployment().origin} at ${SERVICE_KEY_PATH}.`);
+      }
+      console.log(JSON.stringify({ Authorization: `Bearer ${await serviceAccessToken(key)}` }));
+      return;
+    }
+    throw new UploadError(
+      "Usage: service-key enroll <origin> --name <name> | service-key renew | service-key header",
+    );
   }
 
   if (command === "upload") {

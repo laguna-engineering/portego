@@ -404,3 +404,77 @@ describe("the stored token", () => {
     expect(storedTokenUsable(token, { ...key, nextPrivateJwk: pending }, now, 60)).toBe(false);
   });
 });
+
+// An MCP client runs its headers helper at each connection and again when a
+// call is refused, and keeps nothing between runs. So the helper reuses the
+// stored token while it lasts, and prints a new one once it is spent.
+describe("service-key header", () => {
+  async function header(name: string): Promise<{ code: number; stdout: string; stderr: string }> {
+    const child = Bun.spawn(
+      ["bun", "run", join(import.meta.dir, "index.ts"), "service-key", "header"],
+      {
+        env: {
+          PATH: process.env.PATH ?? "",
+          PORTEGO_ORIGIN: server.origin,
+          PORTEGO_SERVICE_KEY: join(directory, name, "service-key.json"),
+          PORTEGO_CREDENTIALS: join(directory, name, "credentials.json"),
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [code, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    return { code, stdout, stderr };
+  }
+
+  async function storeToken(name: string, accessToken: string, secondsLeft: number) {
+    const key = await readServiceKey(join(directory, name, "service-key.json"));
+    if (!key) throw new Error("no key");
+    const expiresAt = Math.floor(Date.now() / 1000) + secondsLeft;
+    await writeFile(
+      join(directory, name, "credentials.json"),
+      JSON.stringify({
+        tokens: { [server.origin]: { accessToken, expiresAt, keyId: key.privateJwk.x } },
+      }),
+    );
+  }
+
+  test("prints the stored token while it has time left", async () => {
+    await enrolled(join(directory, "header-stored", "service-key.json"));
+    await storeToken("header-stored", "stored-token", 3000);
+
+    const { code, stdout } = await header("header-stored");
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ Authorization: "Bearer stored-token" });
+  });
+
+  test("prints and stores a new token once the stored one is about to expire", async () => {
+    await enrolled(join(directory, "header-spent", "service-key.json"));
+    await storeToken("header-spent", "spent-token", 30);
+
+    const { code, stdout } = await header("header-spent");
+    expect(code).toBe(0);
+    const token = (JSON.parse(stdout) as { Authorization: string }).Authorization.replace(
+      /^Bearer /,
+      "",
+    );
+    expect(token).not.toBe("spent-token");
+    expect((await listTools(token)).status).toBe(200);
+    const stored = JSON.parse(
+      await readFile(join(directory, "header-spent", "credentials.json"), "utf8"),
+    );
+    expect(stored.tokens[server.origin].accessToken).toBe(token);
+  });
+
+  // The client reads stdout as the headers, so a failure must leave it empty.
+  test("fails with nothing on stdout when there is no key", async () => {
+    const { code, stdout, stderr } = await header("header-none");
+    expect(code).toBe(1);
+    expect(stdout).toBe("");
+    expect(stderr).toContain("No service key");
+  });
+});
